@@ -1,9 +1,10 @@
 [Desktop Entry]
 Type=Application
 Name=GasTube
-Comment=Ad-free YouTube client
+Comment=Watch videos without ads
 Exec=gastube
 Icon=lol.alphaliu01.gastube
 Categories=AudioVideo;Video;Player;
+Keywords=Video;Subscriptions;Playlists;Comments;Downloads;
 StartupNotify=true
 Terminal=false

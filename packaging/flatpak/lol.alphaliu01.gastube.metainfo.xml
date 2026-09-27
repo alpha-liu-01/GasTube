@@ -2,7 +2,7 @@
 <component type="desktop-application">
   <id>lol.alphaliu01.gastube</id>
   <name>GasTube</name>
-  <summary>Ad-free YouTube client</summary>
+  <summary>Watch videos without ads</summary>
   <developer id="lol.alphaliu01">
     <name>alpha-liu-01</name>
   </developer>
@@ -10,29 +10,62 @@
   <project_license>GPL-3.0-or-later</project_license>
   <description>
     <p>
-      GasTube is a desktop YouTube client for watching videos, reading comments,
-      and subscribing to channels without ads. It is a fork of FluxTube and is
-      not an official YouTube or FluxTube release.
+      GasTube plays videos, reads comments, and keeps subscriptions
+      without ads. It is a fork of FluxTube and is not an official
+      YouTube or FluxTube release.
     </p>
     <p>
-      Video pages use NewPipe Extractor. On a wide window the library is a grid
-      and the watch page splits the player from comments and related videos.
+      Video pages use NewPipe Extractor. A wide window shows the library
+      as a grid and splits the player from comments and related videos.
+      A narrow window keeps the same pages in a single column.
     </p>
   </description>
   <launchable type="desktop-id">lol.alphaliu01.gastube.desktop</launchable>
   <url type="homepage">https://github.com/alpha-liu-01/GasTube</url>
+  <url type="bugtracker">https://github.com/alpha-liu-01/GasTube/issues</url>
+  <url type="vcs-browser">https://github.com/alpha-liu-01/GasTube</url>
+  <branding>
+    <color type="primary" scheme_preference="light">#f3c9a0</color>
+    <color type="primary" scheme_preference="dark">#6e3b28</color>
+  </branding>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+    <control>touch</control>
+  </supports>
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
   <content_rating type="oars-1.1">
+    <content_attribute id="violence-cartoon">mild</content_attribute>
+    <content_attribute id="violence-realistic">mild</content_attribute>
+    <content_attribute id="language-profanity">mild</content_attribute>
     <content_attribute id="social-info">mild</content_attribute>
+    <content_attribute id="social-chat">mild</content_attribute>
   </content_rating>
   <screenshots>
     <screenshot type="default">
       <image>https://i.imgur.com/nzcUBOQ.jpeg</image>
+      <caption>Watching a video with related videos beside the player</caption>
+    </screenshot>
+    <screenshot>
       <image>https://i.imgur.com/hpaSi8I.jpeg</image>
+      <caption>Home as a grid of videos and channels</caption>
+    </screenshot>
+    <screenshot>
       <image>https://i.imgur.com/EblSmnv.png</image>
+      <caption>Settings for theme, profiles, and playback</caption>
+    </screenshot>
+    <screenshot>
       <image>https://i.imgur.com/NheCITh.png</image>
+      <caption>Search on a narrow window</caption>
     </screenshot>
   </screenshots>
   <releases>
-    <release version="0.9.3" date="2026-09-26"/>
+    <release version="0.9.3" date="2026-09-26">
+      <description>
+        <p>Wider layouts for the library and the watch page, and fit controls for Shorts</p>
+      </description>
+    </release>
   </releases>
 </component>
