@@ -15,6 +15,8 @@ import 'package:fluxtube/domain/watch/models/newpipe/newpipe_stream.dart';
 import 'package:fluxtube/domain/watch/models/newpipe/newpipe_watch_resp.dart';
 import 'package:fluxtube/domain/watch/playback/newpipe_stream_helper.dart';
 import 'package:fluxtube/core/api_client.dart';
+import 'package:fluxtube/core/storage_paths.dart';
+import 'package:path/path.dart' as p;
 import 'package:fluxtube/infrastructure/database/database.dart';
 import 'package:injectable/injectable.dart';
 import 'package:path_provider/path_provider.dart';
@@ -996,8 +998,8 @@ class DownloadImpl implements DownloadService {
   }
 
   Future<Directory> _getDownloadDirectory() async {
-    final appDir = await getApplicationDocumentsDirectory();
-    final downloadDir = Directory('${appDir.path}/FluxTube/Downloads');
+    final appDir = await persistentAppDirectory();
+    final downloadDir = Directory(p.join(appDir.path, 'Downloads'));
     if (!await downloadDir.exists()) {
       await downloadDir.create(recursive: true);
     }

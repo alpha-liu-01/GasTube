@@ -74,6 +74,11 @@ modules:
       - -Dsdl2=disabled
       - -Dopenal=disabled
       - -Djack=disabled
+      # The sandbox has a PulseAudio socket and no PipeWire socket. With
+      # PipeWire enabled, player startup waits in mpv_hook_add while the
+      # audio thread stops a PipeWire loop that never connected, and the
+      # process aborts (status 134) on some launches.
+      - -Dpipewire=disabled
       - -Dvulkan=disabled
       - -Dshaderc=disabled
       - -Dmanpage-build=disabled

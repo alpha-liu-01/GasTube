@@ -5,6 +5,8 @@ import 'dart:io';
 import 'package:dartz/dartz.dart';
 import 'package:dio/dio.dart';
 import 'package:fluxtube/core/api_client.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:fluxtube/core/enums.dart';
 import 'package:fluxtube/core/strings.dart';
 import 'package:fluxtube/domain/core/failure/main_failure.dart';
@@ -12,8 +14,6 @@ import 'package:fluxtube/domain/settings/models/instance.dart';
 import 'package:fluxtube/domain/settings/settings_service.dart';
 import 'package:fluxtube/infrastructure/database/database.dart';
 import 'package:injectable/injectable.dart';
-import 'package:path_provider/path_provider.dart';
-
 import '../../core/settings.dart';
 
 @LazySingleton(as: SettingsService)
@@ -635,11 +635,16 @@ class SettingImpl implements SettingsService {
         'profile': profileName,
       };
 
-      final dir = await getApplicationDocumentsDirectory();
+      final dir = await getDownloadsDirectory();
+      if (dir == null) {
+        return const Left(MainFailure.serverFailure());
+      }
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final profileSuffix = profileName == 'default' ? '' : '_$profileName';
-      final file = File(
-          '${dir.path}/fluxtube_subscriptions${profileSuffix}_$timestamp.json');
+      final file = File(p.join(
+        dir.path,
+        'fluxtube_subscriptions${profileSuffix}_$timestamp.json',
+      ));
       await file.writeAsString(jsonEncode(exportData));
 
       return Right(file.path);

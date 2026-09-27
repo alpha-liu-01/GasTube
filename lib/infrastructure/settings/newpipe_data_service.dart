@@ -7,6 +7,7 @@ import 'package:drift/drift.dart';
 import 'package:fluxtube/domain/core/failure/main_failure.dart';
 import 'package:fluxtube/infrastructure/database/database.dart';
 import 'package:injectable/injectable.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -68,7 +69,10 @@ class NewPipeDataService {
       final zipData = zipEncoder.encode(archive);
 
       // Save ZIP file
-      final docsDir = await getApplicationDocumentsDirectory();
+      final docsDir = await getDownloadsDirectory();
+      if (docsDir == null) {
+        return const Left(MainFailure.clientFailure());
+      }
       final timestamp = DateTime.now()
           .toIso8601String()
           .replaceAll(':', '')
@@ -76,7 +80,7 @@ class NewPipeDataService {
           .substring(0, 15);
       final profileSuffix = profileName == 'default' ? '' : '_$profileName';
       final zipPath =
-          '${docsDir.path}/FluxTubeData$profileSuffix-$timestamp.zip';
+          p.join(docsDir.path, 'FluxTubeData$profileSuffix-$timestamp.zip');
       final zipFile = File(zipPath);
       await zipFile.writeAsBytes(zipData);
 

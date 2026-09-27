@@ -3,8 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:fluxtube/core/storage_paths.dart';
 import 'package:fluxtube/domain/playlist/models/local_playlist.dart';
+import 'package:path/path.dart' as p;
 
 class LocalPlaylistService extends ChangeNotifier {
   static final LocalPlaylistService _instance = LocalPlaylistService._();
@@ -18,8 +19,11 @@ class LocalPlaylistService extends ChangeNotifier {
   Future<void> load() async {
     if (_loaded) return;
     try {
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/local_playlists.json');
+      final dir = await persistentAppDirectory();
+      final file = File(p.join(dir.path, 'local_playlists.json'));
+      if (!await file.exists()) {
+        await copyLegacyDocumentFile('local_playlists.json', file);
+      }
       if (await file.exists()) {
         final data = jsonDecode(await file.readAsString()) as List;
         _playlists.clear();
@@ -33,8 +37,8 @@ class LocalPlaylistService extends ChangeNotifier {
   }
 
   Future<void> _save() async {
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/local_playlists.json');
+    final dir = await persistentAppDirectory();
+    final file = File(p.join(dir.path, 'local_playlists.json'));
     await file.writeAsString(
         jsonEncode(_playlists.map((p) => p.toMap()).toList()));
   }

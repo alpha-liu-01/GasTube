@@ -1,5 +1,9 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
+import 'package:fluxtube/core/storage_paths.dart';
+import 'package:path/path.dart' as p;
 
 part 'database.g.dart';
 
@@ -202,7 +206,28 @@ class AppDatabase extends _$AppDatabase {
       );
 
   static QueryExecutor _openConnection() {
-    return driftDatabase(name: 'fluxtube.db');
+    return driftDatabase(
+      name: 'fluxtube.db',
+      native: DriftNativeOptions(
+        databaseDirectory: _databaseDirectory,
+      ),
+    );
+  }
+
+  /// drift names the file `<name>.sqlite`.
+  static Future<Directory> _databaseDirectory() async {
+    final support = await persistentAppDirectory();
+    final current = File(p.join(support.path, 'fluxtube.db.sqlite'));
+    if (!await current.exists()) {
+      await copyLegacyDocumentFile('fluxtube.db.sqlite', current);
+      for (final suffix in ['-wal', '-shm']) {
+        await copyLegacyDocumentFile(
+          'fluxtube.db.sqlite$suffix',
+          File(p.join(support.path, 'fluxtube.db.sqlite$suffix')),
+        );
+      }
+    }
+    return support;
   }
 
   Future<void> _createIndexes() async {
