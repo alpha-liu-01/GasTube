@@ -1,10 +1,15 @@
-name: Android Draft Release
+name: Android Release
 
 on:
   release:
     types:
       - created
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to attach the APKs to
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -12,6 +17,14 @@ permissions:
 jobs:
   build-android:
     name: Build signed APKs
+    # Dependency releases and releases created by Actions stay as they are.
+    # A release created on GitHub receives the APKs; this workflow does not open another one.
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      (github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'release' &&
+         !startsWith(github.event.release.tag_name, 'deps-') &&
+         github.event.release.tag_name != 'windows-arm64-libmpv'))
     runs-on: ubuntu-latest
     env:
       GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dkotlin.daemon.jvm.options=-Xmx2048m,-XX:-UseParallelGC"
@@ -19,8 +32,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -128,35 +139,14 @@ jobs:
             fi
           done
 
-      - name: Read app version
-        id: app_version
-        shell: bash
-        run: |
-          set -euo pipefail
-          version="$(grep '^version:' pubspec.yaml | awk '{print $2}')"
-          tag="v${version//+/-}-run-${GITHUB_RUN_NUMBER}"
-          echo "version=${version}" >> "${GITHUB_OUTPUT}"
-          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
-
-      - name: Create release notes
-        shell: bash
-        run: |
-          set -euo pipefail
-          {
-            echo "Automated Android build for ${GITHUB_SHA}."
-            echo
-            echo "Included APKs:"
-            find dist -maxdepth 1 -name '*.apk' -printf "- %f\n" | sort
-            echo
-            echo "Recent changes:"
-            git log --pretty='- %s (%h)' -20
-          } > RELEASE_NOTES.md
-
-      - name: Create draft GitHub Release
+      - name: Upload APKs to the release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
         run: |
-          gh release create "${{ steps.app_version.outputs.tag }}" dist/*.apk \
-            --draft \
-            --title "GasTube ${{ steps.app_version.outputs.version }}" \
-            --notes-file RELEASE_NOTES.md
+          set -euo pipefail
+          if [[ -z "${RELEASE_TAG}" ]]; then
+            echo "No release tag. Create a GitHub release, or pass a tag when running this workflow by hand." >&2
+            exit 1
+          fi
+          gh release upload "${RELEASE_TAG}" dist/*.apk --clobber

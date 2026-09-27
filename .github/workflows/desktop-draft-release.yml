@@ -1,10 +1,15 @@
-name: Desktop Draft Release
+name: Desktop Release
 
 on:
   release:
     types:
       - created
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to attach the desktop builds to
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -12,10 +17,14 @@ permissions:
 jobs:
   build-linux:
     name: Build Linux x64 archive
-    # A draft created by this workflow fires release.created as github-actions.
-    # Skip that run so it does not build the same archives twice.
-    # Releases tagged deps-* only host build dependencies such as libmpv.
-    if: github.actor != 'github-actions[bot]' && !startsWith(github.event.release.tag_name, 'deps-') && github.event.release.tag_name != 'windows-arm64-libmpv'
+    # Dependency releases and releases created by Actions stay as they are.
+    # A release created on GitHub receives these files; this workflow does not open another one.
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      (github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'release' &&
+         !startsWith(github.event.release.tag_name, 'deps-') &&
+         github.event.release.tag_name != 'windows-arm64-libmpv'))
     runs-on: ubuntu-26.04
 
     steps:
@@ -65,7 +74,12 @@ jobs:
 
   build-windows:
     name: Build Windows x64 installer
-    if: github.actor != 'github-actions[bot]' && !startsWith(github.event.release.tag_name, 'deps-') && github.event.release.tag_name != 'windows-arm64-libmpv'
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      (github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'release' &&
+         !startsWith(github.event.release.tag_name, 'deps-') &&
+         github.event.release.tag_name != 'windows-arm64-libmpv'))
     runs-on: windows-latest
 
     steps:
@@ -122,7 +136,12 @@ jobs:
 
   build-windows-arm64:
     name: Build Windows ARM64 installer
-    if: github.actor != 'github-actions[bot]' && !startsWith(github.event.release.tag_name, 'deps-') && github.event.release.tag_name != 'windows-arm64-libmpv'
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      (github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'release' &&
+         !startsWith(github.event.release.tag_name, 'deps-') &&
+         github.event.release.tag_name != 'windows-arm64-libmpv'))
     runs-on: windows-11-arm
 
     steps:
@@ -202,32 +221,21 @@ jobs:
       - build-linux
       - build-windows
       - build-windows-arm64
-    if: github.actor != 'github-actions[bot]' && !startsWith(github.event.release.tag_name, 'deps-') && github.event.release.tag_name != 'windows-arm64-libmpv'
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      (github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'release' &&
+         !startsWith(github.event.release.tag_name, 'deps-') &&
+         github.event.release.tag_name != 'windows-arm64-libmpv'))
     runs-on: ubuntu-26.04
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
       - name: Download archives
         uses: actions/download-artifact@v4
         with:
           pattern: "*"
           path: dist
           merge-multiple: true
-
-      - name: Read app version
-        id: app_version
-        shell: bash
-        run: |
-          set -euo pipefail
-          version="$(grep '^version:' pubspec.yaml | awk '{print $2}')"
-          tag="v${version//+/-}-desktop-run-${GITHUB_RUN_NUMBER}"
-          echo "version=${version}" >> "${GITHUB_OUTPUT}"
-          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
-          ls -lah dist
 
       - name: Collect release files
         shell: bash
@@ -249,40 +257,14 @@ jobs:
           fi
           ls -lah release-assets
 
-      - name: Create release notes
-        if: github.event_name == 'workflow_dispatch'
-        shell: bash
-        run: |
-          set -euo pipefail
-          {
-            echo "Automated desktop build for ${GITHUB_SHA}."
-            echo
-            echo "Included files:"
-            find release-assets -maxdepth 1 -type f -printf '- %f\n' | sort
-            echo
-            echo "The Linux archive and both Windows installers include a headless Java 17 runtime, newpipe-spike.jar, and a static ffmpeg."
-            echo "The Windows files are Inno Setup installers (.exe), not a zip of those installers. The Linux archive needs libmpv installed at runtime."
-            echo "The Windows ARM64 installer is for Windows on ARM, including Snapdragon 850, and uses the no-DotProd libmpv."
-            echo
-            echo "Recent changes:"
-            git log --pretty='- %s (%h)' -20
-          } > RELEASE_NOTES.md
-
-      - name: Create draft GitHub Release
-        if: github.event_name == 'workflow_dispatch'
+      - name: Upload files to the release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
         run: |
           set -euo pipefail
-          gh release create "${{ steps.app_version.outputs.tag }}" release-assets/* \
-            --draft \
-            --title "GasTube ${{ steps.app_version.outputs.version }} desktop" \
-            --notes-file RELEASE_NOTES.md
-
-      - name: Upload files to the new release
-        if: github.event_name == 'release'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh release upload "${{ github.event.release.tag_name }}" release-assets/* --clobber
+          if [[ -z "${RELEASE_TAG}" ]]; then
+            echo "No release tag. Create a GitHub release, or pass a tag when running this workflow by hand." >&2
+            exit 1
+          fi
+          gh release upload "${RELEASE_TAG}" release-assets/* --clobber
