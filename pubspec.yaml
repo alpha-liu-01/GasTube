@@ -87,11 +87,6 @@ flutter:
     - assets/
     - assets/icons/
 
-  fonts:
-    - family: Montserrat
-      fonts:
-        - asset: assets/fonts/Montserrat-Regular.ttf
-
 flutter_intl:
   enabled: true # Required. Must be set to true to activate the plugin. Default: false
   class_name: S # Optional. Sets the name for the generated localization class. Default: S

@@ -42,7 +42,6 @@ abstract class AppTheme {
             ),
         appBarTheme: const AppBarTheme(
             backgroundColor: kWhiteColor, foregroundColor: kBlackColor),
-        fontFamily: 'Montserrat',
         iconTheme: const IconThemeData().copyWith(color: kGreyColor),
       );
 
@@ -73,7 +72,6 @@ abstract class AppTheme {
         iconTheme: const IconThemeData().copyWith(color: kWhiteColor),
         actionsIconTheme: const IconThemeData().copyWith(color: kWhiteColor),
       ),
-      fontFamily: 'Montserrat',
       iconTheme:
           const IconThemeData().copyWith(color: kWhiteColor.withValues(alpha: 0.7)),
       inputDecorationTheme: const InputDecorationTheme().copyWith(
@@ -115,7 +113,6 @@ abstract class AppTheme {
         selectedItemColor: Colors.white,
         unselectedItemColor: Colors.white54,
       ),
-      fontFamily: 'Montserrat',
       iconTheme: const IconThemeData().copyWith(color: kWhiteColor.withValues(alpha: 0.7)),
       inputDecorationTheme: const InputDecorationTheme().copyWith(
         iconColor: kWhiteColor,
@@ -140,7 +137,6 @@ abstract class AppTheme {
           iconTheme: IconThemeData(color: colorScheme.onSurface),
           actionsIconTheme: IconThemeData(color: colorScheme.onSurface),
         ),
-        fontFamily: 'Montserrat',
         textTheme: ThemeData(
           brightness: colorScheme.brightness,
           useMaterial3: true,
