@@ -197,6 +197,10 @@ void MediaKitVideoPlugin::HandleMethodCall(
     }
     video_output_manager_->SetSize(handle_value, width_value, height_value);
     result->Success(flutter::EncodableValue(std::monostate{}));
+  } else if (method_call.method_name().compare("Utils.SetAppFullscreen") == 0) {
+    const auto* enabled = std::get_if<bool>(&method_call.arguments());
+    Utils::SetAppFullscreen(enabled != nullptr && *enabled);
+    result->Success(flutter::EncodableValue(std::monostate{}));
   } else if (method_call.method_name().compare("Utils.EnterNativeFullscreen") ==
              0) {
     auto window =

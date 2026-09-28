@@ -962,6 +962,26 @@ class S {
     );
   }
 
+  /// `Fullscreen`
+  String get windowFullscreen {
+    return Intl.message(
+      'Fullscreen',
+      name: 'windowFullscreen',
+      desc: 'Setting that hides the window title bar',
+      args: [],
+    );
+  }
+
+  /// `Hide the title bar and use the whole screen`
+  String get windowFullscreenDescription {
+    return Intl.message(
+      'Hide the title bar and use the whole screen',
+      name: 'windowFullscreenDescription',
+      desc: 'Explains the fullscreen window setting',
+      args: [],
+    );
+  }
+
   /// `Common`
   String get commonSettingsTitle {
     return Intl.message(

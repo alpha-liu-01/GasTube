@@ -51,6 +51,9 @@ const searchHistoryVisibilityKey = 'search-history-visibility';
 // Auto PiP (enter PiP when pressing home button while video is playing)
 const autoPipEnabledKey = 'auto-pip-enabled';
 
+// Desktop window fullscreen. Hides the title bar on Linux phones (Phosh).
+const windowFullscreenKey = 'window-fullscreen';
+
 // New-upload notifications for subscribed channels
 const notifyNewVideosKey = 'notify-new-videos';
 const notifyLastCheckKey = 'notify-last-check';

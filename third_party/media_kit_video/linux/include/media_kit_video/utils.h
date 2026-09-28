@@ -11,3 +11,6 @@
 void utils_enter_native_fullscreen(GtkWidget* window);
 
 void utils_exit_native_fullscreen(GtkWidget* window);
+
+// When set, leaving video fullscreen does not restore the title bar.
+void utils_set_app_fullscreen(gboolean enabled);

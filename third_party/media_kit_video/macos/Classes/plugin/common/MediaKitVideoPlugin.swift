@@ -57,6 +57,9 @@ public class MediaKitVideoPlugin: NSObject, FlutterPlugin {
       handleSetSizeMethodCall(call.arguments, result)
     case "VideoOutputManager.Dispose":
       handleDisposeMethodCall(call.arguments, result)
+    case "Utils.SetAppFullscreen":
+      utils?.setAppFullscreen(call.arguments as? Bool ?? false)
+      result(nil)
     case "Utils.EnterNativeFullscreen":
       handleEnterNativeFullscreenMethodCall(call.arguments, result)
     case "Utils.ExitNativeFullscreen":

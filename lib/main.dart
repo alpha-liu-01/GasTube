@@ -25,6 +25,7 @@ import 'package:fluxtube/presentation/watch/widgets/global_pip_overlay.dart';
 import 'package:fluxtube/core/services/audio_handler_service.dart';
 import 'package:fluxtube/core/services/log_collector.dart';
 import 'package:fluxtube/core/services/subscription_notifier.dart';
+import 'package:fluxtube/core/window_fullscreen.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 
@@ -80,6 +81,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     // This ensures the Activity is fully attached and can show permission dialogs
     WidgetsBinding.instance.addPostFrameCallback((_) {
       DownloadNotificationService().initialize();
+      WindowFullscreen.loadAndApply();
       // Initialize audio service for background playback notification controls
       initAudioService();
       // Look for new uploads from subscribed channels. Self-throttling and a

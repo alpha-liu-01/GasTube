@@ -9,6 +9,7 @@ import 'package:fluxtube/core/model/region_model.dart';
 import 'package:fluxtube/core/regions.dart';
 import 'package:fluxtube/generated/l10n.dart';
 import 'package:fluxtube/presentation/settings/widgets/new_video_notification_tile.dart';
+import 'package:fluxtube/presentation/settings/widgets/window_fullscreen_tile.dart';
 import 'package:go_router/go_router.dart';
 
 List<DropdownMenuItem<String>> _getThemeModes(S locals) => [
@@ -103,6 +104,7 @@ class CommonSettingsSection extends StatelessWidget {
                               themeMode: themeMode.toString()))),
             ),
             const NewVideoNotificationTile(),
+            const WindowFullscreenTile(),
           ],
         );
       },

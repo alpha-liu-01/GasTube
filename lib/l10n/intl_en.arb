@@ -188,6 +188,14 @@
   "@showLessText": {
     "description": "Collapse the comment text"
   },
+  "windowFullscreen": "Fullscreen",
+  "@windowFullscreen": {
+    "description": "Setting that hides the window title bar"
+  },
+  "windowFullscreenDescription": "Hide the title bar and use the whole screen",
+  "@windowFullscreenDescription": {
+    "description": "Explains the fullscreen window setting"
+  },
   "commonSettingsTitle": "Common",
   "@commonSettingsTitle": {
     "description": "Common settings label"

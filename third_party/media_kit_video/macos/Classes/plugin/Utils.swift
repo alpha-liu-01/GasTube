@@ -11,6 +11,12 @@ public class Utils: NSObject, UtilsProtocol {
     registrar.view?.window
   }
 
+  private var stayFullscreen = false
+
+  public func setAppFullscreen(_ enabled: Bool) {
+    stayFullscreen = enabled
+  }
+
   public func enterNativeFullscreen() {
     guard let window = window else {
       return printWarning()
@@ -22,6 +28,9 @@ public class Utils: NSObject, UtilsProtocol {
   }
 
   public func exitNativeFullscreen() {
+    if stayFullscreen {
+      return
+    }
     guard let window = window else {
       return printWarning()
     }

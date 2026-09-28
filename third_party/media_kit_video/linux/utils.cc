@@ -14,6 +14,11 @@
 // surface and Flutter's GL context dies (blank fullscreen, then the app
 // has to be killed). Hide the bar instead; it stays parented to the window.
 static GtkWidget* hidden_titlebar = nullptr;
+static gboolean app_fullscreen = FALSE;
+
+void utils_set_app_fullscreen(gboolean enabled) {
+  app_fullscreen = enabled;
+}
 
 void utils_enter_native_fullscreen(GtkWidget* window) {
   if (!GTK_IS_WINDOW(window)) {
@@ -30,7 +35,7 @@ void utils_enter_native_fullscreen(GtkWidget* window) {
 }
 
 void utils_exit_native_fullscreen(GtkWidget* window) {
-  if (!GTK_IS_WINDOW(window)) {
+  if (app_fullscreen || !GTK_IS_WINDOW(window)) {
     return;
   }
   gtk_window_unfullscreen(GTK_WINDOW(window));

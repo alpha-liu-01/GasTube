@@ -134,6 +134,13 @@ static void media_kit_video_plugin_handle_method_call(
     FlValue* result = fl_value_new_null();
     response = FL_METHOD_RESPONSE(fl_method_success_response_new(result));
 
+  } else if (g_strcmp0(method, "Utils.SetAppFullscreen") == 0) {
+    FlValue* arguments = fl_method_call_get_args(method_call);
+    gboolean enabled = fl_value_get_type(arguments) == FL_VALUE_TYPE_BOOL &&
+                       fl_value_get_bool(arguments);
+    utils_set_app_fullscreen(enabled);
+    FlValue* result = fl_value_new_null();
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(result));
   } else if (g_strcmp0(method, "Utils.EnterNativeFullscreen") == 0) {
     utils_enter_native_fullscreen(
         gtk_widget_get_toplevel(GTK_WIDGET(self->view)));

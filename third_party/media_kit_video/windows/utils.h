@@ -19,6 +19,8 @@ class Utils {
 
   static void ExitNativeFullscreen(HWND window);
 
+  static void SetAppFullscreen(bool enabled);
+
   static RTL_OSVERSIONINFOW GetWindowsVersion();
 
   static bool IsWindows10RTMOrGreater();
@@ -27,6 +29,7 @@ class Utils {
   static constexpr auto kFlutterViewWindowClassName = L"FLUTTERVIEW";
 
   static bool fullscreen_;
+  static bool app_fullscreen_;
   static RECT rect_before_fullscreen_;
   static LONG_PTR style_before_fullscreen_;
   static WINDOWPLACEMENT placement_before_fullscreen_;

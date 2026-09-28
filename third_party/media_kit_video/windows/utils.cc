@@ -53,8 +53,10 @@ void Utils::EnterNativeFullscreen(HWND window) {
   fullscreen_ = true;
 }
 
+void Utils::SetAppFullscreen(bool enabled) { app_fullscreen_ = enabled; }
+
 void Utils::ExitNativeFullscreen(HWND window) {
-  if (!fullscreen_ || window == nullptr) {
+  if (app_fullscreen_ || !fullscreen_ || window == nullptr) {
     return;
   }
   ::SetWindowLongPtr(window, GWL_STYLE, style_before_fullscreen_);
@@ -84,6 +86,8 @@ bool Utils::IsWindows10RTMOrGreater() {
 }
 
 bool Utils::fullscreen_ = false;
+
+bool Utils::app_fullscreen_ = false;
 
 RECT Utils::rect_before_fullscreen_ = RECT{};
 
