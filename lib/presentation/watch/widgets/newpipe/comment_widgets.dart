@@ -94,7 +94,7 @@ class _NewPipeCommentSectionState extends State<NewPipeCommentSection> {
           ? null
           : BoxConstraints(maxHeight: widget.height * 0.55),
       margin: widget.fillColumn
-          ? EdgeInsets.zero
+          ? AppSpacing.paddingMd
           : const EdgeInsets.symmetric(horizontal: AppSpacing.md),
       decoration: BoxDecoration(
         color: isDark ? AppColors.surfaceDark : AppColors.surface,
