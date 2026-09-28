@@ -2,11 +2,12 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../../application/search/search_bloc.dart';
+import '../../../application/application.dart';
 import '../../../core/app_info.dart';
 import '../../../core/colors.dart';
 import '../../../core/constants.dart';
 import '../../../core/di/injectable.dart';
+import '../../../core/enums.dart';
 import '../../search/screen_search.dart';
 import 'circular_icon.dart';
 
@@ -45,6 +46,17 @@ class HomeAppBar extends StatelessWidget {
         ),
       ),
       actions: [
+        Tooltip(
+          message:
+              MaterialLocalizations.of(context).refreshIndicatorSemanticLabel,
+          child: GestureDetector(
+            onTap: () => _refreshHome(context),
+            child: const CircularIcon(
+              icon: Icons.refresh,
+            ),
+          ),
+        ),
+        kWidthBox15,
         GestureDetector(
           onTap: () => Navigator.of(context).push(MaterialPageRoute(
             builder: (context) => BlocProvider(
@@ -60,4 +72,35 @@ class HomeAppBar extends StatelessWidget {
       ],
     );
   }
+}
+
+void _refreshHome(BuildContext context) {
+  final settings = context.read<SettingsBloc>().state;
+  final trending = context.read<TrendingBloc>();
+  final trendingState = trending.state;
+
+  if (settings.ytService == YouTubeServices.newpipe.name) {
+    trending.add(TrendingEvent.getForcedPersonalizedFeed(
+      profileName: settings.currentProfile,
+      serviceType: settings.ytService,
+    ));
+    return;
+  }
+
+  final mode = settings.homeFeedMode;
+  final feedLoaded = trendingState.feedResult.isNotEmpty &&
+      trendingState.fetchFeedStatus != ApiStatus.error;
+  final feedOnScreen = mode == HomeFeedMode.feedOnly.name ||
+      (mode == HomeFeedMode.feedOrTrending.name && feedLoaded);
+  if (feedOnScreen) {
+    trending.add(TrendingEvent.getForcedHomeFeedData(
+      channels: context.read<SubscribeBloc>().state.subscribedChannels,
+    ));
+    return;
+  }
+
+  trending.add(TrendingEvent.getForcedTrendingData(
+    serviceType: settings.ytService,
+    region: settings.defaultRegion,
+  ));
 }
