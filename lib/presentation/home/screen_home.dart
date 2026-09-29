@@ -13,6 +13,7 @@ import 'package:fluxtube/presentation/trending/widgets/piped/trending_videos_sec
 import 'package:fluxtube/widgets/widgets.dart';
 
 import 'widgets/widgets.dart';
+import 'home_scroll.dart';
 
 class ScreenHome extends StatelessWidget {
   const ScreenHome({super.key});
@@ -29,7 +30,7 @@ class ScreenHome extends StatelessWidget {
           previous.homeFeedMode != current.homeFeedMode,
       builder: (context, settingsState) {
         return SafeArea(
-          child: NestedScrollView(
+          child: HomeNestedScroll(
             headerSliverBuilder: (context, innerBoxIsScrolled) => [
               const HomeAppBar(),
             ],

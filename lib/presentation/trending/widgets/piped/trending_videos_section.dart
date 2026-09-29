@@ -6,6 +6,7 @@ import 'package:fluxtube/core/constants.dart';
 import 'package:fluxtube/domain/subscribes/models/subscribe.dart';
 import 'package:fluxtube/domain/watch/models/basic_info.dart';
 import 'package:fluxtube/generated/l10n.dart';
+import 'package:fluxtube/presentation/home/home_scroll.dart';
 import 'package:fluxtube/widgets/widgets.dart';
 import 'package:go_router/go_router.dart';
 
@@ -23,23 +24,10 @@ class TrendingVideosSection extends StatefulWidget {
   State<TrendingVideosSection> createState() => _TrendingVideosSectionState();
 }
 
-class _TrendingVideosSectionState extends State<TrendingVideosSection> {
-  final ScrollController _scrollController = ScrollController();
-
+class _TrendingVideosSectionState extends State<TrendingVideosSection>
+    with HomeListScroll {
   @override
-  void initState() {
-    super.initState();
-    _scrollController.addListener(_onScroll);
-  }
-
-  @override
-  void dispose() {
-    _scrollController.removeListener(_onScroll);
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  void _onScroll() {
+  void onHomeScroll() {
     if (_isBottom) {
       context.read<TrendingBloc>().add(
             const TrendingEvent.loadMoreTrending(serviceType: 'piped'),
@@ -48,14 +36,15 @@ class _TrendingVideosSectionState extends State<TrendingVideosSection> {
   }
 
   bool get _isBottom {
-    if (!_scrollController.hasClients) return false;
-    final maxScroll = _scrollController.position.maxScrollExtent;
-    final currentScroll = _scrollController.offset;
+    if (!homeScrollController.hasClients) return false;
+    final maxScroll = homeScrollController.position.maxScrollExtent;
+    final currentScroll = homeScrollController.offset;
     return currentScroll >= (maxScroll - 200);
   }
 
   @override
   Widget build(BuildContext context) {
+    revealHomeHeader();
     final displayCount = widget.state.trendingDisplayCount;
     final totalCount = widget.state.trendingResult.length;
     final itemCount = displayCount.clamp(0, totalCount);
@@ -67,7 +56,7 @@ class _TrendingVideosSectionState extends State<TrendingVideosSection> {
           previous.subscribedChannels != current.subscribedChannels,
       builder: (context, subscribeState) {
         return ListView.separated(
-          controller: _scrollController,
+          controller: homeScrollController,
           scrollCacheExtent: const ScrollCacheExtent.pixels(500),
           separatorBuilder: (context, index) => kHeightBox10,
           itemBuilder: (context, index) {

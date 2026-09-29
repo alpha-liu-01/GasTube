@@ -6,6 +6,7 @@ import 'package:fluxtube/core/constants.dart';
 import 'package:fluxtube/domain/subscribes/models/subscribe.dart';
 import 'package:fluxtube/domain/watch/models/basic_info.dart';
 import 'package:fluxtube/generated/l10n.dart';
+import 'package:fluxtube/presentation/home/home_scroll.dart';
 import 'package:fluxtube/presentation/trending/widgets/newpipe/home_video_info_card_widget.dart';
 import 'package:go_router/go_router.dart';
 
@@ -26,37 +27,27 @@ class NewPipeFeedVideoSection extends StatefulWidget {
       _NewPipeFeedVideoSectionState();
 }
 
-class _NewPipeFeedVideoSectionState extends State<NewPipeFeedVideoSection> {
-  final ScrollController _scrollController = ScrollController();
-
+class _NewPipeFeedVideoSectionState extends State<NewPipeFeedVideoSection>
+    with HomeListScroll {
   @override
-  void initState() {
-    super.initState();
-    _scrollController.addListener(_onScroll);
-  }
-
-  @override
-  void dispose() {
-    _scrollController.removeListener(_onScroll);
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  void _onScroll() {
+  void onHomeScroll() {
     if (_isBottom) {
-      context.read<TrendingBloc>().add(const TrendingEvent.loadMoreNewPipeFeed());
+      context
+          .read<TrendingBloc>()
+          .add(const TrendingEvent.loadMoreNewPipeFeed());
     }
   }
 
   bool get _isBottom {
-    if (!_scrollController.hasClients) return false;
-    final maxScroll = _scrollController.position.maxScrollExtent;
-    final currentScroll = _scrollController.offset;
+    if (!homeScrollController.hasClients) return false;
+    final maxScroll = homeScrollController.position.maxScrollExtent;
+    final currentScroll = homeScrollController.offset;
     return currentScroll >= (maxScroll - 200);
   }
 
   @override
   Widget build(BuildContext context) {
+    revealHomeHeader();
     final displayCount = widget.trendingState.newPipeFeedDisplayCount;
     final totalCount = widget.trendingState.newPipeFeedResult.length;
     final itemCount = displayCount.clamp(0, totalCount);
@@ -64,7 +55,7 @@ class _NewPipeFeedVideoSectionState extends State<NewPipeFeedVideoSection> {
     final isLoading = widget.trendingState.isLoadingMoreNewPipeFeed;
 
     return ListView.separated(
-      controller: _scrollController,
+      controller: homeScrollController,
       scrollCacheExtent: const ScrollCacheExtent.pixels(500),
       separatorBuilder: (context, index) => kHeightBox10,
       itemBuilder: (context, index) {

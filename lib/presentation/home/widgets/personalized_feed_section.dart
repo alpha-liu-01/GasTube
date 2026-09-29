@@ -10,6 +10,7 @@ import 'package:fluxtube/domain/search/models/newpipe/newpipe_search_resp.dart';
 import 'package:fluxtube/domain/subscribes/models/subscribe.dart';
 import 'package:fluxtube/domain/watch/models/basic_info.dart';
 import 'package:fluxtube/generated/l10n.dart';
+import 'package:fluxtube/presentation/home/home_scroll.dart';
 import 'package:fluxtube/presentation/search/widgets/newpipe/home_video_info_card_widget.dart';
 import 'package:fluxtube/presentation/shorts/screen_shorts.dart';
 import 'package:fluxtube/widgets/card_row.dart';
@@ -34,25 +35,13 @@ class PersonalizedFeedSection extends StatefulWidget {
       _PersonalizedFeedSectionState();
 }
 
-class _PersonalizedFeedSectionState extends State<PersonalizedFeedSection> {
-  final ScrollController _scrollController = ScrollController();
-
+class _PersonalizedFeedSectionState extends State<PersonalizedFeedSection>
+    with HomeListScroll {
   @override
-  void initState() {
-    super.initState();
-    _scrollController.addListener(_onScroll);
-  }
-
-  @override
-  void dispose() {
-    _scrollController.removeListener(_onScroll);
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent * 0.8) {
+  void onHomeScroll() {
+    if (!homeScrollController.hasClients) return;
+    if (homeScrollController.position.pixels >=
+        homeScrollController.position.maxScrollExtent * 0.8) {
       // Load more when 80% scrolled (earlier trigger)
       if (!widget.trendingState.isLoadingMorePersonalizedFeed &&
           widget.trendingState.hasMorePersonalizedContent) {
@@ -109,6 +98,7 @@ class _PersonalizedFeedSectionState extends State<PersonalizedFeedSection> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        revealHomeHeader();
         final columns = constraints.maxWidth.isFinite
             ? WindowLayout.cardColumns(constraints.maxWidth)
             : 1;
@@ -125,7 +115,7 @@ class _PersonalizedFeedSectionState extends State<PersonalizedFeedSection> {
     List<NewPipeSearchItem> shorts,
   ) {
     return ListView.separated(
-      controller: _scrollController,
+      controller: homeScrollController,
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.symmetric(vertical: 10),
       separatorBuilder: (context, index) {
@@ -217,7 +207,7 @@ class _PersonalizedFeedSectionState extends State<PersonalizedFeedSection> {
     }
 
     return CustomScrollView(
-      controller: _scrollController,
+      controller: homeScrollController,
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
         const SliverPadding(padding: EdgeInsets.only(top: 10)),

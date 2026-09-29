@@ -6,6 +6,7 @@ import 'package:fluxtube/core/constants.dart';
 import 'package:fluxtube/domain/subscribes/models/subscribe.dart';
 import 'package:fluxtube/domain/watch/models/basic_info.dart';
 import 'package:fluxtube/generated/l10n.dart';
+import 'package:fluxtube/presentation/home/home_scroll.dart';
 import 'package:fluxtube/presentation/trending/widgets/invidious/home_video_info_card_widget.dart';
 import 'package:go_router/go_router.dart';
 
@@ -25,23 +26,9 @@ class InvidiousTrendingVideosSection extends StatefulWidget {
 }
 
 class _InvidiousTrendingVideosSectionState
-    extends State<InvidiousTrendingVideosSection> {
-  final ScrollController _scrollController = ScrollController();
-
+    extends State<InvidiousTrendingVideosSection> with HomeListScroll {
   @override
-  void initState() {
-    super.initState();
-    _scrollController.addListener(_onScroll);
-  }
-
-  @override
-  void dispose() {
-    _scrollController.removeListener(_onScroll);
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  void _onScroll() {
+  void onHomeScroll() {
     if (_isBottom) {
       context.read<TrendingBloc>().add(
             const TrendingEvent.loadMoreInvidiousTrending(),
@@ -50,14 +37,15 @@ class _InvidiousTrendingVideosSectionState
   }
 
   bool get _isBottom {
-    if (!_scrollController.hasClients) return false;
-    final maxScroll = _scrollController.position.maxScrollExtent;
-    final currentScroll = _scrollController.offset;
+    if (!homeScrollController.hasClients) return false;
+    final maxScroll = homeScrollController.position.maxScrollExtent;
+    final currentScroll = homeScrollController.offset;
     return currentScroll >= (maxScroll - 200);
   }
 
   @override
   Widget build(BuildContext context) {
+    revealHomeHeader();
     final displayCount = widget.state.invidiousTrendingDisplayCount;
     final totalCount = widget.state.invidiousTrendingResult.length;
     final itemCount = displayCount.clamp(0, totalCount);
@@ -69,7 +57,7 @@ class _InvidiousTrendingVideosSectionState
           previous.subscribedChannels != current.subscribedChannels,
       builder: (context, subscribeState) {
         return ListView.separated(
-          controller: _scrollController,
+          controller: homeScrollController,
           scrollCacheExtent: const ScrollCacheExtent.pixels(500),
           separatorBuilder: (context, index) => kHeightBox10,
           itemBuilder: (context, index) {

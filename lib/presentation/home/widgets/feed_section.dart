@@ -6,6 +6,7 @@ import 'package:fluxtube/core/constants.dart';
 import 'package:fluxtube/domain/subscribes/models/subscribe.dart';
 import 'package:fluxtube/domain/watch/models/basic_info.dart';
 import 'package:fluxtube/generated/l10n.dart';
+import 'package:fluxtube/presentation/home/home_scroll.dart';
 import 'package:fluxtube/widgets/home_video_info_card_widget.dart';
 import 'package:go_router/go_router.dart';
 
@@ -25,38 +26,26 @@ class FeedVideoSection extends StatefulWidget {
   State<FeedVideoSection> createState() => _FeedVideoSectionState();
 }
 
-class _FeedVideoSectionState extends State<FeedVideoSection> {
-  final ScrollController _scrollController = ScrollController();
-
+class _FeedVideoSectionState extends State<FeedVideoSection>
+    with HomeListScroll {
   @override
-  void initState() {
-    super.initState();
-    _scrollController.addListener(_onScroll);
-  }
-
-  @override
-  void dispose() {
-    _scrollController.removeListener(_onScroll);
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  void _onScroll() {
+  void onHomeScroll() {
     if (_isBottom) {
       context.read<TrendingBloc>().add(const TrendingEvent.loadMoreFeed());
     }
   }
 
   bool get _isBottom {
-    if (!_scrollController.hasClients) return false;
-    final maxScroll = _scrollController.position.maxScrollExtent;
-    final currentScroll = _scrollController.offset;
+    if (!homeScrollController.hasClients) return false;
+    final maxScroll = homeScrollController.position.maxScrollExtent;
+    final currentScroll = homeScrollController.offset;
     // Trigger when user is 200 pixels from bottom
     return currentScroll >= (maxScroll - 200);
   }
 
   @override
   Widget build(BuildContext context) {
+    revealHomeHeader();
     final displayCount = widget.trendingState.feedDisplayCount;
     final totalCount = widget.trendingState.feedResult.length;
     final itemCount = displayCount.clamp(0, totalCount);
@@ -64,7 +53,7 @@ class _FeedVideoSectionState extends State<FeedVideoSection> {
     final isLoading = widget.trendingState.isLoadingMoreFeed;
 
     return ListView.separated(
-      controller: _scrollController,
+      controller: homeScrollController,
       scrollCacheExtent: const ScrollCacheExtent.pixels(500),
       separatorBuilder: (context, index) => kHeightBox10,
       itemBuilder: (context, index) {
