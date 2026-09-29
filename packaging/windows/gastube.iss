@@ -1,12 +1,12 @@
 ; Per-user installer for a Windows release folder.
 ; SourceDir is the repo root. OutputDir and SetupIconFile are relative to that.
-;   ISCC.exe /DAppVersion=0.9.3+15 /DVersionInfo=0.9.3.15 packaging\windows\gastube.iss
+;   ISCC.exe /DAppVersion=0.9.3+16 /DVersionInfo=0.9.3.16 packaging\windows\gastube.iss
 ; ARM64: add /DSetupArch=arm64
 #ifndef AppVersion
-#define AppVersion "0.9.3+15"
+#define AppVersion "0.9.3+16"
 #endif
 #ifndef VersionInfo
-#define VersionInfo "0.9.3.15"
+#define VersionInfo "0.9.3.16"
 #endif
 #ifndef SetupArch
 #define SetupArch "x64"
