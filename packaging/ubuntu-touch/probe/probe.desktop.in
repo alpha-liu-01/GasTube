@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=GasTube Probe
+Exec=probe
+Icon=probe.png
+Terminal=false
+Type=Application
+X-Ubuntu-Touch=true
