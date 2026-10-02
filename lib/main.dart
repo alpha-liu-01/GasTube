@@ -168,8 +168,11 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                   supportedLocales: supportedLocales,
                   locale: Locale(state.defaultLanguage),
                   builder: (context, child) {
-                    return GlobalPipOverlay(
-                      child: child ?? const SizedBox.shrink(),
+                    return AppTheme.withCjkText(
+                      context,
+                      GlobalPipOverlay(
+                        child: child ?? const SizedBox.shrink(),
+                      ),
                     );
                   },
                 );
@@ -194,8 +197,11 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             supportedLocales: supportedLocales,
             locale: Locale(state.defaultLanguage),
             builder: (context, child) {
-              return GlobalPipOverlay(
-                child: child ?? const SizedBox.shrink(),
+              return AppTheme.withCjkText(
+                context,
+                GlobalPipOverlay(
+                  child: child ?? const SizedBox.shrink(),
+                ),
               );
             },
           );

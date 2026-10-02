@@ -86,6 +86,10 @@ flutter:
   assets:
     - assets/
     - assets/icons/
+  fonts:
+    - family: Droid Sans Fallback
+      fonts:
+        - asset: assets/fonts/DroidSansFallbackFull.ttf
 
 flutter_intl:
   enabled: true # Required. Must be set to true to activate the plugin. Default: false
