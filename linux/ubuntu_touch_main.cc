@@ -87,34 +87,29 @@ GdkMonitor* choose_panel(GdkDisplay* display) {
   return best;
 }
 
-int monitor_index(GdkDisplay* display, GdkMonitor* wanted) {
-  int count = gdk_display_get_n_monitors(display);
-  for (int i = 0; i < count; i++) {
-    if (gdk_display_get_monitor(display, i) == wanted) return i;
-  }
-  return 0;
-}
-
-void fit_window(GtkWindow* window) {
-  GdkDisplay* display = gtk_widget_get_display(GTK_WIDGET(window));
-  GdkMonitor* monitor = choose_panel(display);
-  if (monitor == nullptr) return;
-  GdkRectangle geom;
-  gdk_monitor_get_geometry(monitor, &geom);
-  int index = monitor_index(display, monitor);
+// Fullscreen tells Lomiri to hide the indicator panel. That is only for video.
+// Maximized fills the stage underneath the panel.
+void use_application_stage(GtkWindow* window) {
   gtk_window_set_decorated(window, FALSE);
-  gtk_window_set_default_size(window, geom.width, geom.height);
-  gtk_window_move(window, geom.x, geom.y);
-  gtk_window_resize(window, geom.width, geom.height);
-  gtk_window_fullscreen_on_monitor(window, gtk_widget_get_screen(GTK_WIDGET(window)),
-                                   index);
-  g_message("fit logical %dx%d+%d+%d monitor=%d widget_scale=%d", geom.width,
-            geom.height, geom.x, geom.y, index,
-            gtk_widget_get_scale_factor(GTK_WIDGET(window)));
+  gtk_window_unfullscreen(window);
+  gtk_window_maximize(window);
 }
 
-void on_map(GtkWidget* widget, gpointer) {
-  fit_window(GTK_WINDOW(widget));
+gboolean on_configure(GtkWidget*, GdkEventConfigure* event, gpointer) {
+  static int last_width = 0;
+  static int last_height = 0;
+  if (event->width == last_width && event->height == last_height) return FALSE;
+  last_width = event->width;
+  last_height = event->height;
+  g_message("configure %dx%d+%d+%d", event->width, event->height, event->x,
+            event->y);
+  return FALSE;
+}
+
+gboolean on_window_state(GtkWidget*, GdkEventWindowState* event, gpointer) {
+  g_message("window state new=0x%x changed=0x%x", event->new_window_state,
+            event->changed_mask);
+  return FALSE;
 }
 
 }  // namespace
@@ -141,11 +136,12 @@ extern "C" int gastube_ubuntu_touch_main(int argc, char** argv) {
             scale);
 
   GtkWidget* window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-  gtk_window_set_decorated(GTK_WINDOW(window), FALSE);
   gtk_window_set_title(GTK_WINDOW(window), "");
   g_signal_connect(window, "destroy", G_CALLBACK(on_destroy), nullptr);
-  g_signal_connect(window, "map", G_CALLBACK(on_map), nullptr);
-  fit_window(GTK_WINDOW(window));
+  g_signal_connect(window, "configure-event", G_CALLBACK(on_configure), nullptr);
+  g_signal_connect(window, "window-state-event", G_CALLBACK(on_window_state),
+                   nullptr);
+  use_application_stage(GTK_WINDOW(window));
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   FlView* view = fl_view_new(project);
@@ -155,7 +151,7 @@ extern "C" int gastube_ubuntu_touch_main(int argc, char** argv) {
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
 
   gtk_widget_show_all(window);
-  fit_window(GTK_WINDOW(window));
+  use_application_stage(GTK_WINDOW(window));
 
   GdkWindow* gdk_window = gtk_widget_get_window(window);
   g_autoptr(GError) error = nullptr;
