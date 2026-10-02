@@ -101,6 +101,21 @@ endif()
 if(DEFINED ENV{GASTUBE_SQLITE_SRC})
   set(FETCHCONTENT_SOURCE_DIR_SQLITE3 "$ENV{GASTUBE_SQLITE_SRC}")
 endif()
+# The Ubuntu Touch container exports GASTUBE_UBUNTU_TOUCH. Desktop builds do
+# not, so they keep GtkApplication, the header bar, and libmpv.
+if(DEFINED ENV{GASTUBE_UBUNTU_TOUCH})
+  target_compile_definitions(${BINARY_NAME} PRIVATE "GASTUBE_UBUNTU_TOUCH=1")
+  target_sources(${BINARY_NAME} PRIVATE
+    "ubuntu_touch_main.cc"
+    "ubuntu_touch_scale.cc"
+  )
+  # libflutter looks up GTK symbols globally. Exporting the scale wrappers
+  # lets them replace the Wayland scale of 1 for the Flutter view only.
+  target_link_options(${BINARY_NAME} PRIVATE "-Wl,--export-dynamic")
+  target_link_libraries(${BINARY_NAME} PRIVATE ${CMAKE_DL_LIBS})
+  set(MEDIA_KIT_LIBS_AVAILABLE OFF CACHE BOOL
+      "Ubuntu Touch phase 1 does not link libmpv" FORCE)
+endif()
 include(flutter/generated_plugins.cmake)
 
 

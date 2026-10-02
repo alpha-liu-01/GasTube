@@ -5,6 +5,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:fluxtube/core/services/pip_service.dart';
+import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:fluxtube/core/services/audio_handler_service.dart';
 import 'package:fluxtube/core/services/exoplayer_notification_bridge.dart';
 
@@ -72,6 +73,10 @@ class GlobalPlayerController extends ChangeNotifier {
   /// Initialize player eagerly to avoid first-play issues
   void _initializePlayer() {
     if (_isInitialized) return;
+    if (UbuntuTouch.enabled) {
+      _isInitialized = true;
+      return;
+    }
     _player = Player(
       configuration: const PlayerConfiguration(
         bufferSize: 8 * 1024 * 1024,
@@ -104,14 +109,22 @@ class GlobalPlayerController extends ChangeNotifier {
     if (_player == null) {
       _initializePlayer();
     }
-    return _player!;
+    final player = _player;
+    if (player == null) {
+      throw StateError('Playback is not included in this Ubuntu Touch build');
+    }
+    return player;
   }
 
   VideoController get videoController {
     if (_videoController == null) {
       _initializePlayer();
     }
-    return _videoController!;
+    final controller = _videoController;
+    if (controller == null) {
+      throw StateError('Playback is not included in this Ubuntu Touch build');
+    }
+    return controller;
   }
 
   String? get currentVideoId => _nativeVideoId ?? _currentVideoId;

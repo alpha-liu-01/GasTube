@@ -25,6 +25,7 @@ import 'package:fluxtube/presentation/watch/widgets/global_pip_overlay.dart';
 import 'package:fluxtube/core/services/audio_handler_service.dart';
 import 'package:fluxtube/core/services/log_collector.dart';
 import 'package:fluxtube/core/services/subscription_notifier.dart';
+import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:fluxtube/core/window_fullscreen.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:screen_brightness/screen_brightness.dart';
@@ -43,8 +44,10 @@ void main() async {
     }
   };
 
-  // Initialize media_kit
-  MediaKit.ensureInitialized();
+  // libmpv is not in the Ubuntu Touch click. Player() would fail to load it.
+  if (!UbuntuTouch.enabled) {
+    MediaKit.ensureInitialized();
+  }
 
   // screen_brightness_windows re-reads monitor brightness on every window
   // resize and focus change. That fails on displays without DDC/CI and logs
@@ -80,10 +83,24 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     // Initialize services after the first frame
     // This ensures the Activity is fully attached and can show permission dialogs
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      DownloadNotificationService().initialize();
-      WindowFullscreen.loadAndApply();
-      // Initialize audio service for background playback notification controls
-      initAudioService();
+      if (UbuntuTouch.enabled) {
+        final view = View.of(context);
+        final logical = view.physicalSize / view.devicePixelRatio;
+        stderr.writeln(
+          'gastube: logical=${logical.width.toStringAsFixed(1)}x'
+          '${logical.height.toStringAsFixed(1)} '
+          'physical=${view.physicalSize.width.toStringAsFixed(0)}x'
+          '${view.physicalSize.height.toStringAsFixed(0)} '
+          'dpr=${view.devicePixelRatio} '
+          'padding=${view.padding}',
+        );
+      }
+      if (!UbuntuTouch.enabled) {
+        DownloadNotificationService().initialize();
+        WindowFullscreen.loadAndApply();
+        // Initialize audio service for background playback notification controls
+        initAudioService();
+      }
       // Look for new uploads from subscribed channels. Self-throttling and a
       // no-op unless the user turned notifications on.
       SubscriptionNotifier().checkForNewVideos();

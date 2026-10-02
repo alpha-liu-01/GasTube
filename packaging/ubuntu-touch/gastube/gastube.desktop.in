@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=GasTube
+Exec=gastube
+Icon=gastube.png
+Terminal=false
+Type=Application
+X-Ubuntu-Touch=true
