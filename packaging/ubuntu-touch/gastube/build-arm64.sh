@@ -38,6 +38,12 @@ if [[ -z "$bundle" ]]; then
   exit 1
 fi
 
+custom_engine=/src/packaging/ubuntu-touch/engine-partial/libflutter_linux_gtk.so
+if [[ -f "$custom_engine" ]]; then
+  cp "$custom_engine" "$(dirname "$bundle")/lib/libflutter_linux_gtk.so"
+  echo "replaced libflutter_linux_gtk.so with the partial-repaint build"
+fi
+
 # GTK on this image has im-wayland.so, and Mir does not offer a text-input
 # global for it. Ship Maliit's GTK module inside the bundle instead of
 # installing it into the rootfs.

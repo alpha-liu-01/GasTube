@@ -108,6 +108,7 @@ if(DEFINED ENV{GASTUBE_UBUNTU_TOUCH})
   target_sources(${BINARY_NAME} PRIVATE
     "ubuntu_touch_main.cc"
     "ubuntu_touch_scale.cc"
+    "ubuntu_touch_present.cc"
   )
   # libflutter looks up GTK symbols globally. Exporting the scale wrappers
   # lets them replace the Wayland scale of 1 for the Flutter view only.

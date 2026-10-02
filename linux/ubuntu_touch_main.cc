@@ -12,6 +12,8 @@
 
 #include "flutter/generated_plugin_registrant.h"
 
+void gastube_ut_install_present_hook(GtkWidget* view);
+
 namespace {
 
 void on_destroy(GtkWidget*, gpointer) {
@@ -247,6 +249,7 @@ extern "C" int gastube_ubuntu_touch_main(int argc, char** argv) {
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   FlView* view = fl_view_new(project);
+  gastube_ut_install_present_hook(GTK_WIDGET(view));
   GdkRGBA background = {1.0, 1.0, 1.0, 1.0};
   fl_view_set_background_color(view, &background);
   gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(view));

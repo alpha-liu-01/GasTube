@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""Enable partial repaint in a Flutter 3.47.1 engine tree.
+
+The Linux GTK compositor does not render into the window surface. The
+offscreen frame therefore never advertises partial repaint, the rasterizer
+forces a full repaint because an external view embedder is set, and that
+embedder clears the reused compositor FBO every frame. Together those three
+choices discard the damage the rasterizer already knows how to compute.
+
+This patch is applied only to the arm64 library built for Ubuntu Touch.
+"""
+
+import pathlib
+import sys
+
+IMPELLER_OLD = """  if (!render_to_surface_) {
+    return std::make_unique<SurfaceFrame>(
+        nullptr, SurfaceFrame::FramebufferInfo{.supports_readback = true},
+        [](const SurfaceFrame& surface_frame, DlCanvas* canvas) {
+          return true;
+        },
+        [](const SurfaceFrame& surface_frame) { return true; }, size);
+  }
+"""
+
+IMPELLER_NEW = """  if (!render_to_surface_) {
+    // The GTK compositor keeps one FBO and copies it to the window. An empty
+    // existing-damage rect tells the rasterizer that this FBO still holds the
+    // previous frame, so only the dirty display-list bounds need to be drawn.
+    SurfaceFrame::FramebufferInfo info;
+    info.supports_readback = true;
+    info.supports_partial_repaint = true;
+    info.horizontal_clip_alignment = 32;
+    info.vertical_clip_alignment = 32;
+    info.existing_damage = DlIRect::MakeLTRB(0, 0, 0, 0);
+    return std::make_unique<SurfaceFrame>(
+        nullptr, info,
+        [](const SurfaceFrame& surface_frame, DlCanvas* canvas) {
+          return true;
+        },
+        [](const SurfaceFrame& surface_frame) { return true; }, size);
+  }
+"""
+
+RASTER_OLD = """      // Disable partial repaint if external_view_embedder_ SubmitFlutterView is
+      // involved - ExternalViewEmbedder unconditionally clears the entire
+      // surface and also partial repaint with platform view present is
+      // something that still need to be figured out.
+      bool force_full_repaint =
+          external_view_embedder_ &&
+          (!raster_thread_merger_ || raster_thread_merger_->IsMerged());
+"""
+
+RASTER_NEW = """      // Ubuntu Touch build: the compositor FBO is cleared only on the first
+      // frame of a given size (see RenderFlutterContents*). Later frames keep
+      // the previous pixels, so the external-view path can use the damage
+      // rect. This library is not the desktop Flutter engine.
+      bool force_full_repaint = false;
+"""
+
+CLEAR_OLD = """    bool clear_surface = true;
+    for (auto c : flutter_contents_) {"""
+
+CLEAR_NEW = """    static int64_t preserved_w = -1;
+    static int64_t preserved_h = -1;
+    const auto preserved_size = flutter_contents_.empty()
+                                    ? DlISize()
+                                    : flutter_contents_.front()->GetRenderSurfaceSize();
+    const bool preserve = preserved_w == preserved_size.width &&
+                          preserved_h == preserved_size.height;
+    bool clear_surface = !preserve;
+    if (!preserve && preserved_size.width > 0 && preserved_size.height > 0) {
+      preserved_w = preserved_size.width;
+      preserved_h = preserved_size.height;
+    }
+    for (auto c : flutter_contents_) {"""
+
+
+def replace_once(path: pathlib.Path, old: str, new: str, expected: int) -> None:
+    text = path.read_text()
+    found = text.count(old)
+    if found != expected:
+        raise SystemExit(f"{path}: expected {expected} occurrence(s), found {found}")
+    path.write_text(text.replace(old, new))
+
+
+def main() -> None:
+    root = pathlib.Path(sys.argv[1]).resolve()
+    replace_once(
+        root / "shell/gpu/gpu_surface_gl_impeller.cc",
+        IMPELLER_OLD,
+        IMPELLER_NEW,
+        1,
+    )
+    replace_once(
+        root / "shell/common/rasterizer.cc",
+        RASTER_OLD,
+        RASTER_NEW,
+        1,
+    )
+    replace_once(
+        root / "shell/platform/embedder/embedder_external_view_embedder.cc",
+        CLEAR_OLD,
+        CLEAR_NEW,
+        2,
+    )
+    print(f"partial repaint patch applied in {root}")
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        raise SystemExit(f"usage: {sys.argv[0]} /path/to/engine/src/flutter")
+    main()
