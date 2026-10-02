@@ -19,4 +19,4 @@ ARG CLICK_PATH="/home/alpha/Documents/GitHub/FluxTube/packaging/ubuntu-touch/pro
 ARG CLICK_QML2_IMPORT_PATH="/home/alpha/Documents/GitHub/FluxTube/packaging/ubuntu-touch/probe/build/aarch64-linux-gnu/app/install/lib/aarch64-linux-gnu"
 
 RUN echo set debconf/frontend Noninteractive | debconf-communicate && echo set debconf/priority critical | debconf-communicate
-RUN apt-get update && apt-get install -y --force-yes --no-install-recommends libgtk-3-dev:arm64 && apt-get clean
+RUN apt-get update && apt-get install -y --force-yes --no-install-recommends libgtk-3-dev:arm64 libegl1-mesa-dev:arm64 libgles2-mesa-dev:arm64 && apt-get clean

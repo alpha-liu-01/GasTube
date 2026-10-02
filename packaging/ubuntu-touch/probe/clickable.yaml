@@ -4,3 +4,5 @@ framework: ubuntu-sdk-20.04
 restrict_arch: arm64
 dependencies_target:
   - libgtk-3-dev
+  - libegl1-mesa-dev
+  - libgles2-mesa-dev
