@@ -76,8 +76,50 @@ CLEAR_NEW = """    static int64_t preserved_w = -1;
     for (auto c : flutter_contents_) {"""
 
 
+LOAD_OLD = """    auto* impeller_target = render_target_->GetImpellerRenderTarget();
+    auto aiks_context = render_target_->GetAiksContext();
+    auto cull_rect =
+        impeller::Rect::MakeSize(impeller_target->GetRenderTargetSize());
+"""
+
+LOAD_NEW = """    auto* impeller_target = render_target_->GetImpellerRenderTarget();
+    auto aiks_context = render_target_->GetAiksContext();
+    auto cull_rect =
+        impeller::Rect::MakeSize(impeller_target->GetRenderTargetSize());
+    if (preserve) {
+      // Impeller clears the first color pass unless the attachment asks to
+      // load. The previous frame is still in this FBO.
+      auto color0 = impeller_target->GetColorAttachment(0);
+      color0.load_action = impeller::LoadAction::kLoad;
+      impeller_target->SetColorAttachment(color0, 0);
+    }
+"""
+
+INLINE_OLD = """  if (pass_count_ > 0) {
+    color0.load_action = is_msaa ? LoadAction::kClear : LoadAction::kLoad;
+  } else {
+    color0.load_action = LoadAction::kClear;
+  }
+"""
+
+INLINE_NEW = """  // A reused compositor FBO asks for kLoad so pixels outside this frame's
+  // dirty clip stay. Explicit MSAA resolves from a transient buffer, which
+  // cannot be loaded. Implicit MSAA uses one texture and can.
+  const bool inplace_msaa =
+      is_msaa && color0.resolve_texture == color0.texture;
+  const bool can_load = !is_msaa || inplace_msaa;
+  if (pass_count_ > 0) {
+    color0.load_action = can_load ? LoadAction::kLoad : LoadAction::kClear;
+  } else if (color0.load_action != LoadAction::kLoad || !can_load) {
+    color0.load_action = LoadAction::kClear;
+  }
+"""
+
+
 def replace_once(path: pathlib.Path, old: str, new: str, expected: int) -> None:
     text = path.read_text()
+    if old not in text and new in text:
+        return
     found = text.count(old)
     if found != expected:
         raise SystemExit(f"{path}: expected {expected} occurrence(s), found {found}")
@@ -103,6 +145,18 @@ def main() -> None:
         CLEAR_OLD,
         CLEAR_NEW,
         2,
+    )
+    replace_once(
+        root / "shell/platform/embedder/embedder_external_view_embedder.cc",
+        LOAD_OLD,
+        LOAD_NEW,
+        1,
+    )
+    replace_once(
+        root / "impeller/entity/inline_pass_context.cc",
+        INLINE_OLD,
+        INLINE_NEW,
+        1,
     )
     print(f"partial repaint patch applied in {root}")
 

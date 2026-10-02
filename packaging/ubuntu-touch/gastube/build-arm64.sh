@@ -38,11 +38,15 @@ if [[ -z "$bundle" ]]; then
   exit 1
 fi
 
+# Route B: Impeller presents to a Wayland subsurface. Desktop builds keep
+# the official engine; only this Click replaces the library.
 custom_engine=/src/packaging/ubuntu-touch/engine-partial/libflutter_linux_gtk.so
-if [[ -f "$custom_engine" ]]; then
-  cp "$custom_engine" "$(dirname "$bundle")/lib/libflutter_linux_gtk.so"
-  echo "replaced libflutter_linux_gtk.so with the partial-repaint build"
+if [[ ! -f "$custom_engine" ]]; then
+  echo "onscreen engine library is missing: $custom_engine" >&2
+  exit 1
 fi
+cp "$custom_engine" "$(dirname "$bundle")/lib/libflutter_linux_gtk.so"
+echo "replaced libflutter_linux_gtk.so with the onscreen present build"
 
 # GTK on this image has im-wayland.so, and Mir does not offer a text-input
 # global for it. Ship Maliit's GTK module inside the bundle instead of

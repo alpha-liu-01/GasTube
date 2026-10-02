@@ -10,7 +10,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 
 export PATH="$tools:$PATH"
 cd "$root/src/engine/src"
-python3 "$here/apply-partial-repaint.py" flutter
+# Partial repaint is not applied. The Click uses the official engine.
 ./flutter/tools/gn \
   --target-os linux \
   --linux-cpu arm64 \
@@ -19,4 +19,6 @@ python3 "$here/apply-partial-repaint.py" flutter
   --no-goma \
   --no-enable-unittests
 ninja -C out/linux_release_arm64 -j 16 flutter/shell/platform/linux:flutter_linux_gtk
-echo "built $root/src/engine/src/out/linux_release_arm64/libflutter_linux_gtk.so"
+built=$root/src/engine/src/out/linux_release_arm64/libflutter_linux_gtk.so
+cp "$built" "$here/libflutter_linux_gtk.so"
+echo "built $built"

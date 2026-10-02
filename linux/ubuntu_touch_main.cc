@@ -259,16 +259,10 @@ extern "C" int gastube_ubuntu_touch_main(int argc, char** argv) {
   use_application_stage(GTK_WINDOW(window));
   log_im_context(window);
 
-  GdkWindow* gdk_window = gtk_widget_get_window(window);
-  g_autoptr(GError) error = nullptr;
-  GdkGLContext* context = gdk_window_create_gl_context(gdk_window, &error);
-  if (context == nullptr) {
-    g_warning("GDK_GL=gles context failed: %s",
-              error != nullptr ? error->message : "unknown");
-  } else {
-    g_message("GDK_GL=gles context created");
-    g_object_unref(context);
-  }
+  // Do not call gdk_window_create_gl_context. That installs GTK's paint GL
+  // context, and every later expose uploads this white background and swaps
+  // it onto the same wl_surface Impeller is presenting.
+  g_message("GDK_GL=gles; paint context left unset so exposes do not swap white");
 
   gtk_main();
   return 0;
