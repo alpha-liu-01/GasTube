@@ -1,11 +1,14 @@
 #include <flutter_linux/flutter_linux.h>
 
 #include <gdk/gdk.h>
+#include <gdk/gdkwayland.h>
 #include <gtk/gtk.h>
 
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits.h>
+#include <unistd.h>
 
 #include "flutter/generated_plugin_registrant.h"
 
@@ -112,17 +115,116 @@ gboolean on_window_state(GtkWidget*, GdkEventWindowState* event, gpointer) {
   return FALSE;
 }
 
+// Lomiri sets GTK_IM_MODULE=Maliit. The 6T image has no im-maliit.so, so GTK
+// would look up a module that is not there. Drop the session value before
+// gtk_init; choose_input_method() puts a real module in place afterwards.
+void clear_session_im_module() {
+  const char* value = g_getenv("GTK_IM_MODULE");
+  g_message("GTK_IM_MODULE from session=%s",
+            value != nullptr ? value : "(unset)");
+  if (value != nullptr) {
+    g_unsetenv("GTK_IM_MODULE");
+  }
+}
+
+bool wayland_registry_has(GdkDisplay* display, const char* name) {
+  if (display == nullptr || !GDK_IS_WAYLAND_DISPLAY(display)) return false;
+  return gdk_wayland_display_query_registry(display, name);
+}
+
+// Mir on this image does not advertise a text-input global, so im-wayland.so
+// has nothing to bind. The Click ships im-maliit.so and talks to maliit-server
+// over the D-Bus socket the default Click policy already allows.
+bool use_bundled_maliit() {
+  char exe[PATH_MAX];
+  ssize_t length = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+  if (length < 0) {
+    g_warning("readlink /proc/self/exe failed");
+    return false;
+  }
+  exe[length] = '\0';
+  g_autofree char* dir = g_path_get_dirname(exe);
+  g_autofree char* so_path = g_build_filename(dir, "lib", "im-maliit.so", nullptr);
+  if (!g_file_test(so_path, G_FILE_TEST_IS_REGULAR)) {
+    g_warning("im-maliit.so missing at %s", so_path);
+    return false;
+  }
+
+  g_autofree char* cache_dir =
+      g_build_filename(g_get_user_cache_dir(), "gastube.alphaliu01", nullptr);
+  if (g_mkdir_with_parents(cache_dir, 0700) != 0) {
+    g_warning("cannot create %s", cache_dir);
+    return false;
+  }
+  g_autofree char* cache_path =
+      g_build_filename(cache_dir, "immodules.cache", nullptr);
+  g_autofree char* body = g_strdup_printf(
+      "# GTK+ Input Method Modules file\n"
+      "\"%s\"\n"
+      "\"maliit\" \"Maliit\" \"gtk30\" \"\" \"\"\n",
+      so_path);
+  g_autoptr(GError) error = nullptr;
+  if (!g_file_set_contents(cache_path, body, -1, &error)) {
+    g_warning("cannot write %s: %s", cache_path,
+              error != nullptr ? error->message : "unknown");
+    return false;
+  }
+
+  g_setenv("GTK_IM_MODULE_FILE", cache_path, TRUE);
+  g_setenv("GTK_IM_MODULE", "maliit", TRUE);
+  g_message("GTK_IM_MODULE=maliit so=%s cache=%s", so_path, cache_path);
+  return true;
+}
+
+void choose_input_method() {
+  GdkDisplay* display = gdk_display_get_default();
+  bool text_input_v3 =
+      wayland_registry_has(display, "zwp_text_input_manager_v3");
+  bool gtk_text_input =
+      wayland_registry_has(display, "gtk_text_input_manager");
+  g_message("wayland text-input v3=%d gtk_text_input_manager=%d",
+            text_input_v3, gtk_text_input);
+  if (text_input_v3) {
+    g_message("Wayland text-input v3 is present; GTK selects im-wayland");
+    return;
+  }
+  if (gtk_text_input) {
+    g_setenv("GTK_IM_MODULE", "waylandgtk", TRUE);
+    g_message("GTK_IM_MODULE=waylandgtk");
+    return;
+  }
+  g_message("no Wayland text-input global; using the bundled Maliit module");
+  use_bundled_maliit();
+}
+
+void log_im_context(GtkWidget* window) {
+  GtkIMContext* im = gtk_im_multicontext_new();
+  GdkWindow* gdk_window = gtk_widget_get_window(window);
+  if (gdk_window != nullptr) {
+    gtk_im_context_set_client_window(im, gdk_window);
+  }
+  const char* id =
+      gtk_im_multicontext_get_context_id(GTK_IM_MULTICONTEXT(im));
+  const char* module = g_getenv("GTK_IM_MODULE");
+  g_message("im context id=%s GTK_IM_MODULE=%s", id != nullptr ? id : "(null)",
+            module != nullptr ? module : "(unset)");
+  g_object_unref(im);
+}
+
 }  // namespace
 
 void gastube_ut_set_scale(int scale);
 
 // Lomiri gives this process a Wayland surface and libhybris EGL. GTK's
 // default desktop GL context fails there; GLES is the context that painted
-// the Phase 0 hello. There is no GTK3 Maliit module on the 6T image.
+// the Phase 0 hello. The soft keyboard is Maliit over D-Bus, chosen after
+// gtk_init once the Wayland registry is known.
 extern "C" int gastube_ubuntu_touch_main(int argc, char** argv) {
   setenv("GDK_GL", "gles", 1);
+  clear_session_im_module();
   int scale = flutter_scale();
   gtk_init(&argc, &argv);
+  choose_input_method();
   log_scale_environment();
   if (scale <= 1) {
     GdkMonitor* panel = choose_panel(gdk_display_get_default());
@@ -152,6 +254,7 @@ extern "C" int gastube_ubuntu_touch_main(int argc, char** argv) {
 
   gtk_widget_show_all(window);
   use_application_stage(GTK_WINDOW(window));
+  log_im_context(window);
 
   GdkWindow* gdk_window = gtk_widget_get_window(window);
   g_autoptr(GError) error = nullptr;

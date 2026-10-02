@@ -38,6 +38,16 @@ if [[ -z "$bundle" ]]; then
   exit 1
 fi
 
+# GTK on this image has im-wayland.so, and Mir does not offer a text-input
+# global for it. Ship Maliit's GTK module inside the bundle instead of
+# installing it into the rootfs.
+gcc -shared -fPIC -O2 -Wall \
+  $(pkg-config --cflags gtk+-3.0) \
+  -o "$(dirname "$bundle")/lib/im-maliit.so" \
+  /src/third_party/im-maliit/im-maliit.c \
+  $(pkg-config --libs gtk+-3.0 gio-2.0) \
+  -Wl,--no-undefined
+
 out=/src/packaging/ubuntu-touch/gastube/dist
 rm -rf "$out"
 mkdir -p "$out"
