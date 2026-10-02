@@ -1,0 +1,15 @@
+{
+    "name": "hello.alphaliu01",
+    "description": "Flutter Linux hello for the GasTube Ubuntu Touch port",
+    "architecture": "@CLICK_ARCH@",
+    "title": "GasTube Hello",
+    "version": "0.1.0",
+    "framework": "@CLICK_FRAMEWORK@",
+    "maintainer": "alpha-liu-01 <alpha-liu-01@users.noreply.github.com>",
+    "hooks": {
+        "hello": {
+            "apparmor": "hello.apparmor",
+            "desktop": "hello.desktop"
+        }
+    }
+}

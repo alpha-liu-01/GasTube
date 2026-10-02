@@ -1,0 +1,14 @@
+name: hello
+description: Flutter Linux hello for the GasTube Ubuntu Touch Phase 0 probe.
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.13.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
