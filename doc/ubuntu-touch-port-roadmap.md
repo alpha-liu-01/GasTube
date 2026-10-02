@@ -93,7 +93,7 @@ packaging/ubuntu-touch/
 工作：
 
 1. 固定 Flutter 3.47.1、Dart、Clickable 和构建容器版本。
-2. 在原生 arm64 runner 上执行 `flutter build linux --release`。当前 Flutter 不支持从 x64 主机直接交叉构建 Linux arm64，因此不要把 `--target-platform linux-arm64` 当成可用方案。
+2. 在 Ubuntu 20.04 arm64 容器里执行 `flutter build linux --release`。当前 Flutter 不支持从 Linux x64 主机交叉构建 Linux arm64。容器运行在 Apple Silicon 的 Docker 上，使用原生 `linux/arm64`，不使用 qemu。不要在 glibc 高于 2.31 的系统上直接编译，否则 runner 无法在 Focal 测试机上加载。官方 `libflutter_linux_gtk.so`、`gen_snapshot` 和 arm64 Dart SDK 本身只要求到 `GLIBC_2.18`。
 3. 记录 Flutter arm64 engine artifact 的下载结果；如果 3.47.1 的官方 artifact 不可用，先冻结到最后一个可复现的 engine artifact，或在 CI 中自建 engine。不能静默改用另一个 Flutter 版本。
 4. 分别对 Focal 与 Noble 建立 sysroot/容器实验，检查 `glibc`、GTK3、libstdc++、SQLite 插件和 Flutter engine 的动态依赖。
 5. 先构建一个只显示版本和架构的最小 Click，验证安装、启动、旋转、触摸和 suspend/resume。
@@ -285,7 +285,7 @@ packaging/ubuntu-touch/
 
 ### Flutter Linux arm64 工具链
 
-风险最高。现有脚本对 aarch64 有分支，但还不能代替可复现真机构建证据。若官方 engine artifact 缺失，短期回退是固定已验证 artifact；长期回退是维护自建 Flutter engine。不要在路线中承诺 x64 交叉编译。
+Flutter 3.47.1 的 arm64 GTK 引擎包存在，且引擎、`gen_snapshot` 和 Dart SDK 的 glibc 需求不超过 2.18。剩下的风险是 runner 的链接环境。构建放在 Ubuntu 20.04 arm64 容器中，让它和 OnePlus 6T 的 glibc 2.31 对齐。若容器路线失败，再回到固定已验证的 engine artifact 或自建 engine。不要在路线中承诺从 Linux x64 交叉编译。
 
 ### 视频纹理与硬解
 
