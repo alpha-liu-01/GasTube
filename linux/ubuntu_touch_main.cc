@@ -216,12 +216,14 @@ void log_im_context(GtkWidget* window) {
 }  // namespace
 
 void gastube_ut_set_scale(int scale);
+extern "C" void gastube_ut_probe_media_codec();
 
 // Lomiri gives this process a Wayland surface and libhybris EGL. GTK's
 // default desktop GL context fails there; GLES is the context that painted
 // the Phase 0 hello. The soft keyboard is Maliit over D-Bus, chosen after
 // gtk_init once the Wayland registry is known.
 extern "C" int gastube_ubuntu_touch_main(int argc, char** argv) {
+  gastube_ut_probe_media_codec();
   setenv("GDK_GL", "gles", 1);
   clear_session_im_module();
   int scale = flutter_scale();

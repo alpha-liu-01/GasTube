@@ -25,7 +25,13 @@ max_glibcxx = (3, 4, 28)
 max_cxxabi = (1, 3, 12)
 paths = [bundle / "gastube", bundle / "jre" / "bin" / "java"]
 paths.extend(sorted((bundle / "lib").glob("*.so")))
+paths.extend(sorted(path for path in (bundle / "lib").glob("*.so.*") if not path.is_symlink()))
 paths.extend(sorted((bundle / "jre").rglob("*.so")))
+probe = bundle / "playback-probe.mp4"
+if not probe.is_file() or probe.stat().st_size < 1000:
+    raise SystemExit("playback-probe.mp4 is missing")
+if not (bundle / "lib" / "libmpv.so.2").exists():
+    raise SystemExit("bundled libmpv.so.2 is missing")
 
 def version_tuples(text, prefix):
     found = []
@@ -41,6 +47,7 @@ def needed(dynamic):
             names.append(line.split("[", 1)[1].split("]", 1)[0])
     return names
 
+plugin_links_mpv = False
 for path in paths:
     header = subprocess.check_output(["readelf", "-h", str(path)], text=True)
     dynamic = subprocess.check_output(["readelf", "-d", str(path)], text=True)
@@ -48,12 +55,14 @@ for path in paths:
     print(f"== {path.name}")
     libs = needed(dynamic)
     print("NEEDED:", ", ".join(libs))
-    if "/home/" in dynamic or "x86_64" in dynamic:
+    if "/home/" in dynamic or "/opt/" in dynamic or "x86_64" in dynamic:
         raise SystemExit(f"{path} has a host absolute library path")
     if "AArch64" not in header:
         raise SystemExit(f"{path} is not an AArch64 ELF")
-    if any(name.startswith("libmpv") for name in libs):
-        raise SystemExit(f"{path} links libmpv")
+    if path.name == "libmedia_kit_video_plugin.so" and any(
+        name.startswith("libmpv") for name in libs
+    ):
+        plugin_links_mpv = True
     for label, value in version_tuples(versions, "GLIBC_"):
         if value > max_glibc:
             raise SystemExit(f"{path} needs {label}, newer than glibc 2.31")
@@ -64,5 +73,8 @@ for path in paths:
         if value > max_cxxabi:
             raise SystemExit(f"{path} needs {label}, newer than CXXABI_1.3.12")
 
-print("bundle matches Focal glibc 2.31 and does not link libmpv")
+if not plugin_links_mpv:
+    raise SystemExit("media_kit video plugin does not link libmpv")
+
+print("bundle matches Focal glibc 2.31 and includes libmpv")
 PY

@@ -26,6 +26,9 @@ export PATH="/opt/flutter/bin:${PATH}"
 export PUB_CACHE=/opt/pub-cache
 export FLUTTER_SUPPRESS_ANALYTICS=true
 export GASTUBE_UBUNTU_TOUCH=1
+bash /src/packaging/ubuntu-touch/gastube/build-playback.sh
+export PKG_CONFIG_PATH="/opt/gastube-playback/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+export LD_LIBRARY_PATH="/opt/gastube-playback/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 flutter config --no-analytics --enable-linux-desktop
 flutter --version
 cd /src
@@ -47,6 +50,35 @@ if [[ ! -f "$custom_engine" ]]; then
 fi
 cp "$custom_engine" "$(dirname "$bundle")/lib/libflutter_linux_gtk.so"
 echo "replaced libflutter_linux_gtk.so with the onscreen present build"
+
+bundle_dir=$(dirname "$bundle")
+shopt -s nullglob
+copied=0
+for so in /opt/gastube-playback/lib/libmpv.so* \
+          /opt/gastube-playback/lib/libav*.so* \
+          /opt/gastube-playback/lib/libsw*.so* \
+          /opt/gastube-playback/lib/libpostproc.so* \
+          /opt/gastube-playback/lib/libass.so*; do
+  cp -a "$so" "$bundle_dir/lib/"
+  copied=1
+done
+shopt -u nullglob
+if [[ "$copied" != 1 || ! -e "$bundle_dir/lib/libmpv.so.2" ]]; then
+  echo "libmpv.so.2 was not copied into the bundle" >&2
+  exit 1
+fi
+cp /opt/gastube-playback/share/playback-probe.mp4 "$bundle_dir/playback-probe.mp4"
+for so in "$bundle_dir"/lib/libmpv.so* \
+          "$bundle_dir"/lib/libav*.so* \
+          "$bundle_dir"/lib/libsw*.so* \
+          "$bundle_dir"/lib/libpostproc.so* \
+          "$bundle_dir"/lib/libass.so* \
+          "$bundle_dir"/lib/libmedia_kit_video_plugin.so; do
+  if [[ -f "$so" && ! -L "$so" ]]; then
+    patchelf --set-rpath '$ORIGIN' "$so"
+  fi
+done
+echo "copied libmpv and playback-probe.mp4 into the bundle"
 
 # Jar and JRE sit next to the executable. The sidecar does not use the
 # process working directory or the system java.

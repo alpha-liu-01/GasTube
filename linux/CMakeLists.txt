@@ -109,15 +109,23 @@ if(DEFINED ENV{GASTUBE_UBUNTU_TOUCH})
     "ubuntu_touch_main.cc"
     "ubuntu_touch_scale.cc"
     "ubuntu_touch_present.cc"
+    "ubuntu_touch_media_probe.cc"
   )
   # libflutter looks up GTK symbols globally. Exporting the scale wrappers
   # lets them replace the Wayland scale of 1 for the Flutter view only.
   target_link_options(${BINARY_NAME} PRIVATE "-Wl,--export-dynamic")
   target_link_libraries(${BINARY_NAME} PRIVATE ${CMAKE_DL_LIBS})
-  set(MEDIA_KIT_LIBS_AVAILABLE OFF CACHE BOOL
-      "Ubuntu Touch phase 1 does not link libmpv" FORCE)
+  # Phase 3 links the libmpv built in this container. Desktop builds do not
+  # set GASTUBE_UBUNTU_TOUCH, so they keep the system libmpv.
+  set(MEDIA_KIT_LIBS_AVAILABLE ON CACHE BOOL
+      "Ubuntu Touch click ships its own libmpv" FORCE)
 endif()
 include(flutter/generated_plugins.cmake)
+if(DEFINED ENV{GASTUBE_UBUNTU_TOUCH} AND TARGET media_kit_video_plugin)
+  set_target_properties(media_kit_video_plugin PROPERTIES
+    BUILD_RPATH "\$ORIGIN"
+    INSTALL_RPATH "\$ORIGIN")
+endif()
 
 
 # === Installation ===

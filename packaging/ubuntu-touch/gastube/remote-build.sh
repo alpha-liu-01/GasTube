@@ -33,6 +33,7 @@ ssh "$host" "set -euo pipefail
     -v \$HOME/$remote:/src \
     -v gastube-flutter-sdk:/opt/flutter \
     -v gastube-flutter-pub:/opt/pub-cache \
+    -v gastube-playback-prefix:/opt/gastube-playback \
     -w /src \
     gastube-flutter-focal-ut:20.04 \
     bash /src/packaging/ubuntu-touch/gastube/build-arm64.sh"

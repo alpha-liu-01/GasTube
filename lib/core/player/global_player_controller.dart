@@ -9,6 +9,17 @@ import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:fluxtube/core/services/audio_handler_service.dart';
 import 'package:fluxtube/core/services/exoplayer_notification_bridge.dart';
 
+Future<void> selectUbuntuTouchH264Decoder(Player player) async {
+  if (!UbuntuTouch.enabled) return;
+  const vd = 'h264_hybris,-';
+  await (player.platform as dynamic).setProperty('hwdec', 'no');
+  await (player.platform as dynamic).setProperty('vd', vd);
+  await (player.platform as dynamic)
+      .setProperty('vd-lavc-software-fallback', 'no');
+  final readBack = await (player.platform as dynamic).getProperty('vd');
+  print('gastube: vd-set=$vd vd-read=$readBack fallback=no');
+}
+
 /// Global player controller singleton that persists across navigation
 /// This prevents the player from being recreated/disposed when navigating
 /// between watch screen and PiP mode
@@ -67,16 +78,17 @@ class GlobalPlayerController extends ChangeNotifier {
   }
 
   VideoController _createVideoController(Player player) {
-    return VideoController(player);
+    return VideoController(
+      player,
+      configuration: VideoControllerConfiguration(
+        hwdec: UbuntuTouch.enabled ? 'no' : null,
+      ),
+    );
   }
 
   /// Initialize player eagerly to avoid first-play issues
   void _initializePlayer() {
     if (_isInitialized) return;
-    if (UbuntuTouch.enabled) {
-      _isInitialized = true;
-      return;
-    }
     _player = Player(
       configuration: const PlayerConfiguration(
         bufferSize: 8 * 1024 * 1024,
@@ -93,6 +105,14 @@ class GlobalPlayerController extends ChangeNotifier {
       await (_player!.platform as dynamic).setProperty('hr-seek', 'no');
     } catch (e) {
       log('[GlobalPlayer] Could not tune native seek mode: $e');
+    }
+    if (!UbuntuTouch.enabled) return;
+    try {
+      await (_player!.platform as dynamic).setProperty('ao', 'pulse');
+      await selectUbuntuTouchH264Decoder(_player!);
+      log('[GlobalPlayer] Audio output is PulseAudio, decoder is h264_hybris');
+    } catch (e) {
+      log('[GlobalPlayer] Could not select PulseAudio: $e');
     }
   }
 

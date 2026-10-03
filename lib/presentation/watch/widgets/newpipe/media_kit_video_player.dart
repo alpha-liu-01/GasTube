@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:fluxtube/application/application.dart';
 import 'package:fluxtube/core/player/global_player_controller.dart';
+import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:fluxtube/domain/saved/models/local_store.dart';
 import 'package:fluxtube/domain/sponsorblock/models/sponsor_segment.dart';
 import 'package:fluxtube/domain/watch/models/newpipe/newpipe_stream.dart';
@@ -194,8 +195,8 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
         widget.watchInfo.videoStreams!.isNotEmpty) {
       debugPrint(
           '[NewPipePlayer] watchInfo updated for same video, updating qualities');
-      _availableQualities =
-          NewPipeStreamHelper.getAvailableQualities(widget.watchInfo);
+      _availableQualities = _qualitiesForThisBuild(
+          NewPipeStreamHelper.getAvailableQualities(_watchForThisBuild));
       _availableAudioTracks = NewPipeStreamHelper.getAvailableAudioTracks(
           widget.watchInfo.audioStreams ?? []);
     }
@@ -204,8 +205,8 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
   /// Synchronous restore from PiP - no loading state needed since player is already playing
   void _restoreFromPipSync() {
     // Get available qualities for UI
-    _availableQualities =
-        NewPipeStreamHelper.getAvailableQualities(widget.watchInfo);
+    _availableQualities = _qualitiesForThisBuild(
+        NewPipeStreamHelper.getAvailableQualities(_watchForThisBuild));
     _availableAudioTracks = NewPipeStreamHelper.getAvailableAudioTracks(
         widget.watchInfo.audioStreams ?? []);
     _currentQualityLabel = widget.defaultQuality;
@@ -227,10 +228,10 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
 
     // Resolve config for UI controls
     _currentConfig = _resolver.resolve(
-      watchResp: widget.watchInfo,
+      watchResp: _watchForThisBuild,
       preferredQuality: widget.defaultQuality,
       preferHighQuality: true,
-      preferAdaptive: widget.preferAdaptivePlayback,
+      preferAdaptive: _preferAdaptive,
     );
 
     // Mark as initialized immediately - player is already playing
@@ -240,6 +241,29 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     _globalPlayer.exitPipMode();
 
     debugPrint('[NewPipePlayer] Restored from PiP successfully (sync)');
+  }
+
+  bool get _preferAdaptive =>
+      UbuntuTouch.enabled ? false : widget.preferAdaptivePlayback;
+
+  NewPipeWatchResp get _watchForThisBuild => UbuntuTouch.enabled
+      ? widget.watchInfo.h264VideoOnly()
+      : widget.watchInfo;
+
+  List<StreamQualityInfo> _qualitiesForThisBuild(
+      List<StreamQualityInfo> qualities) {
+    if (!UbuntuTouch.enabled) return qualities;
+    final capped = qualities.where((quality) => quality.resolution <= 720).toList();
+    if (capped.isEmpty) return qualities;
+    return capped;
+  }
+
+  String _qualityForThisBuild(String quality) {
+    if (!UbuntuTouch.enabled) return quality;
+    final match = RegExp(r'(\d+)').firstMatch(quality);
+    final height = int.tryParse(match?.group(1) ?? '');
+    if (height != null && height > 720) return '720p';
+    return quality;
   }
 
   Future<void> _initializePlayback() async {
@@ -281,8 +305,8 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
       }
 
       // Get available qualities
-      _availableQualities =
-          NewPipeStreamHelper.getAvailableQualities(widget.watchInfo);
+      _availableQualities = _qualitiesForThisBuild(
+          NewPipeStreamHelper.getAvailableQualities(_watchForThisBuild));
 
       // Get available audio tracks
       _availableAudioTracks = NewPipeStreamHelper.getAvailableAudioTracks(
@@ -305,7 +329,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
       }
 
       // Determine initial quality
-      String targetQuality = widget.defaultQuality;
+      String targetQuality = _qualityForThisBuild(widget.defaultQuality);
 
       // Check if preferred quality is available
       final hasPreferredQuality =
@@ -319,10 +343,10 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
 
       // Resolve playback configuration
       _currentConfig = _resolver.resolve(
-        watchResp: widget.watchInfo,
+        watchResp: _watchForThisBuild,
         preferredQuality: targetQuality,
         preferHighQuality: true,
-        preferAdaptive: widget.preferAdaptivePlayback,
+        preferAdaptive: _preferAdaptive,
       );
 
       // For HLS/DASH, set initial quality label to "Auto" since adaptive streaming handles quality
@@ -337,6 +361,11 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
       debugPrint('=== MediaKit Playback Debug ===');
       debugPrint('Source type: ${_currentConfig!.sourceType}');
       debugPrint('Quality: ${_currentConfig!.qualityLabel}');
+      print(
+        'gastube: stream=${_currentConfig!.qualityLabel} '
+        'source=${_currentConfig!.sourceType} '
+        'codecs=${_availableQualities?.map((q) => '${q.label}:${q.videoStream?.codec ?? q.videoStream?.format}').join(',')}',
+      );
       debugPrint('Video URL: ${_currentConfig!.videoUrl}');
       debugPrint('Audio URL: ${_currentConfig!.audioUrl}');
       debugPrint('Manifest URL: ${_currentConfig!.manifestUrl}');
@@ -383,6 +412,43 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     }
   }
 
+  void _reportHardwareDecoder() {
+    if (!UbuntuTouch.enabled) return;
+    unawaited(() async {
+      var softwareReads = 0;
+      for (var attempt = 0; attempt < 8; attempt++) {
+        await Future.delayed(const Duration(milliseconds: 500));
+        if (!mounted) return;
+        try {
+          final requested =
+              await (_player.platform as dynamic).getProperty('hwdec');
+          final current =
+              await (_player.platform as dynamic).getProperty('hwdec-current');
+          final decoder = await (_player.platform as dynamic)
+              .getProperty('current-tracks/video/decoder-desc');
+          print(
+            'gastube: hwdec=$requested hwdec-current=$current decoder=$decoder',
+          );
+          if (decoder is String && decoder.contains('h264_hybris')) {
+            print('gastube: decode=mediacodec');
+            return;
+          }
+          if (current == 'no' && decoder is String && decoder.contains('h264 (')) {
+            softwareReads++;
+            if (softwareReads >= 2) {
+              print('gastube: decode=software-h264');
+              return;
+            }
+          }
+        } catch (e) {
+          print('gastube: hwdec query failed: $e');
+          return;
+        }
+      }
+      print('gastube: decode=mediacodec-unopened');
+    }());
+  }
+
   Future<void> _setupMediaSource(
     PlaybackConfiguration config, {
     Duration startPosition = Duration.zero,
@@ -391,6 +457,10 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     bool fastSwitch = false,
   }) async {
     try {
+      if (UbuntuTouch.enabled) {
+        await (_player.platform as dynamic).setProperty('ao', 'pulse');
+        await selectUbuntuTouchH264Decoder(_player);
+      }
       final isAdaptive = config.sourceType == MediaSourceType.hls ||
           config.sourceType == MediaSourceType.dash;
 
@@ -464,6 +534,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
 
       // Check mounted after switch block
       if (!mounted) return;
+      _reportHardwareDecoder();
 
       // Setup subtitles asynchronously - don't block playback
       if (config.subtitles.isNotEmpty) {
@@ -719,6 +790,11 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
           return track.id.isEmpty || (track.w != null && track.h != null);
         }).toList();
 
+        if (UbuntuTouch.enabled) {
+          validTracks.removeWhere(
+              (track) => track.id.isNotEmpty && (track.h ?? 0) > 720);
+        }
+
         // Sort by resolution (highest first), keeping auto at the beginning
         validTracks.sort((a, b) {
           if (a.id.isEmpty) return -1; // auto goes first
@@ -905,7 +981,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
 
     // Resolve new configuration (only video URL will be used, audio stays the same)
     final newConfig = _resolver.resolve(
-      watchResp: widget.watchInfo,
+      watchResp: _watchForThisBuild,
       preferredQuality: newQualityLabel,
       preferHighQuality: true,
       preferAdaptive: false,

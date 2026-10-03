@@ -30,6 +30,7 @@ import 'package:fluxtube/core/ubuntu_touch_frame_timing.dart';
 import 'package:fluxtube/core/ubuntu_touch_image_cache.dart';
 import 'package:fluxtube/core/window_fullscreen.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:path/path.dart' as p;
 import 'package:screen_brightness/screen_brightness.dart';
 
 import 'core/di/injectable.dart';
@@ -48,8 +49,17 @@ void main() async {
     }
   };
 
-  // libmpv is not in the Ubuntu Touch click. Player() would fail to load it.
-  if (!UbuntuTouch.enabled) {
+  // Ubuntu Touch loads the libmpv shipped beside the executable. Desktop
+  // builds keep the system library.
+  if (UbuntuTouch.enabled) {
+    final libmpv = p.join(
+      p.dirname(Platform.resolvedExecutable),
+      'lib',
+      'libmpv.so.2',
+    );
+    MediaKit.ensureInitialized(libmpv: libmpv);
+    debugPrint('gastube: libmpv $libmpv');
+  } else {
     MediaKit.ensureInitialized();
   }
 
