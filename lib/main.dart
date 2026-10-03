@@ -27,6 +27,7 @@ import 'package:fluxtube/core/services/log_collector.dart';
 import 'package:fluxtube/core/services/subscription_notifier.dart';
 import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:fluxtube/core/ubuntu_touch_frame_timing.dart';
+import 'package:fluxtube/core/ubuntu_touch_image_cache.dart';
 import 'package:fluxtube/core/window_fullscreen.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:screen_brightness/screen_brightness.dart';
@@ -36,6 +37,7 @@ import 'core/di/injectable.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   installUbuntuTouchFrameTiming();
+  installUbuntuTouchImageCache();
 
   // Mirror framework debug output into the in-app log collector so the Debug
   // Console can surface it for bug reports. LogCollector re-emits through

@@ -44,7 +44,9 @@ dependencies:
   receive_sharing_intent: 1.8.1
   rich_readmore: ^1.1.1
   share_plus: ^12.0.1
+  file: ^7.0.1
   file_picker: ^8.0.0
+  flutter_cache_manager: ^3.4.1
   archive: ^4.0.2
   sqflite: ^2.4.1
   path: ^1.9.1
