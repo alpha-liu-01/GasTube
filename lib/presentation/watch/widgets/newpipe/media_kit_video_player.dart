@@ -298,6 +298,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
 
     void add(NewPipeVideoStream stream, {required bool merging}) {
       if (stream.url == null || stream.url!.isEmpty) return;
+      if (_codecFamily(stream) == 'AV1') return;
       final height = _parseHeight(stream.resolution);
       if (height == null) return;
       var label = stream.resolution ?? 'Unknown';
@@ -360,10 +361,8 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
         return 0;
       case 'VP9':
         return 1;
-      case 'AV1':
-        return 2;
       default:
-        return 3;
+        return 2;
     }
   }
 
@@ -533,16 +532,13 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
           print(
             'gastube: hwdec=$requested hwdec-current=$current decoder=$decoder',
           );
-          if (decoder is String && decoder.contains('h264_hybris')) {
+          if (decoder is String &&
+              (decoder.contains('h264_hybris') || decoder.contains('vp9_hybris'))) {
             print('gastube: decode=mediacodec');
             return;
           }
           if (decoder is String && decoder.contains('vp9 (')) {
             print('gastube: decode=software-vp9');
-            return;
-          }
-          if (decoder is String && decoder.contains('av1 (')) {
-            print('gastube: decode=software-av1');
             return;
           }
           if (current == 'no' && decoder is String && decoder.contains('h264 (')) {

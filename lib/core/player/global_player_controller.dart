@@ -18,18 +18,11 @@ Future<void> selectUbuntuTouchDecoder(Player player, {String? codec}) async {
       value == 'mpeg_4' ||
       value == 'mp4';
   final vp9 = value.startsWith('vp9') || value.contains('vp09') || value == 'webm';
-  final av1 = value.startsWith('av01') || value.contains('av1');
-  // H.264 keeps the Halium decoder and no software pad. VP9 and AV1 use the
-  // bundled software decoders. An unknown codec (live manifests) leaves
-  // h264_hybris first without the trailing "-", so other codecs still open.
   final String vd;
   final String fallback;
   if (vp9) {
-    vd = 'vp9,-';
-    fallback = 'yes';
-  } else if (av1) {
-    vd = 'av1,-';
-    fallback = 'yes';
+    vd = 'vp9_hybris,-';
+    fallback = 'no';
   } else if (h264) {
     vd = 'h264_hybris,-';
     fallback = 'no';

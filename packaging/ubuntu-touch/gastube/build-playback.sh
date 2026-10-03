@@ -4,13 +4,13 @@
 set -euo pipefail
 
 prefix=/opt/gastube-playback
-stamp="ffmpeg-6.1.1-h264-hybris-res libass-0.17.3 mpv-0.35.1"
+stamp="ffmpeg-6.1.1-vp9-hybris libass-0.17.3 mpv-0.35.1"
 mkdir -p "$prefix"
 export LD_LIBRARY_PATH="$prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 if [[ -e "$prefix/lib/libmpv.so.2" && -x "$prefix/bin/ffmpeg" && -f "$prefix/stamp" ]] &&
    [[ "$(tr -d '\n' < "$prefix/stamp")" == "$stamp" ]]; then
   decoders=$("$prefix/bin/ffmpeg" -hide_banner -decoders)
-  if grep -q h264_hybris <<<"$decoders"; then
+  if grep -q h264_hybris <<<"$decoders" && grep -q vp9_hybris <<<"$decoders"; then
     mkdir -p "$prefix/share"
     if [[ ! -s "$prefix/share/playback-probe.mp4" ]]; then
       "$prefix/bin/ffmpeg" -y \
@@ -53,12 +53,19 @@ tar -xzf "$work/mpv.tar.gz" -C "$work"
 
 here=$(cd "$(dirname "$0")" && pwd)
 cp "$here/h264_hybris.c" "$work/ffmpeg-6.1.1/libavcodec/h264_hybris.c"
+cp "$here/vp9_hybris.c" "$work/ffmpeg-6.1.1/libavcodec/vp9_hybris.c"
 sed -i '/^extern const FFCodec ff_h264_decoder;$/a extern const FFCodec ff_h264_hybris_decoder;' \
+  "$work/ffmpeg-6.1.1/libavcodec/allcodecs.c"
+sed -i '/^extern const FFCodec ff_vp9_decoder;$/a extern const FFCodec ff_vp9_hybris_decoder;' \
   "$work/ffmpeg-6.1.1/libavcodec/allcodecs.c"
 sed -i 's/^OBJS-$(CONFIG_H264_DECODER)/OBJS-$(CONFIG_H264_HYBRIS_DECODER)     += h264_hybris.o\n&/' \
   "$work/ffmpeg-6.1.1/libavcodec/Makefile"
+sed -i 's/^OBJS-$(CONFIG_VP9_DECODER)/OBJS-$(CONFIG_VP9_HYBRIS_DECODER)      += vp9_hybris.o\n&/' \
+  "$work/ffmpeg-6.1.1/libavcodec/Makefile"
 grep -q ff_h264_hybris_decoder "$work/ffmpeg-6.1.1/libavcodec/allcodecs.c"
+grep -q ff_vp9_hybris_decoder "$work/ffmpeg-6.1.1/libavcodec/allcodecs.c"
 grep -q CONFIG_H264_HYBRIS_DECODER "$work/ffmpeg-6.1.1/libavcodec/Makefile"
+grep -q CONFIG_VP9_HYBRIS_DECODER "$work/ffmpeg-6.1.1/libavcodec/Makefile"
 
 export PKG_CONFIG_PATH="$prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 export LD_LIBRARY_PATH="$prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
@@ -141,6 +148,7 @@ export LD_LIBRARY_PATH="$prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 mkdir -p "$prefix/share"
 "$prefix/bin/ffmpeg" -hide_banner -decoders >"$prefix/decoders.txt"
 grep -q h264_hybris "$prefix/decoders.txt"
+grep -q vp9_hybris "$prefix/decoders.txt"
 "$prefix/bin/ffmpeg" -y \
   -f lavfi -i "testsrc=size=320x180:rate=15:duration=3" \
   -f lavfi -i "sine=frequency=440:sample_rate=44100:duration=3" \

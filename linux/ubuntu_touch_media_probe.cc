@@ -4,7 +4,7 @@
 #include <sys/types.h>
 
 // The phone already has libhybris libmedia.so.1. This probe asks which
-// decoder serves video/avc. Playback feeds H.264 packets through h264_hybris.
+// decoder serves video/avc and video/x-vnd.on2.vp9. It does not feed packets.
 extern "C" void gastube_ut_probe_media_codec() {
   void* library = dlopen("libmedia.so.1", RTLD_NOW | RTLD_GLOBAL);
   if (library == nullptr) {
@@ -31,16 +31,47 @@ extern "C" void gastube_ut_probe_media_codec() {
   }
 
   init();
-  const ssize_t index = find("video/avc", false, 0);
-  if (index < 0) {
-    std::fprintf(stderr, "gastube: mediacodec video/avc index=%zd\n", index);
+  const ssize_t avc = find("video/avc", false, 0);
+  if (avc < 0) {
+    std::fprintf(stderr, "gastube: mediacodec video/avc index=%zd\n", avc);
     std::fprintf(stderr, "gastube: decode=software-h264\n");
-    return;
+  } else {
+    if (info != nullptr) {
+      info(static_cast<size_t>(avc));
+    }
+    const char* codec = name(static_cast<size_t>(avc));
+    std::fprintf(stderr, "gastube: mediacodec video/avc name=%s\n",
+                 codec != nullptr ? codec : "(null)");
   }
-  if (info != nullptr) {
-    info(static_cast<size_t>(index));
+
+  const char* vp9_mimes[] = {"video/x-vnd.on2.vp9", "video/vp9"};
+  bool vp9_named = false;
+  for (const char* mime : vp9_mimes) {
+    size_t start = 0;
+    bool mime_named = false;
+    for (;;) {
+      const ssize_t index = find(mime, false, start);
+      if (index < 0 || static_cast<size_t>(index) < start) {
+        if (!mime_named) {
+          std::fprintf(stderr, "gastube: mediacodec %s index=%zd\n", mime, index);
+        }
+        break;
+      }
+      if (info != nullptr) {
+        info(static_cast<size_t>(index));
+      }
+      const char* codec = name(static_cast<size_t>(index));
+      std::fprintf(stderr, "gastube: mediacodec %s name=%s\n", mime,
+                   codec != nullptr ? codec : "(null)");
+      mime_named = codec != nullptr && codec[0] != '\0';
+      vp9_named = vp9_named || mime_named;
+      start = static_cast<size_t>(index) + 1;
+    }
+    if (vp9_named) {
+      break;
+    }
   }
-  const char* codec = name(static_cast<size_t>(index));
-  std::fprintf(stderr, "gastube: mediacodec video/avc name=%s\n",
-               codec != nullptr ? codec : "(null)");
+  if (!vp9_named) {
+    std::fprintf(stderr, "gastube: vp9-hw=absent\n");
+  }
 }
