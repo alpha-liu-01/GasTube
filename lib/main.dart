@@ -15,6 +15,7 @@ import 'package:fluxtube/application/watch/watch_bloc.dart';
 import 'package:fluxtube/core/app_info.dart';
 import 'package:fluxtube/core/app_theme.dart';
 import 'package:fluxtube/core/locals.dart';
+import 'package:fluxtube/core/lomiri_theme.dart';
 import 'package:fluxtube/core/player/global_player_controller.dart';
 import 'package:fluxtube/infrastructure/download/download_notification_service.dart';
 import 'package:fluxtube/infrastructure/newpipe/newpipe_sidecar.dart';
@@ -79,21 +80,31 @@ void main() async {
   // Initialize GetIt and register dependencies
   configureInjection();
 
-  runApp(const MyApp());
+  final Brightness? lomiriBrightness =
+      UbuntuTouch.enabled ? await LomiriSystemTheme.read() : null;
+  runApp(MyApp(lomiriBrightness: lomiriBrightness));
 }
 
 class MyApp extends StatefulWidget {
-  const MyApp({super.key});
+  const MyApp({super.key, this.lomiriBrightness});
+
+  final Brightness? lomiriBrightness;
 
   @override
   State<MyApp> createState() => _MyAppState();
 }
 
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
+  Brightness? _lomiriBrightness;
+  bool _loggedDynamicColor = false;
+  bool _loggedPlatformBrightness = false;
+
   @override
   void initState() {
     super.initState();
+    _lomiriBrightness = widget.lomiriBrightness;
     WidgetsBinding.instance.addObserver(this);
+    _logPlatformBrightness();
     // Initialize services after the first frame
     // This ensures the Activity is fully attached and can show permission dialogs
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -142,6 +153,45 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     // since there is no background job. The check throttles itself.
     if (state == AppLifecycleState.resumed) {
       SubscriptionNotifier().checkForNewVideos();
+      _refreshLomiriTheme();
+    }
+  }
+
+  void _logPlatformBrightness() {
+    if (!UbuntuTouch.enabled || _loggedPlatformBrightness) return;
+    _loggedPlatformBrightness = true;
+    final platform =
+        WidgetsBinding.instance.platformDispatcher.platformBrightness;
+    print(
+      'gastube: platform brightness=$platform '
+      'lomiri=${LomiriSystemTheme.lastName} '
+      'brightness=$_lomiriBrightness',
+    );
+  }
+
+  Future<void> _refreshLomiriTheme() async {
+    if (!UbuntuTouch.enabled) return;
+    final brightness = await LomiriSystemTheme.read();
+    if (!mounted) return;
+    _logPlatformBrightness();
+    if (brightness == _lomiriBrightness) return;
+    setState(() => _lomiriBrightness = brightness);
+  }
+
+  ThemeMode _themeModeFor(String themeMode) {
+    switch (themeMode) {
+      case 'dark':
+      case 'oled':
+        return ThemeMode.dark;
+      case 'light':
+        return ThemeMode.light;
+      default:
+        if (!UbuntuTouch.enabled || _lomiriBrightness == null) {
+          return ThemeMode.system;
+        }
+        return _lomiriBrightness == Brightness.dark
+            ? ThemeMode.dark
+            : ThemeMode.light;
     }
   }
 
@@ -166,11 +216,20 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           if (mode == 'dynamic') {
             return DynamicColorBuilder(
               builder: (lightDynamic, darkDynamic) {
+                if (UbuntuTouch.enabled &&
+                    !_loggedDynamicColor &&
+                    lightDynamic == null &&
+                    darkDynamic == null) {
+                  _loggedDynamicColor = true;
+                  print(
+                    'gastube: dynamic color unavailable, using the seed fallback',
+                  );
+                }
                 return MaterialApp.router(
                   title: AppInfo.myApp.name,
                   theme: AppTheme.dynamicTheme(lightDynamic ?? ColorScheme.fromSeed(seedColor: Colors.blue)),
                   darkTheme: AppTheme.dynamicTheme(darkDynamic ?? const ColorScheme.dark()),
-                  themeMode: ThemeMode.system,
+                  themeMode: _themeModeFor(mode),
                   debugShowCheckedModeBanner: false,
                   routerConfig: router,
                   localizationsDelegates: const [
@@ -199,7 +258,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             title: AppInfo.myApp.name,
             theme: AppTheme.lightTheme,
             darkTheme: isOled ? AppTheme.oledTheme : AppTheme.darkTheme,
-            themeMode: _getThemeMode(mode),
+            themeMode: _themeModeFor(mode),
             debugShowCheckedModeBanner: false,
             routerConfig: router,
             localizationsDelegates: const [
@@ -224,15 +283,4 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     );
   }
 
-  ThemeMode _getThemeMode(String themeMode) {
-    switch (themeMode) {
-      case 'dark':
-      case 'oled':
-        return ThemeMode.dark;
-      case 'light':
-        return ThemeMode.light;
-      default:
-        return ThemeMode.system;
-    }
-  }
 }

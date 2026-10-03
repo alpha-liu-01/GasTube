@@ -1,15 +1,19 @@
 import 'dart:developer';
+import 'dart:io';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluxtube/core/enums.dart';
 import 'package:fluxtube/core/strings.dart';
 import 'package:fluxtube/domain/core/failure/main_failure.dart';
 import 'package:fluxtube/core/settings.dart';
+import 'package:fluxtube/core/storage_paths.dart';
+import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:fluxtube/domain/settings/models/instance.dart';
 import 'package:fluxtube/domain/settings/settings_service.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:injectable/injectable.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path/path.dart' as p;
 
 part 'settings_event.dart';
 part 'settings_state.dart';
@@ -38,11 +42,18 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
       final String? defaultLanguage = settingsMap[selectedDefaultLanguage];
       final String? defaultQuality = settingsMap[selectedDefaultQuality];
       final String? defaultRegion = settingsMap[selectedDefaultRegion];
-      final String defaultThemeMode = settingsMap[selectedTheme] == 'dark'
-          ? 'dark'
-          : settingsMap[selectedTheme] == 'light'
-              ? 'light'
-              : 'system';
+      const themeValues = {'system', 'light', 'dark', 'oled', 'dynamic'};
+      final String? rawTheme = settingsMap[selectedTheme];
+      final String defaultThemeMode =
+          themeValues.contains(rawTheme) ? rawTheme! : 'system';
+      if (UbuntuTouch.enabled) {
+        final dir = await persistentAppDirectory();
+        print(
+          'gastube: theme db=${p.join(dir.path, 'fluxtube.db.sqlite')} '
+          'xdg=${Platform.environment['XDG_DATA_HOME']} '
+          'raw=$rawTheme mode=$defaultThemeMode',
+        );
+      }
       final bool defaultHistoryVisibility =
           settingsMap[historyVisibility] == "true";
       final bool defaultDislikeVisibility =
@@ -196,9 +207,10 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
       emit(state);
       final _result =
           await settingsService.setTheme(themeMode: event.themeMode);
-      final _state = _result.fold(
-          (MainFailure f) => state.copyWith(themeMode: state.themeMode),
-          (String themeMode) => state.copyWith(themeMode: themeMode));
+      final _state = _result.fold((MainFailure f) {
+        print('gastube: setTheme failed mode=${event.themeMode}');
+        return state.copyWith(themeMode: state.themeMode);
+      }, (String themeMode) => state.copyWith(themeMode: themeMode));
       emit(_state);
     });
 

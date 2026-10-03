@@ -130,7 +130,7 @@ abstract class AppTheme {
       tabBarTheme: TabBarThemeData(indicatorColor: kWhiteColor.withValues(alpha: 0.5)),
       primaryIconTheme: const IconThemeData().copyWith(color: kWhiteColor),
       colorScheme: const ColorScheme.dark(),
-      scaffoldBackgroundColor: kDarkColor,
+      scaffoldBackgroundColor: AppColors.surfaceDark,
       dividerTheme: const DividerThemeData().copyWith(color: kGreyOpacityColor),
       textTheme: _cjkTheme(ThemeData.dark().textTheme.copyWith(
             bodyLarge: const TextStyle(
