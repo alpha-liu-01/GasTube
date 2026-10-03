@@ -7,12 +7,38 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <execinfo.h>
 #include <limits.h>
+#include <signal.h>
 #include <unistd.h>
 
 #include "flutter/generated_plugin_registrant.h"
 
 void gastube_ut_install_present_hook(GtkWidget* view);
+void gastube_ut_set_present_allowed(bool allowed);
+
+void on_fatal_signal(int sig) {
+  const char* name = "signal";
+  if (sig == SIGSEGV) name = "SIGSEGV";
+  if (sig == SIGBUS) name = "SIGBUS";
+  if (sig == SIGABRT) name = "SIGABRT";
+  int length = 0;
+  while (name[length] != '\0' && length < 16) length++;
+  write(STDERR_FILENO, "gastube: fatal ", 15);
+  write(STDERR_FILENO, name, length);
+  write(STDERR_FILENO, "\n", 1);
+  void* frames[48];
+  int count = backtrace(frames, 48);
+  backtrace_symbols_fd(frames, count, STDERR_FILENO);
+  signal(sig, SIG_DFL);
+  raise(sig);
+}
+
+void install_fatal_signals() {
+  signal(SIGSEGV, on_fatal_signal);
+  signal(SIGBUS, on_fatal_signal);
+  signal(SIGABRT, on_fatal_signal);
+}
 
 namespace {
 
@@ -114,6 +140,8 @@ gboolean on_configure(GtkWidget*, GdkEventConfigure* event, gpointer) {
 gboolean on_window_state(GtkWidget*, GdkEventWindowState* event, gpointer) {
   g_message("window state new=0x%x changed=0x%x", event->new_window_state,
             event->changed_mask);
+  bool focused = (event->new_window_state & GDK_WINDOW_STATE_FOCUSED) != 0;
+  gastube_ut_set_present_allowed(focused);
   return FALSE;
 }
 
@@ -223,6 +251,7 @@ extern "C" void gastube_ut_probe_media_codec();
 // the Phase 0 hello. The soft keyboard is Maliit over D-Bus, chosen after
 // gtk_init once the Wayland registry is known.
 extern "C" int gastube_ubuntu_touch_main(int argc, char** argv) {
+  install_fatal_signals();
   gastube_ut_probe_media_codec();
   setenv("GDK_GL", "gles", 1);
   clear_session_im_module();
@@ -251,10 +280,10 @@ extern "C" int gastube_ubuntu_touch_main(int argc, char** argv) {
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   FlView* view = fl_view_new(project);
-  gastube_ut_install_present_hook(GTK_WIDGET(view));
   GdkRGBA background = {1.0, 1.0, 1.0, 1.0};
   fl_view_set_background_color(view, &background);
   gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(view));
+  gastube_ut_install_present_hook(GTK_WIDGET(view));
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
 
   gtk_widget_show_all(window);

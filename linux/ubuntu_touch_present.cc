@@ -1,9 +1,13 @@
 #include <gdk/gdk.h>
 #include <gtk/gtk.h>
 
+#include <EGL/egl.h>
+#include <wayland-client.h>
+
 #include <dlfcn.h>
 
 #include <algorithm>
+#include <atomic>
 #include <vector>
 
 // Official full-frame engine. The window is always invalidated in full.
@@ -63,6 +67,86 @@ gint64 g_last_report_us = 0;
 int g_blit_w = 0;
 int g_blit_h = 0;
 
+// The engine calls these function pointers in libepoxy. Assigning them gates
+// present. Do not define the epoxy_* symbols; a definition here is the wrong
+// object and faults when the engine calls through it.
+extern "C" EGLBoolean (*epoxy_eglSwapBuffers)(EGLDisplay, EGLSurface);
+extern "C" EGLBoolean (*epoxy_eglMakeCurrent)(EGLDisplay, EGLSurface,
+                                              EGLSurface, EGLContext);
+
+using EglSwapFn = EGLBoolean (*)(EGLDisplay, EGLSurface);
+using EglMakeCurrentFn = EGLBoolean (*)(EGLDisplay, EGLSurface, EGLSurface,
+                                        EGLContext);
+
+std::atomic<bool> g_present_allowed{true};
+std::atomic<bool> g_logged_skip{false};
+std::atomic<bool> g_logged_make_current{false};
+std::atomic<bool> g_logged_flush{false};
+std::atomic<bool> g_logged_expose{false};
+EglSwapFn g_real_swap = nullptr;
+EglMakeCurrentFn g_real_make_current = nullptr;
+
+extern "C" EGLBoolean gastube_gated_egl_swap(EGLDisplay display,
+                                            EGLSurface surface) {
+  if (!g_present_allowed.load(std::memory_order_acquire)) {
+    bool already = g_logged_skip.exchange(true, std::memory_order_relaxed);
+    if (!already) {
+      g_message(
+          "present: skipped eglSwapBuffers while the window is unfocused");
+    }
+    return EGL_TRUE;
+  }
+  if (g_real_swap == nullptr) return EGL_FALSE;
+  return g_real_swap(display, surface);
+}
+
+extern "C" EGLBoolean gastube_gated_egl_make_current(EGLDisplay display,
+                                                    EGLSurface draw,
+                                                    EGLSurface read,
+                                                    EGLContext context) {
+  // Surfaceless calls still run. Those release the context. Binding the
+  // window surface while Lomiri is covering it is what drops the last frame.
+  if (!g_present_allowed.load(std::memory_order_acquire) &&
+      draw != EGL_NO_SURFACE && read != EGL_NO_SURFACE) {
+    bool already =
+        g_logged_make_current.exchange(true, std::memory_order_relaxed);
+    if (!already) {
+      g_message(
+          "present: skipped eglMakeCurrent while the window is unfocused");
+    }
+    return EGL_FALSE;
+  }
+  if (g_real_make_current == nullptr) return EGL_FALSE;
+  return g_real_make_current(display, draw, read, context);
+}
+
+void install_swap_gate() {
+  if (g_real_swap == nullptr) {
+    g_real_swap =
+        reinterpret_cast<EglSwapFn>(dlsym(RTLD_NEXT, "eglSwapBuffers"));
+    if (g_real_swap == nullptr || epoxy_eglSwapBuffers == nullptr) {
+      g_warning("present: eglSwapBuffers gate left off (%s)",
+                g_real_swap == nullptr ? "dlsym" : "epoxy");
+      g_real_swap = nullptr;
+    } else {
+      epoxy_eglSwapBuffers = gastube_gated_egl_swap;
+      g_message("present: eglSwapBuffers gated on window focus");
+    }
+  }
+  if (g_real_make_current == nullptr) {
+    g_real_make_current = reinterpret_cast<EglMakeCurrentFn>(
+        dlsym(RTLD_NEXT, "eglMakeCurrent"));
+    if (g_real_make_current == nullptr || epoxy_eglMakeCurrent == nullptr) {
+      g_warning("present: eglMakeCurrent gate left off (%s)",
+                g_real_make_current == nullptr ? "dlsym" : "epoxy");
+      g_real_make_current = nullptr;
+    } else {
+      epoxy_eglMakeCurrent = gastube_gated_egl_make_current;
+      g_message("present: eglMakeCurrent gated on window focus");
+    }
+  }
+}
+
 double ms_from_us(gint64 us) { return static_cast<double>(us) / 1000.0; }
 
 void report_if_due(gint64 now) {
@@ -108,12 +192,38 @@ using WidgetDrawFn = gboolean (*)(GtkWidget*, cairo_t*);
 WidgetDrawFn g_original_draw = nullptr;
 
 gboolean timed_draw(GtkWidget* widget, cairo_t* cr) {
+  if (!g_present_allowed.load(std::memory_order_acquire)) {
+    return TRUE;
+  }
   gint64 start = g_get_monotonic_time();
   gboolean result = FALSE;
   if (g_original_draw != nullptr) result = g_original_draw(widget, cr);
   gint64 now = g_get_monotonic_time();
   note_draw(now - start, now);
   return result;
+}
+
+WidgetDrawFn g_original_window_draw = nullptr;
+WidgetDrawFn g_original_view_draw = nullptr;
+
+gboolean draw_or_hold(GtkWidget* widget, cairo_t* cr, WidgetDrawFn original) {
+  if (!g_present_allowed.load(std::memory_order_acquire)) {
+    bool already = g_logged_expose.exchange(true, std::memory_order_relaxed);
+    if (!already) {
+      g_message("present: skipped expose while the window is unfocused");
+    }
+    return TRUE;
+  }
+  if (original != nullptr) return original(widget, cr);
+  return FALSE;
+}
+
+gboolean hold_window_draw(GtkWidget* widget, cairo_t* cr) {
+  return draw_or_hold(widget, cr, g_original_window_draw);
+}
+
+gboolean hold_view_draw(GtkWidget* widget, cairo_t* cr) {
+  return draw_or_hold(widget, cr, g_original_view_draw);
 }
 
 void find_renderer(GtkWidget* widget, gpointer data) {
@@ -151,6 +261,18 @@ extern "C" void gdk_cairo_draw_from_gl(cairo_t* cr, GdkWindow* window,
 }
 
 void gastube_ut_install_present_hook(GtkWidget* view) {
+  install_swap_gate();
+  GtkWidget* top = gtk_widget_get_toplevel(view);
+  if (top != nullptr && top != view && g_original_window_draw == nullptr) {
+    GtkWidgetClass* window_class = GTK_WIDGET_GET_CLASS(top);
+    g_original_window_draw = window_class->draw;
+    window_class->draw = hold_window_draw;
+  }
+  if (g_original_view_draw == nullptr) {
+    GtkWidgetClass* view_class = GTK_WIDGET_GET_CLASS(view);
+    g_original_view_draw = view_class->draw;
+    view_class->draw = hold_view_draw;
+  }
   GtkWidget* renderer = nullptr;
   find_renderer(view, &renderer);
   if (renderer != nullptr && g_original_draw == nullptr) {
@@ -164,4 +286,31 @@ void gastube_ut_install_present_hook(GtkWidget* view) {
       "present: full frame; window invalidate is full; "
       "timing build/raster, the vsync gap, and gdk_cairo_draw_from_gl%s",
       renderer != nullptr ? "" : " (FlViewRenderer not found)");
+}
+
+void gastube_ut_set_present_allowed(bool allowed) {
+  bool previous = g_present_allowed.exchange(allowed, std::memory_order_release);
+  if (previous == allowed) return;
+  g_logged_skip.store(false, std::memory_order_relaxed);
+  g_logged_make_current.store(false, std::memory_order_relaxed);
+  g_logged_flush.store(false, std::memory_order_relaxed);
+  g_logged_expose.store(false, std::memory_order_relaxed);
+  g_message("present: %s", allowed ? "resume swap" : "pause swap");
+}
+
+extern "C" int wl_display_flush(struct wl_display* display) {
+  if (!g_present_allowed.load(std::memory_order_acquire)) {
+    bool already = g_logged_flush.exchange(true, std::memory_order_relaxed);
+    if (!already) {
+      g_message("present: skipped wl_display_flush");
+    }
+    return 0;
+  }
+  using FlushFn = int (*)(struct wl_display*);
+  static FlushFn real = nullptr;
+  if (real == nullptr) {
+    real = reinterpret_cast<FlushFn>(dlsym(RTLD_NEXT, "wl_display_flush"));
+  }
+  if (real == nullptr) return -1;
+  return real(display);
 }
