@@ -48,6 +48,49 @@ fi
 cp "$custom_engine" "$(dirname "$bundle")/lib/libflutter_linux_gtk.so"
 echo "replaced libflutter_linux_gtk.so with the onscreen present build"
 
+# Jar and JRE sit next to the executable. The sidecar does not use the
+# process working directory or the system java.
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-arm64
+if [[ ! -x "${JAVA_HOME}/bin/java" ]]; then
+  echo "JDK 17 is missing at ${JAVA_HOME}" >&2
+  exit 1
+fi
+(
+  cd /src/packaging/newpipe-spike
+  bash ./gradlew --no-daemon jar
+)
+jar_src=/src/packaging/newpipe-spike/build/libs/newpipe-spike.jar
+bundle_dir=$(dirname "$bundle")
+cp "$jar_src" "${bundle_dir}/newpipe-spike.jar"
+
+jre_work=$(mktemp -d)
+jre_url="https://api.adoptium.net/v3/binary/latest/17/ga/linux/aarch64/jre/hotspot/normal/eclipse?project=jdk"
+curl -fL --retry 3 -o "${jre_work}/jre.tgz" "${jre_url}"
+mkdir -p "${jre_work}/extract"
+tar -xzf "${jre_work}/jre.tgz" -C "${jre_work}/extract"
+jre_top=$(find "${jre_work}/extract" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+if [[ -z "${jre_top}" || ! -x "${jre_top}/bin/java" ]]; then
+  echo "Temurin archive did not contain bin/java" >&2
+  exit 1
+fi
+rm -rf "${bundle_dir}/jre"
+mv "${jre_top}" "${bundle_dir}/jre"
+rm -rf "${jre_work}"
+python3 - "${bundle_dir}/jre/bin/java" <<'PY'
+import re, subprocess, sys
+path = sys.argv[1]
+text = subprocess.check_output(["readelf", "-V", path], text=True)
+too_new = []
+for match in re.findall(r"GLIBC_[0-9.]+", text):
+    parts = tuple(int(piece) for piece in match.split("_", 1)[1].split(".") if piece)
+    if parts > (2, 31):
+        too_new.append(match)
+if too_new:
+    raise SystemExit(f"{path} needs {sorted(set(too_new))}, newer than glibc 2.31")
+print(f"{path} glibc is within 2.31")
+PY
+"${bundle_dir}/jre/bin/java" -version
+
 # GTK on this image has im-wayland.so, and Mir does not offer a text-input
 # global for it. Ship Maliit's GTK module inside the bundle instead of
 # installing it into the rootfs.

@@ -513,16 +513,11 @@ class _ScreenSearchState extends State<ScreenSearch> {
         (state.newPipeSearchResult?.items?.isEmpty ?? true)) {
       return ErrorRetryWidget(
         lottie: 'assets/cup.zip',
-        customMessage: UbuntuTouch.enabled
-            ? 'NewPipe extractor is not in this Ubuntu Touch build.'
-            : null,
-        onTap: UbuntuTouch.enabled
-            ? null
-            : () => BlocProvider.of<SearchBloc>(context).add(
-                SearchEvent.getSearchResult(
-                    query: _textEditingController.text,
-                    filter: _selectedFilter,
-                    serviceType: settingsState.ytService)),
+        onTap: () => BlocProvider.of<SearchBloc>(context).add(
+            SearchEvent.getSearchResult(
+                query: _textEditingController.text,
+                filter: _selectedFilter,
+                serviceType: settingsState.ytService)),
       );
     } else {
       return NewPipeSearchResultSection(

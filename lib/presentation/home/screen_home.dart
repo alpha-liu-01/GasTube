@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluxtube/application/application.dart';
 import 'package:fluxtube/core/constants.dart';
-import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:fluxtube/core/enums.dart';
 import 'package:fluxtube/generated/l10n.dart';
 import 'package:fluxtube/presentation/home/widgets/personalized_feed_section.dart';
@@ -385,16 +384,11 @@ class ScreenHome extends StatelessWidget {
           trendingState.newPipeTrendingResult.isEmpty) {
         return ErrorRetryWidget(
           lottie: 'assets/dog.zip',
-          customMessage: UbuntuTouch.enabled
-              ? 'NewPipe extractor is not in this Ubuntu Touch build.'
-              : null,
-          onTap: UbuntuTouch.enabled
-              ? null
-              : () => BlocProvider.of<TrendingBloc>(context).add(
-                    TrendingEvent.getForcedTrendingData(
-                        serviceType: settingsState.ytService,
-                        region: settingsState.defaultRegion),
-                  ),
+          onTap: () => BlocProvider.of<TrendingBloc>(context).add(
+            TrendingEvent.getForcedTrendingData(
+                serviceType: settingsState.ytService,
+                region: settingsState.defaultRegion),
+          ),
         );
       }
     } else if (settingsState.ytService == YouTubeServices.invidious.name) {

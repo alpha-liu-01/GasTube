@@ -10,6 +10,8 @@ icu="$root/bundle/data/icudtl.dat"
 test -x "$app"
 test -f "$engine"
 test -f "$icu"
+test -f "$root/bundle/newpipe-spike.jar"
+test -x "$root/bundle/jre/bin/java"
 
 python3 - "$root/bundle" <<'PY'
 import re
@@ -21,8 +23,9 @@ bundle = Path(sys.argv[1])
 max_glibc = (2, 31)
 max_glibcxx = (3, 4, 28)
 max_cxxabi = (1, 3, 12)
-paths = [bundle / "gastube"]
+paths = [bundle / "gastube", bundle / "jre" / "bin" / "java"]
 paths.extend(sorted((bundle / "lib").glob("*.so")))
+paths.extend(sorted((bundle / "jre").rglob("*.so")))
 
 def version_tuples(text, prefix):
     found = []

@@ -10,6 +10,7 @@ import 'package:fluxtube/application/application.dart';
 import 'package:fluxtube/core/colors.dart';
 import 'package:fluxtube/core/constants.dart';
 import 'package:fluxtube/core/enums.dart';
+import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:fluxtube/core/window_layout.dart';
 import 'package:fluxtube/core/player/global_player_controller.dart';
 import 'package:fluxtube/core/player/playback_queue.dart';
@@ -479,6 +480,12 @@ class _NewPipeScreenWatchState extends State<NewPipeScreenWatch>
           });
         }
 
+        if (UbuntuTouch.enabled && (shouldShowPlayer || canShowPlayer)) {
+          return _UbuntuTouchWatchPoster(
+            thumbnailUrl: state.newPipeWatchResp.thumbnailUrl,
+          );
+        }
+
         // Show player if either condition is true
         return (shouldShowPlayer || canShowPlayer)
             ? useNativePlayer
@@ -703,6 +710,33 @@ class _NewPipeScreenWatchState extends State<NewPipeScreenWatch>
     if (url == null || url.isEmpty) return null;
     final parts = url.split('/').where((part) => part.isNotEmpty).toList();
     return parts.isEmpty ? null : parts.last;
+  }
+}
+
+/// Fixed 16:9 stand-in for the player. This build has no MediaKit player,
+/// so the watch page must not construct one.
+class _UbuntuTouchWatchPoster extends StatelessWidget {
+  const _UbuntuTouchWatchPoster({this.thumbnailUrl});
+
+  final String? thumbnailUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final url = thumbnailUrl;
+    if (url == null || url.isEmpty) {
+      return const AspectRatio(
+        aspectRatio: 16 / 9,
+        child: ColoredBox(color: kBlackColor),
+      );
+    }
+    return AspectRatio(
+      aspectRatio: 16 / 9,
+      child: ThumbnailImage(
+        url: url,
+        errorWidget: (_, __, ___) => const ColoredBox(color: kBlackColor),
+        placeholder: (_, __) => const ColoredBox(color: kBlackColor),
+      ),
+    );
   }
 }
 

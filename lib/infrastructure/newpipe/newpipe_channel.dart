@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
-import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:fluxtube/domain/channel/models/newpipe/newpipe_channel_resp.dart';
 import 'package:fluxtube/infrastructure/newpipe/newpipe_sidecar.dart';
 import 'package:fluxtube/domain/search/models/newpipe/newpipe_search_resp.dart';
@@ -21,7 +20,6 @@ class NewPipeChannel {
 
   /// Check if NewPipe Extractor is available on this platform.
   static Future<bool> get isAvailable async {
-    if (UbuntuTouch.enabled) return false;
     if (!Platform.isAndroid) {
       try {
         await NewPipeSidecar.instance.ensureStarted();
@@ -41,12 +39,6 @@ class NewPipeChannel {
   }
 
   static Future<String> _invoke(String method, Map<String, dynamic> args) async {
-    if (UbuntuTouch.enabled) {
-      throw PlatformException(
-        code: 'UBUNTU_TOUCH',
-        message: 'NewPipe extractor is not in this Ubuntu Touch build',
-      );
-    }
     try {
       final String? result = Platform.isAndroid
           ? await _channel.invokeMethod<String>(method, args)
