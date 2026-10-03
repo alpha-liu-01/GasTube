@@ -23,7 +23,7 @@ bundle = Path(sys.argv[1])
 max_glibc = (2, 31)
 max_glibcxx = (3, 4, 28)
 max_cxxabi = (1, 3, 12)
-paths = [bundle / "gastube", bundle / "jre" / "bin" / "java"]
+paths = [bundle / "gastube", bundle / "ffmpeg", bundle / "jre" / "bin" / "java"]
 paths.extend(sorted((bundle / "lib").glob("*.so")))
 paths.extend(sorted(path for path in (bundle / "lib").glob("*.so.*") if not path.is_symlink()))
 paths.extend(sorted((bundle / "jre").rglob("*.so")))
@@ -32,6 +32,9 @@ if not probe.is_file() or probe.stat().st_size < 1000:
     raise SystemExit("playback-probe.mp4 is missing")
 if not (bundle / "lib" / "libmpv.so.2").exists():
     raise SystemExit("bundled libmpv.so.2 is missing")
+ffmpeg = bundle / "ffmpeg"
+if not ffmpeg.is_file():
+    raise SystemExit("bundled ffmpeg is missing")
 
 def version_tuples(text, prefix):
     found = []
@@ -57,6 +60,8 @@ for path in paths:
     print("NEEDED:", ", ".join(libs))
     if "/home/" in dynamic or "/opt/" in dynamic or "x86_64" in dynamic:
         raise SystemExit(f"{path} has a host absolute library path")
+    if path.name == "ffmpeg" and "$ORIGIN/lib" not in dynamic:
+        raise SystemExit(f"{path} run path is not $ORIGIN/lib")
     if "AArch64" not in header:
         raise SystemExit(f"{path} is not an AArch64 ELF")
     if path.name == "libmedia_kit_video_plugin.so" and any(

@@ -570,6 +570,7 @@ class DownloadImpl implements DownloadService {
         return false;
       } else {
         final ffmpeg = _resolveFfmpeg();
+        _logUbuntuTouchDownload('ffmpeg bin=$ffmpeg');
         try {
           final result = await Process.run(
             ffmpeg,
@@ -586,15 +587,20 @@ class DownloadImpl implements DownloadService {
 
           if (result.exitCode == 0) {
             log('[Download] FFmpeg muxing successful');
+            _logUbuntuTouchDownload('ffmpeg exit=0 file=$outputPath');
             return true;
           }
 
           log('[Download] FFmpeg muxing failed (exit code: ${result.exitCode})');
           _muxFailure = 'ffmpeg exited ${result.exitCode}';
+          final err = result.stderr.toString().trim();
+          final tail = err.length > 400 ? err.substring(err.length - 400) : err;
+          _logUbuntuTouchDownload('ffmpeg exit=${result.exitCode} $tail');
           return false;
-        } on ProcessException {
+        } on ProcessException catch (error) {
           log('[Download] ffmpeg was not found ($ffmpeg)');
           _muxFailure = 'ffmpeg was not found ($ffmpeg)';
+          _logUbuntuTouchDownload('ffmpeg failed bin=$ffmpeg error=$error');
           return false;
         }
       }

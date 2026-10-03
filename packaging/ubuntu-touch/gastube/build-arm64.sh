@@ -68,6 +68,16 @@ if [[ "$copied" != 1 || ! -e "$bundle_dir/lib/libmpv.so.2" ]]; then
   exit 1
 fi
 cp /opt/gastube-playback/share/playback-probe.mp4 "$bundle_dir/playback-probe.mp4"
+# The mux step runs this binary. It is already built in the playback prefix.
+# Do not rebuild FFmpeg for the copy. Libraries stay in lib/, so the run path
+# is the directory next to this executable.
+if [[ ! -x /opt/gastube-playback/bin/ffmpeg ]]; then
+  echo "playback ffmpeg is missing" >&2
+  exit 1
+fi
+cp -a /opt/gastube-playback/bin/ffmpeg "$bundle_dir/ffmpeg"
+patchelf --set-rpath '$ORIGIN/lib' "$bundle_dir/ffmpeg"
+chmod 755 "$bundle_dir/ffmpeg"
 for so in "$bundle_dir"/lib/libmpv.so* \
           "$bundle_dir"/lib/libav*.so* \
           "$bundle_dir"/lib/libsw*.so* \
