@@ -6177,7 +6177,7 @@ abstract class SetVideoFitMode implements SettingsEvent {
 /// @nodoc
 abstract class _$$SetDefaultVideoCodecImplCopyWith<$Res> {
   factory _$$SetDefaultVideoCodecImplCopyWith(_$SetDefaultVideoCodecImpl value,
-          $Res Function(_$SetVideoFitModeImpl) then) =
+          $Res Function(_$SetDefaultVideoCodecImpl) then) =
       __$$SetDefaultVideoCodecImplCopyWithImpl<$Res>;
   @useResult
   $Res call({String codec});
@@ -6188,7 +6188,8 @@ class __$$SetDefaultVideoCodecImplCopyWithImpl<$Res>
     extends _$SettingsEventCopyWithImpl<$Res, _$SetDefaultVideoCodecImpl>
     implements _$$SetDefaultVideoCodecImplCopyWith<$Res> {
   __$$SetDefaultVideoCodecImplCopyWithImpl(
-      _$SetVideoFitModeImpl _value, $Res Function(_$SetVideoFitModeImpl) _then)
+      _$SetDefaultVideoCodecImpl _value,
+      $Res Function(_$SetDefaultVideoCodecImpl) _then)
       : super(_value, _then);
 
   /// Create a copy of SettingsEvent

@@ -898,7 +898,7 @@ abstract class _SetDownloadOptionsFromStreams implements DownloadEvent {
           required final List<NewPipeVideoStream> videoStreams,
           required final List<NewPipeVideoStream> videoOnlyStreams,
           required final List<NewPipeAudioStream> audioStreams,
-          final String preferredCodec = defaultVideoCodecH264}) =
+          final String preferredCodec}) =
       _$SetDownloadOptionsFromStreamsImpl;
 
   String get videoId;

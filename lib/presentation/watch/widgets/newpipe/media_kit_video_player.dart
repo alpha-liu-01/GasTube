@@ -202,7 +202,53 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
       _availableQualities = _loadQualities();
       _availableAudioTracks = NewPipeStreamHelper.getAvailableAudioTracks(
           widget.watchInfo.audioStreams ?? []);
+    } else if (oldWidget.defaultVideoCodec != widget.defaultVideoCodec &&
+        _isInitialized &&
+        !_isInitializing) {
+      _availableQualities = _loadQualities();
+      final next = _labelForPreferredCodec();
+      if (next != null && next != _currentQualityLabel) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || widget.defaultVideoCodec == oldWidget.defaultVideoCodec) {
+            return;
+          }
+          unawaited(changeQuality(next));
+        });
+      }
     }
+  }
+
+  /// Keeps the resolution already on screen and moves to the codec chosen
+  /// in settings. A fresh open uses the default quality instead.
+  String? _labelForPreferredCodec() {
+    final qualities = _availableQualities;
+    if (qualities == null || qualities.isEmpty) return null;
+    final current =
+        qualities.where((quality) => quality.label == _currentQualityLabel);
+    final currentQuality = current.isEmpty ? null : current.first;
+    final pool = currentQuality == null
+        ? qualities
+        : qualities
+            .where((quality) =>
+                quality.resolution == currentQuality.resolution &&
+                (quality.fps ?? 30) == (currentQuality.fps ?? 30))
+            .toList();
+    final preference = currentQuality == null
+        ? widget.defaultQuality
+        : _qualityPreference(currentQuality);
+    return NewPipeStreamHelper.findBestMatchingQuality(
+      pool.isEmpty ? qualities : pool,
+      preference,
+      preferredCodec: widget.defaultVideoCodec,
+    )?.label;
+  }
+
+  String _qualityPreference(StreamQualityInfo quality) {
+    var label = '${quality.resolution}p';
+    if (quality.fps != null && quality.fps! > 30) {
+      label = '$label ${quality.fps}fps';
+    }
+    return label;
   }
 
   /// Synchronous restore from PiP - no loading state needed since player is already playing
@@ -461,6 +507,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
       debugPrint('Quality: ${_currentConfig!.qualityLabel}');
       print(
         'gastube: stream=${_currentConfig!.qualityLabel} '
+        'pref=${widget.defaultVideoCodec} '
         'source=${_currentConfig!.sourceType} '
         'codecs=${_availableQualities?.map((q) => '${q.label}:${q.videoStream?.codec ?? q.videoStream?.format}').join(',')}',
       );
