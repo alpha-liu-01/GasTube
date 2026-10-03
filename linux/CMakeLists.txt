@@ -114,7 +114,7 @@ if(DEFINED ENV{GASTUBE_UBUNTU_TOUCH})
   # libflutter looks up GTK symbols globally. Exporting the scale wrappers
   # lets them replace the Wayland scale of 1 for the Flutter view only.
   target_link_options(${BINARY_NAME} PRIVATE "-Wl,--export-dynamic")
-  target_link_libraries(${BINARY_NAME} PRIVATE ${CMAKE_DL_LIBS} epoxy)
+  target_link_libraries(${BINARY_NAME} PRIVATE ${CMAKE_DL_LIBS} epoxy wayland-client)
   # Phase 3 links the libmpv built in this container. Desktop builds do not
   # set GASTUBE_UBUNTU_TOUCH, so they keep the system libmpv.
   set(MEDIA_KIT_LIBS_AVAILABLE ON CACHE BOOL

@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstdarg>
 #include <vector>
 
 // Official full-frame engine. The window is always invalidated in full.
@@ -79,10 +80,16 @@ using EglMakeCurrentFn = EGLBoolean (*)(EGLDisplay, EGLSurface, EGLSurface,
                                         EGLContext);
 
 std::atomic<bool> g_present_allowed{true};
+// Set while the window is covered, and kept set until the first real swap
+// after it is shown again. GTK's expose clears a white paint buffer and
+// attaches it before that swap, which is the one white frame on the way back.
+std::atomic<bool> g_hold_expose{false};
 std::atomic<bool> g_logged_skip{false};
 std::atomic<bool> g_logged_make_current{false};
 std::atomic<bool> g_logged_flush{false};
 std::atomic<bool> g_logged_expose{false};
+std::atomic<bool> g_logged_shell{false};
+std::atomic<int> g_in_real_swap{0};
 EglSwapFn g_real_swap = nullptr;
 EglMakeCurrentFn g_real_make_current = nullptr;
 
@@ -97,7 +104,16 @@ extern "C" EGLBoolean gastube_gated_egl_swap(EGLDisplay display,
     return EGL_TRUE;
   }
   if (g_real_swap == nullptr) return EGL_FALSE;
-  return g_real_swap(display, surface);
+  // GTK's paint commits a transparent wl_buffer through wl_proxy_marshal.
+  // That commit is what shows the wallpaper. The swap's own attach has to
+  // go through, so mark this call.
+  g_in_real_swap.fetch_add(1, std::memory_order_acq_rel);
+  EGLBoolean ok = g_real_swap(display, surface);
+  g_in_real_swap.fetch_sub(1, std::memory_order_acq_rel);
+  if (ok == EGL_TRUE) {
+    g_hold_expose.store(false, std::memory_order_release);
+  }
+  return ok;
 }
 
 extern "C" EGLBoolean gastube_gated_egl_make_current(EGLDisplay display,
@@ -191,8 +207,12 @@ using WidgetDrawFn = gboolean (*)(GtkWidget*, cairo_t*);
 
 WidgetDrawFn g_original_draw = nullptr;
 
+GtkWidget* g_renderer = nullptr;
+
+bool expose_held();
+
 gboolean timed_draw(GtkWidget* widget, cairo_t* cr) {
-  if (!g_present_allowed.load(std::memory_order_acquire)) {
+  if (expose_held()) {
     return TRUE;
   }
   gint64 start = g_get_monotonic_time();
@@ -206,8 +226,13 @@ gboolean timed_draw(GtkWidget* widget, cairo_t* cr) {
 WidgetDrawFn g_original_window_draw = nullptr;
 WidgetDrawFn g_original_view_draw = nullptr;
 
+bool expose_held() {
+  return !g_present_allowed.load(std::memory_order_acquire) ||
+         g_hold_expose.load(std::memory_order_acquire);
+}
+
 gboolean draw_or_hold(GtkWidget* widget, cairo_t* cr, WidgetDrawFn original) {
-  if (!g_present_allowed.load(std::memory_order_acquire)) {
+  if (expose_held()) {
     bool already = g_logged_expose.exchange(true, std::memory_order_relaxed);
     if (!already) {
       g_message("present: skipped expose while the window is unfocused");
@@ -216,6 +241,22 @@ gboolean draw_or_hold(GtkWidget* widget, cairo_t* cr, WidgetDrawFn original) {
   }
   if (original != nullptr) return original(widget, cr);
   return FALSE;
+}
+
+gboolean drop_expose_before_paint(GtkWidget*, GdkEvent* event, gpointer) {
+  if (!expose_held()) return FALSE;
+  if (event->type != GDK_EXPOSE && event->type != GDK_DAMAGE) return FALSE;
+  bool already = g_logged_expose.exchange(true, std::memory_order_relaxed);
+  if (!already) {
+    g_message("present: dropped expose until the resumed swap");
+  }
+  return TRUE;
+}
+
+void watch_expose(GtkWidget* widget) {
+  if (widget == nullptr) return;
+  g_signal_connect(widget, "event", G_CALLBACK(drop_expose_before_paint),
+                   nullptr);
 }
 
 gboolean hold_window_draw(GtkWidget* widget, cairo_t* cr) {
@@ -267,15 +308,19 @@ void gastube_ut_install_present_hook(GtkWidget* view) {
     GtkWidgetClass* window_class = GTK_WIDGET_GET_CLASS(top);
     g_original_window_draw = window_class->draw;
     window_class->draw = hold_window_draw;
+    watch_expose(top);
   }
   if (g_original_view_draw == nullptr) {
     GtkWidgetClass* view_class = GTK_WIDGET_GET_CLASS(view);
     g_original_view_draw = view_class->draw;
     view_class->draw = hold_view_draw;
+    watch_expose(view);
   }
   GtkWidget* renderer = nullptr;
   find_renderer(view, &renderer);
   if (renderer != nullptr && g_original_draw == nullptr) {
+    g_renderer = renderer;
+    watch_expose(renderer);
     // The draw vfunc returns TRUE, which stops the signal before an
     // after-handler would run. Wrap the class handler instead.
     GtkWidgetClass* klass = GTK_WIDGET_GET_CLASS(renderer);
@@ -295,7 +340,131 @@ void gastube_ut_set_present_allowed(bool allowed) {
   g_logged_make_current.store(false, std::memory_order_relaxed);
   g_logged_flush.store(false, std::memory_order_relaxed);
   g_logged_expose.store(false, std::memory_order_relaxed);
+  g_logged_shell.store(false, std::memory_order_relaxed);
+  if (!allowed) {
+    g_hold_expose.store(true, std::memory_order_release);
+  } else if (g_renderer != nullptr && g_original_draw != nullptr) {
+    // Schedule the frame the expose would have scheduled. Calling the
+    // renderer draw from here does not enter GDK begin_paint, so it does
+    // not attach the white buffer. The onscreen draw only schedules.
+    g_original_draw(g_renderer, nullptr);
+    g_message("present: scheduled frame without a GTK paint");
+  }
   g_message("present: %s", allowed ? "resume swap" : "pause swap");
+}
+
+// Wayland 1.0 wl_surface opcodes. Focal GDK inlines wl_surface_attach and
+// wl_surface_commit into wl_proxy_marshal, so this is the call to filter.
+constexpr uint32_t kWlSurfaceAttach = 1;
+constexpr uint32_t kWlSurfaceCommit = 6;
+constexpr int kWlMaxArgs = 20;
+
+struct ArgDetails {
+  char type;
+  int nullable;
+};
+
+const char* next_wl_argument(const char* signature, ArgDetails* details) {
+  details->nullable = 0;
+  for (; signature != nullptr && *signature != '\0'; ++signature) {
+    switch (*signature) {
+      case 'i':
+      case 'u':
+      case 'f':
+      case 's':
+      case 'o':
+      case 'n':
+      case 'a':
+      case 'h':
+        details->type = *signature;
+        return signature + 1;
+      case '?':
+        details->nullable = 1;
+        break;
+      default:
+        break;
+    }
+  }
+  details->type = '\0';
+  return signature;
+}
+
+void fill_wl_arguments(const char* signature, union wl_argument* args, int count,
+                       va_list ap) {
+  for (int i = 0; i < count; i++) {
+    ArgDetails arg;
+    signature = next_wl_argument(signature, &arg);
+    switch (arg.type) {
+      case 'i':
+        args[i].i = va_arg(ap, int32_t);
+        break;
+      case 'u':
+        args[i].u = va_arg(ap, uint32_t);
+        break;
+      case 'f':
+        args[i].f = va_arg(ap, wl_fixed_t);
+        break;
+      case 's':
+        args[i].s = va_arg(ap, const char*);
+        break;
+      case 'o':
+      case 'n':
+        args[i].o = va_arg(ap, struct wl_object*);
+        break;
+      case 'a':
+        args[i].a = va_arg(ap, struct wl_array*);
+        break;
+      case 'h':
+        args[i].h = va_arg(ap, int32_t);
+        break;
+      case '\0':
+        return;
+      default:
+        return;
+    }
+  }
+}
+
+bool drop_surface_update(struct wl_proxy* proxy, uint32_t opcode) {
+  if (!g_hold_expose.load(std::memory_order_acquire)) return false;
+  if (g_in_real_swap.load(std::memory_order_acquire) != 0) return false;
+  if (proxy == nullptr) return false;
+  if (opcode != kWlSurfaceAttach && opcode != kWlSurfaceCommit) return false;
+  const auto* iface =
+      *reinterpret_cast<const struct wl_interface* const*>(proxy);
+  if (iface != &wl_surface_interface) return false;
+  bool already = g_logged_shell.exchange(true, std::memory_order_relaxed);
+  if (!already) {
+    g_message(
+        "present: skipped wl_surface attach/commit while the last frame is held");
+  }
+  return true;
+}
+
+extern "C" void wl_proxy_marshal(struct wl_proxy* proxy, uint32_t opcode, ...) {
+  if (drop_surface_update(proxy, opcode)) return;
+
+  const auto* iface =
+      proxy == nullptr
+          ? nullptr
+          : *reinterpret_cast<const struct wl_interface* const*>(proxy);
+  union wl_argument args[kWlMaxArgs];
+  va_list ap;
+  va_start(ap, opcode);
+  if (iface != nullptr && opcode < static_cast<uint32_t>(iface->method_count)) {
+    fill_wl_arguments(iface->methods[opcode].signature, args, kWlMaxArgs, ap);
+  }
+  va_end(ap);
+
+  using MarshalArrayFn = struct wl_proxy* (*)(struct wl_proxy*, uint32_t,
+                                              union wl_argument*,
+                                              const struct wl_interface*);
+  static MarshalArrayFn real = nullptr;
+  if (real == nullptr) {
+    real = reinterpret_cast<MarshalArrayFn>(
+        dlsym(RTLD_NEXT, "wl_proxy_marshal_array_constructor"));
+  }
+  if (real != nullptr) real(proxy, opcode, args, nullptr);
 }
 
 extern "C" int wl_display_flush(struct wl_display* display) {
