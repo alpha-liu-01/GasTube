@@ -17,6 +17,7 @@ import 'package:fluxtube/domain/watch/models/newpipe/newpipe_subtitle.dart';
 import 'package:fluxtube/domain/watch/models/newpipe/newpipe_watch_resp.dart';
 import 'package:fluxtube/domain/watch/playback/models/playback_configuration.dart';
 import 'package:fluxtube/domain/watch/playback/models/stream_quality_info.dart';
+import 'package:fluxtube/core/settings.dart';
 import 'package:fluxtube/domain/watch/playback/newpipe_playback_resolver.dart';
 import 'package:fluxtube/domain/watch/playback/newpipe_stream_helper.dart';
 import 'package:fluxtube/core/player/playback_queue.dart';
@@ -38,6 +39,7 @@ class NewPipeExoPlayer extends StatefulWidget {
     required this.videoId,
     required this.playbackPosition,
     this.defaultQuality = '720p',
+    this.defaultVideoCodec = defaultVideoCodecH264,
     this.videoFitMode = 'contain',
     this.skipInterval = 10,
     this.preferAdaptivePlayback = true,
@@ -54,6 +56,7 @@ class NewPipeExoPlayer extends StatefulWidget {
   final String videoId;
   final int playbackPosition;
   final String defaultQuality;
+  final String defaultVideoCodec;
   final String videoFitMode;
   final int skipInterval;
   final bool preferAdaptivePlayback;
@@ -115,7 +118,10 @@ class _NewPipeExoPlayerState extends State<NewPipeExoPlayer> {
   @override
   void initState() {
     super.initState();
-    _qualities = NewPipeStreamHelper.getAvailableQualities(widget.watchInfo);
+    _qualities = NewPipeStreamHelper.getAvailableQualities(
+      widget.watchInfo,
+      preferredCodec: widget.defaultVideoCodec,
+    );
     _audioTracks = NewPipeStreamHelper.getAvailableAudioTracks(
       widget.watchInfo.audioStreams ?? [],
     );
@@ -223,6 +229,7 @@ class _NewPipeExoPlayerState extends State<NewPipeExoPlayer> {
     return NewPipeStreamHelper.findBestMatchingQuality(
           _qualities,
           widget.defaultQuality,
+          preferredCodec: widget.defaultVideoCodec,
         )?.label ??
         'Auto';
   }
@@ -234,6 +241,7 @@ class _NewPipeExoPlayerState extends State<NewPipeExoPlayer> {
       preferredQuality: preferAdaptive ? _initialQuality() : quality,
       preferHighQuality: true,
       preferAdaptive: preferAdaptive,
+      preferredCodec: widget.defaultVideoCodec,
     );
 
     if (resolved.sourceType == MediaSourceType.merging &&
@@ -710,6 +718,7 @@ class _NewPipeExoPlayerState extends State<NewPipeExoPlayer> {
             defaultQuality: _currentQuality == 'Auto'
                 ? widget.defaultQuality
                 : _currentQuality,
+            defaultVideoCodec: widget.defaultVideoCodec,
             videoFitMode: _fitMode,
             skipInterval: widget.skipInterval,
             preferAdaptivePlayback: _currentQuality == 'Auto',

@@ -44,6 +44,8 @@ abstract class SettingsService {
   // New methods for additional features
   Future<Either<MainFailure, String>> setSearchFilter({required String filter});
   Future<Either<MainFailure, String>> setVideoFitMode({required String fitMode});
+  Future<Either<MainFailure, String>> setDefaultVideoCodec(
+      {required String codec});
   Future<Either<MainFailure, int>> setSkipInterval({required int seconds});
   Future<Either<MainFailure, bool>> toggleSponsorBlock({required bool isEnabled});
   Future<Either<MainFailure, List<String>>> setSponsorBlockCategories(

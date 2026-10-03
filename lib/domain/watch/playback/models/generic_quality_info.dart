@@ -1,3 +1,6 @@
+import 'package:fluxtube/core/settings.dart';
+import 'package:fluxtube/domain/watch/playback/video_codec.dart';
+
 /// Generic quality info model for all video services (non-NewPipe)
 class GenericQualityInfo {
   final String label;
@@ -5,6 +8,7 @@ class GenericQualityInfo {
   final int resolution;
   final int? fps;
   final String? format;
+  final String? codec;
   final String? url;
 
   GenericQualityInfo({
@@ -13,6 +17,7 @@ class GenericQualityInfo {
     required this.resolution,
     this.fps,
     this.format,
+    this.codec,
     this.url,
   });
 
@@ -36,16 +41,21 @@ class GenericQualityInfo {
 
   static GenericQualityInfo? findBestMatchingQuality(
     List<GenericQualityInfo> qualities,
-    String preferredQuality,
-  ) {
+    String preferredQuality, {
+    String preferredCodec = defaultVideoCodecH264,
+  }) {
     if (qualities.isEmpty) return null;
 
     final normalizedPreference = preferredQuality.toLowerCase().trim();
     final exact = qualities
         .where((quality) =>
             quality.label.toLowerCase().trim() == normalizedPreference)
-        .firstOrNull;
-    if (exact != null) return exact;
+        .toList();
+    if (exact.isNotEmpty) {
+      exact.sort((a, b) => _codecPenalty(a, preferredCodec)
+          .compareTo(_codecPenalty(b, preferredCodec)));
+      return exact.first;
+    }
 
     final targetResolution = parseResolution(preferredQuality);
     if (targetResolution <= 0) return qualities.first;
@@ -65,6 +75,10 @@ class GenericQualityInfo {
       final lowerResolutionCompare = a.resolution.compareTo(b.resolution);
       if (lowerResolutionCompare != 0) return lowerResolutionCompare;
 
+      final codecCompare = _codecPenalty(a, preferredCodec)
+          .compareTo(_codecPenalty(b, preferredCodec));
+      if (codecCompare != 0) return codecCompare;
+
       return _formatPenalty(a.format).compareTo(_formatPenalty(b.format));
     });
 
@@ -81,5 +95,12 @@ class GenericQualityInfo {
     const preferredFormats = ['MP4', 'M4A', 'WEBM'];
     final index = preferredFormats.indexOf(format?.toUpperCase() ?? '');
     return index == -1 ? preferredFormats.length : index;
+  }
+
+  static int _codecPenalty(GenericQualityInfo quality, String preferredCodec) {
+    return videoCodecRank(
+      videoCodecFamily(codec: quality.codec, format: quality.format),
+      preferredCodec,
+    );
   }
 }

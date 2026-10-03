@@ -35,6 +35,7 @@ mixin _$SettingsEvent {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -75,6 +76,7 @@ mixin _$SettingsEvent {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -113,6 +115,7 @@ mixin _$SettingsEvent {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -157,6 +160,7 @@ mixin _$SettingsEvent {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -201,6 +205,7 @@ mixin _$SettingsEvent {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -243,6 +248,7 @@ mixin _$SettingsEvent {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -347,6 +353,7 @@ class _$InitializeSettingsImpl implements InitializeSettings {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -390,6 +397,7 @@ class _$InitializeSettingsImpl implements InitializeSettings {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -431,6 +439,7 @@ class _$InitializeSettingsImpl implements InitializeSettings {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -481,6 +490,7 @@ class _$InitializeSettingsImpl implements InitializeSettings {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -528,6 +538,7 @@ class _$InitializeSettingsImpl implements InitializeSettings {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -573,6 +584,7 @@ class _$InitializeSettingsImpl implements InitializeSettings {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -693,6 +705,7 @@ class _$GetDefaultLanguageImpl implements GetDefaultLanguage {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -736,6 +749,7 @@ class _$GetDefaultLanguageImpl implements GetDefaultLanguage {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -777,6 +791,7 @@ class _$GetDefaultLanguageImpl implements GetDefaultLanguage {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -827,6 +842,7 @@ class _$GetDefaultLanguageImpl implements GetDefaultLanguage {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -874,6 +890,7 @@ class _$GetDefaultLanguageImpl implements GetDefaultLanguage {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -919,6 +936,7 @@ class _$GetDefaultLanguageImpl implements GetDefaultLanguage {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -1047,6 +1065,7 @@ class _$GetDefaultQualityImpl implements GetDefaultQuality {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -1090,6 +1109,7 @@ class _$GetDefaultQualityImpl implements GetDefaultQuality {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -1131,6 +1151,7 @@ class _$GetDefaultQualityImpl implements GetDefaultQuality {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -1181,6 +1202,7 @@ class _$GetDefaultQualityImpl implements GetDefaultQuality {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -1228,6 +1250,7 @@ class _$GetDefaultQualityImpl implements GetDefaultQuality {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -1273,6 +1296,7 @@ class _$GetDefaultQualityImpl implements GetDefaultQuality {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -1401,6 +1425,7 @@ class _$GetDefaultRegionImpl implements GetDefaultRegion {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -1444,6 +1469,7 @@ class _$GetDefaultRegionImpl implements GetDefaultRegion {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -1485,6 +1511,7 @@ class _$GetDefaultRegionImpl implements GetDefaultRegion {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -1535,6 +1562,7 @@ class _$GetDefaultRegionImpl implements GetDefaultRegion {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -1582,6 +1610,7 @@ class _$GetDefaultRegionImpl implements GetDefaultRegion {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -1627,6 +1656,7 @@ class _$GetDefaultRegionImpl implements GetDefaultRegion {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -1755,6 +1785,7 @@ class _$ChangeThemeImpl implements ChangeTheme {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -1798,6 +1829,7 @@ class _$ChangeThemeImpl implements ChangeTheme {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -1839,6 +1871,7 @@ class _$ChangeThemeImpl implements ChangeTheme {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -1889,6 +1922,7 @@ class _$ChangeThemeImpl implements ChangeTheme {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -1936,6 +1970,7 @@ class _$ChangeThemeImpl implements ChangeTheme {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -1981,6 +2016,7 @@ class _$ChangeThemeImpl implements ChangeTheme {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -2083,6 +2119,7 @@ class _$ToggleHistoryVisibilityImpl implements ToggleHistoryVisibility {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -2126,6 +2163,7 @@ class _$ToggleHistoryVisibilityImpl implements ToggleHistoryVisibility {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -2167,6 +2205,7 @@ class _$ToggleHistoryVisibilityImpl implements ToggleHistoryVisibility {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -2217,6 +2256,7 @@ class _$ToggleHistoryVisibilityImpl implements ToggleHistoryVisibility {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -2264,6 +2304,7 @@ class _$ToggleHistoryVisibilityImpl implements ToggleHistoryVisibility {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -2309,6 +2350,7 @@ class _$ToggleHistoryVisibilityImpl implements ToggleHistoryVisibility {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -2403,6 +2445,7 @@ class _$ToggleDislikeVisibilityImpl implements ToggleDislikeVisibility {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -2446,6 +2489,7 @@ class _$ToggleDislikeVisibilityImpl implements ToggleDislikeVisibility {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -2487,6 +2531,7 @@ class _$ToggleDislikeVisibilityImpl implements ToggleDislikeVisibility {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -2537,6 +2582,7 @@ class _$ToggleDislikeVisibilityImpl implements ToggleDislikeVisibility {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -2584,6 +2630,7 @@ class _$ToggleDislikeVisibilityImpl implements ToggleDislikeVisibility {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -2629,6 +2676,7 @@ class _$ToggleDislikeVisibilityImpl implements ToggleDislikeVisibility {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -2720,6 +2768,7 @@ class _$ToggleHlsPlayerImpl implements ToggleHlsPlayer {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -2763,6 +2812,7 @@ class _$ToggleHlsPlayerImpl implements ToggleHlsPlayer {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -2804,6 +2854,7 @@ class _$ToggleHlsPlayerImpl implements ToggleHlsPlayer {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -2854,6 +2905,7 @@ class _$ToggleHlsPlayerImpl implements ToggleHlsPlayer {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -2901,6 +2953,7 @@ class _$ToggleHlsPlayerImpl implements ToggleHlsPlayer {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -2946,6 +2999,7 @@ class _$ToggleHlsPlayerImpl implements ToggleHlsPlayer {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -3040,6 +3094,7 @@ class _$ToggleCommentVisibilityImpl implements ToggleCommentVisibility {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -3083,6 +3138,7 @@ class _$ToggleCommentVisibilityImpl implements ToggleCommentVisibility {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -3124,6 +3180,7 @@ class _$ToggleCommentVisibilityImpl implements ToggleCommentVisibility {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -3174,6 +3231,7 @@ class _$ToggleCommentVisibilityImpl implements ToggleCommentVisibility {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -3221,6 +3279,7 @@ class _$ToggleCommentVisibilityImpl implements ToggleCommentVisibility {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -3266,6 +3325,7 @@ class _$ToggleCommentVisibilityImpl implements ToggleCommentVisibility {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -3362,6 +3422,7 @@ class _$ToggleRelatedVideoVisibilityImpl
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -3405,6 +3466,7 @@ class _$ToggleRelatedVideoVisibilityImpl
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -3446,6 +3508,7 @@ class _$ToggleRelatedVideoVisibilityImpl
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -3496,6 +3559,7 @@ class _$ToggleRelatedVideoVisibilityImpl
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -3543,6 +3607,7 @@ class _$ToggleRelatedVideoVisibilityImpl
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -3588,6 +3653,7 @@ class _$ToggleRelatedVideoVisibilityImpl
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -3709,6 +3775,7 @@ class _$FetchPipedInstancesImpl implements FetchPipedInstances {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -3752,6 +3819,7 @@ class _$FetchPipedInstancesImpl implements FetchPipedInstances {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -3793,6 +3861,7 @@ class _$FetchPipedInstancesImpl implements FetchPipedInstances {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -3843,6 +3912,7 @@ class _$FetchPipedInstancesImpl implements FetchPipedInstances {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -3890,6 +3960,7 @@ class _$FetchPipedInstancesImpl implements FetchPipedInstances {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -3935,6 +4006,7 @@ class _$FetchPipedInstancesImpl implements FetchPipedInstances {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -4067,6 +4139,7 @@ class _$FetchInvidiousInstancesImpl implements FetchInvidiousInstances {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -4110,6 +4183,7 @@ class _$FetchInvidiousInstancesImpl implements FetchInvidiousInstances {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -4151,6 +4225,7 @@ class _$FetchInvidiousInstancesImpl implements FetchInvidiousInstances {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -4201,6 +4276,7 @@ class _$FetchInvidiousInstancesImpl implements FetchInvidiousInstances {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -4248,6 +4324,7 @@ class _$FetchInvidiousInstancesImpl implements FetchInvidiousInstances {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -4293,6 +4370,7 @@ class _$FetchInvidiousInstancesImpl implements FetchInvidiousInstances {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -4421,6 +4499,7 @@ class _$SetInstanceImpl implements SetInstance {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -4464,6 +4543,7 @@ class _$SetInstanceImpl implements SetInstance {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -4505,6 +4585,7 @@ class _$SetInstanceImpl implements SetInstance {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -4555,6 +4636,7 @@ class _$SetInstanceImpl implements SetInstance {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -4602,6 +4684,7 @@ class _$SetInstanceImpl implements SetInstance {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -4647,6 +4730,7 @@ class _$SetInstanceImpl implements SetInstance {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -4773,6 +4857,7 @@ class _$SetYTServiceImpl implements SetYTService {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -4816,6 +4901,7 @@ class _$SetYTServiceImpl implements SetYTService {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -4857,6 +4943,7 @@ class _$SetYTServiceImpl implements SetYTService {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -4907,6 +4994,7 @@ class _$SetYTServiceImpl implements SetYTService {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -4954,6 +5042,7 @@ class _$SetYTServiceImpl implements SetYTService {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -4999,6 +5088,7 @@ class _$SetYTServiceImpl implements SetYTService {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -5099,6 +5189,7 @@ class _$TogglePipPlayerImpl implements TogglePipPlayer {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -5142,6 +5233,7 @@ class _$TogglePipPlayerImpl implements TogglePipPlayer {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -5183,6 +5275,7 @@ class _$TogglePipPlayerImpl implements TogglePipPlayer {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -5233,6 +5326,7 @@ class _$TogglePipPlayerImpl implements TogglePipPlayer {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -5280,6 +5374,7 @@ class _$TogglePipPlayerImpl implements TogglePipPlayer {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -5325,6 +5420,7 @@ class _$TogglePipPlayerImpl implements TogglePipPlayer {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -5444,6 +5540,7 @@ class _$SetSearchFilterImpl implements SetSearchFilter {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -5487,6 +5584,7 @@ class _$SetSearchFilterImpl implements SetSearchFilter {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -5528,6 +5626,7 @@ class _$SetSearchFilterImpl implements SetSearchFilter {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -5578,6 +5677,7 @@ class _$SetSearchFilterImpl implements SetSearchFilter {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -5625,6 +5725,7 @@ class _$SetSearchFilterImpl implements SetSearchFilter {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -5670,6 +5771,7 @@ class _$SetSearchFilterImpl implements SetSearchFilter {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -5798,6 +5900,7 @@ class _$SetVideoFitModeImpl implements SetVideoFitMode {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -5841,6 +5944,7 @@ class _$SetVideoFitModeImpl implements SetVideoFitMode {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -5882,6 +5986,7 @@ class _$SetVideoFitModeImpl implements SetVideoFitMode {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -5932,6 +6037,7 @@ class _$SetVideoFitModeImpl implements SetVideoFitMode {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -5979,6 +6085,7 @@ class _$SetVideoFitModeImpl implements SetVideoFitMode {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -6024,6 +6131,7 @@ class _$SetVideoFitModeImpl implements SetVideoFitMode {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -6063,6 +6171,366 @@ abstract class SetVideoFitMode implements SettingsEvent {
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
   _$$SetVideoFitModeImplCopyWith<_$SetVideoFitModeImpl> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class _$$SetDefaultVideoCodecImplCopyWith<$Res> {
+  factory _$$SetDefaultVideoCodecImplCopyWith(_$SetDefaultVideoCodecImpl value,
+          $Res Function(_$SetVideoFitModeImpl) then) =
+      __$$SetDefaultVideoCodecImplCopyWithImpl<$Res>;
+  @useResult
+  $Res call({String codec});
+}
+
+/// @nodoc
+class __$$SetDefaultVideoCodecImplCopyWithImpl<$Res>
+    extends _$SettingsEventCopyWithImpl<$Res, _$SetDefaultVideoCodecImpl>
+    implements _$$SetDefaultVideoCodecImplCopyWith<$Res> {
+  __$$SetDefaultVideoCodecImplCopyWithImpl(
+      _$SetVideoFitModeImpl _value, $Res Function(_$SetVideoFitModeImpl) _then)
+      : super(_value, _then);
+
+  /// Create a copy of SettingsEvent
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? codec = null,
+  }) {
+    return _then(_$SetDefaultVideoCodecImpl(
+      codec: null == codec
+          ? _value.codec
+          : codec // ignore: cast_nullable_to_non_nullable
+              as String,
+    ));
+  }
+}
+
+/// @nodoc
+
+class _$SetDefaultVideoCodecImpl implements SetDefaultVideoCodec {
+  _$SetDefaultVideoCodecImpl({required this.codec});
+
+  @override
+  final String codec;
+
+  @override
+  String toString() {
+    return 'SettingsEvent.setDefaultVideoCodec(codec: $codec)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$SetDefaultVideoCodecImpl &&
+            (identical(other.codec, codec) || other.codec == codec));
+  }
+
+  @override
+  int get hashCode => Object.hash(runtimeType, codec);
+
+  /// Create a copy of SettingsEvent
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$SetDefaultVideoCodecImplCopyWith<_$SetDefaultVideoCodecImpl> get copyWith =>
+      __$$SetDefaultVideoCodecImplCopyWithImpl<_$SetDefaultVideoCodecImpl>(
+          this, _$identity);
+
+  @override
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>({
+    required TResult Function() initializeSettings,
+    required TResult Function(String? language) getDefaultLanguage,
+    required TResult Function(String? quality) getDefaultQuality,
+    required TResult Function(String? region) getDefaultRegion,
+    required TResult Function(String themeMode) changeTheme,
+    required TResult Function() toggleHistoryVisibility,
+    required TResult Function() toggleDislikeVisibility,
+    required TResult Function() toggleHlsPlayer,
+    required TResult Function() toggleCommentVisibility,
+    required TResult Function() toggleRelatedVideoVisibility,
+    required TResult Function(bool forceRefresh) fetchPipedInstances,
+    required TResult Function(bool forceRefresh) fetchInvidiousInstances,
+    required TResult Function(String instanceApi) setInstance,
+    required TResult Function(YouTubeServices service) setYTService,
+    required TResult Function() togglePipPlayer,
+    required TResult Function(String filter) setSearchFilter,
+    required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
+    required TResult Function(int seconds) setSkipInterval,
+    required TResult Function() toggleSponsorBlock,
+    required TResult Function(List<String> categories)
+        setSponsorBlockCategories,
+    required TResult Function() toggleOpenLinksInBrowser,
+    required TResult Function(String mode) setHomeFeedMode,
+    required TResult Function() toggleAudioFocus,
+    required TResult Function(String profileName) addProfile,
+    required TResult Function(String profileName) deleteProfile,
+    required TResult Function(String profileName) switchProfile,
+    required TResult Function(String oldName, String newName) renameProfile,
+    required TResult Function(String profileName) exportSubscriptions,
+    required TResult Function(String filePath, String profileName)
+        importSubscriptions,
+    required TResult Function(double size) setSubtitleSize,
+    required TResult Function() toggleSearchHistoryEnabled,
+    required TResult Function() toggleSearchHistoryVisibility,
+    required TResult Function(String filePath) setLastExportedFilePath,
+    required TResult Function() toggleAutoPip,
+  }) {
+    return setDefaultVideoCodec(codec);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>({
+    TResult? Function()? initializeSettings,
+    TResult? Function(String? language)? getDefaultLanguage,
+    TResult? Function(String? quality)? getDefaultQuality,
+    TResult? Function(String? region)? getDefaultRegion,
+    TResult? Function(String themeMode)? changeTheme,
+    TResult? Function()? toggleHistoryVisibility,
+    TResult? Function()? toggleDislikeVisibility,
+    TResult? Function()? toggleHlsPlayer,
+    TResult? Function()? toggleCommentVisibility,
+    TResult? Function()? toggleRelatedVideoVisibility,
+    TResult? Function(bool forceRefresh)? fetchPipedInstances,
+    TResult? Function(bool forceRefresh)? fetchInvidiousInstances,
+    TResult? Function(String instanceApi)? setInstance,
+    TResult? Function(YouTubeServices service)? setYTService,
+    TResult? Function()? togglePipPlayer,
+    TResult? Function(String filter)? setSearchFilter,
+    TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
+    TResult? Function(int seconds)? setSkipInterval,
+    TResult? Function()? toggleSponsorBlock,
+    TResult? Function(List<String> categories)? setSponsorBlockCategories,
+    TResult? Function()? toggleOpenLinksInBrowser,
+    TResult? Function(String mode)? setHomeFeedMode,
+    TResult? Function()? toggleAudioFocus,
+    TResult? Function(String profileName)? addProfile,
+    TResult? Function(String profileName)? deleteProfile,
+    TResult? Function(String profileName)? switchProfile,
+    TResult? Function(String oldName, String newName)? renameProfile,
+    TResult? Function(String profileName)? exportSubscriptions,
+    TResult? Function(String filePath, String profileName)? importSubscriptions,
+    TResult? Function(double size)? setSubtitleSize,
+    TResult? Function()? toggleSearchHistoryEnabled,
+    TResult? Function()? toggleSearchHistoryVisibility,
+    TResult? Function(String filePath)? setLastExportedFilePath,
+    TResult? Function()? toggleAutoPip,
+  }) {
+    return setDefaultVideoCodec?.call(codec);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>({
+    TResult Function()? initializeSettings,
+    TResult Function(String? language)? getDefaultLanguage,
+    TResult Function(String? quality)? getDefaultQuality,
+    TResult Function(String? region)? getDefaultRegion,
+    TResult Function(String themeMode)? changeTheme,
+    TResult Function()? toggleHistoryVisibility,
+    TResult Function()? toggleDislikeVisibility,
+    TResult Function()? toggleHlsPlayer,
+    TResult Function()? toggleCommentVisibility,
+    TResult Function()? toggleRelatedVideoVisibility,
+    TResult Function(bool forceRefresh)? fetchPipedInstances,
+    TResult Function(bool forceRefresh)? fetchInvidiousInstances,
+    TResult Function(String instanceApi)? setInstance,
+    TResult Function(YouTubeServices service)? setYTService,
+    TResult Function()? togglePipPlayer,
+    TResult Function(String filter)? setSearchFilter,
+    TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
+    TResult Function(int seconds)? setSkipInterval,
+    TResult Function()? toggleSponsorBlock,
+    TResult Function(List<String> categories)? setSponsorBlockCategories,
+    TResult Function()? toggleOpenLinksInBrowser,
+    TResult Function(String mode)? setHomeFeedMode,
+    TResult Function()? toggleAudioFocus,
+    TResult Function(String profileName)? addProfile,
+    TResult Function(String profileName)? deleteProfile,
+    TResult Function(String profileName)? switchProfile,
+    TResult Function(String oldName, String newName)? renameProfile,
+    TResult Function(String profileName)? exportSubscriptions,
+    TResult Function(String filePath, String profileName)? importSubscriptions,
+    TResult Function(double size)? setSubtitleSize,
+    TResult Function()? toggleSearchHistoryEnabled,
+    TResult Function()? toggleSearchHistoryVisibility,
+    TResult Function(String filePath)? setLastExportedFilePath,
+    TResult Function()? toggleAutoPip,
+    required TResult orElse(),
+  }) {
+    if (setDefaultVideoCodec != null) {
+      return setDefaultVideoCodec(codec);
+    }
+    return orElse();
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>({
+    required TResult Function(InitializeSettings value) initializeSettings,
+    required TResult Function(GetDefaultLanguage value) getDefaultLanguage,
+    required TResult Function(GetDefaultQuality value) getDefaultQuality,
+    required TResult Function(GetDefaultRegion value) getDefaultRegion,
+    required TResult Function(ChangeTheme value) changeTheme,
+    required TResult Function(ToggleHistoryVisibility value)
+        toggleHistoryVisibility,
+    required TResult Function(ToggleDislikeVisibility value)
+        toggleDislikeVisibility,
+    required TResult Function(ToggleHlsPlayer value) toggleHlsPlayer,
+    required TResult Function(ToggleCommentVisibility value)
+        toggleCommentVisibility,
+    required TResult Function(ToggleRelatedVideoVisibility value)
+        toggleRelatedVideoVisibility,
+    required TResult Function(FetchPipedInstances value) fetchPipedInstances,
+    required TResult Function(FetchInvidiousInstances value)
+        fetchInvidiousInstances,
+    required TResult Function(SetInstance value) setInstance,
+    required TResult Function(SetYTService value) setYTService,
+    required TResult Function(TogglePipPlayer value) togglePipPlayer,
+    required TResult Function(SetSearchFilter value) setSearchFilter,
+    required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
+    required TResult Function(SetSkipInterval value) setSkipInterval,
+    required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
+    required TResult Function(SetSponsorBlockCategories value)
+        setSponsorBlockCategories,
+    required TResult Function(ToggleOpenLinksInBrowser value)
+        toggleOpenLinksInBrowser,
+    required TResult Function(SetHomeFeedMode value) setHomeFeedMode,
+    required TResult Function(ToggleAudioFocus value) toggleAudioFocus,
+    required TResult Function(AddProfile value) addProfile,
+    required TResult Function(DeleteProfile value) deleteProfile,
+    required TResult Function(SwitchProfile value) switchProfile,
+    required TResult Function(RenameProfile value) renameProfile,
+    required TResult Function(ExportSubscriptions value) exportSubscriptions,
+    required TResult Function(ImportSubscriptions value) importSubscriptions,
+    required TResult Function(SetSubtitleSize value) setSubtitleSize,
+    required TResult Function(ToggleSearchHistoryEnabled value)
+        toggleSearchHistoryEnabled,
+    required TResult Function(ToggleSearchHistoryVisibility value)
+        toggleSearchHistoryVisibility,
+    required TResult Function(SetLastExportedFilePath value)
+        setLastExportedFilePath,
+    required TResult Function(ToggleAutoPip value) toggleAutoPip,
+  }) {
+    return setDefaultVideoCodec(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>({
+    TResult? Function(InitializeSettings value)? initializeSettings,
+    TResult? Function(GetDefaultLanguage value)? getDefaultLanguage,
+    TResult? Function(GetDefaultQuality value)? getDefaultQuality,
+    TResult? Function(GetDefaultRegion value)? getDefaultRegion,
+    TResult? Function(ChangeTheme value)? changeTheme,
+    TResult? Function(ToggleHistoryVisibility value)? toggleHistoryVisibility,
+    TResult? Function(ToggleDislikeVisibility value)? toggleDislikeVisibility,
+    TResult? Function(ToggleHlsPlayer value)? toggleHlsPlayer,
+    TResult? Function(ToggleCommentVisibility value)? toggleCommentVisibility,
+    TResult? Function(ToggleRelatedVideoVisibility value)?
+        toggleRelatedVideoVisibility,
+    TResult? Function(FetchPipedInstances value)? fetchPipedInstances,
+    TResult? Function(FetchInvidiousInstances value)? fetchInvidiousInstances,
+    TResult? Function(SetInstance value)? setInstance,
+    TResult? Function(SetYTService value)? setYTService,
+    TResult? Function(TogglePipPlayer value)? togglePipPlayer,
+    TResult? Function(SetSearchFilter value)? setSearchFilter,
+    TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
+    TResult? Function(SetSkipInterval value)? setSkipInterval,
+    TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
+    TResult? Function(SetSponsorBlockCategories value)?
+        setSponsorBlockCategories,
+    TResult? Function(ToggleOpenLinksInBrowser value)? toggleOpenLinksInBrowser,
+    TResult? Function(SetHomeFeedMode value)? setHomeFeedMode,
+    TResult? Function(ToggleAudioFocus value)? toggleAudioFocus,
+    TResult? Function(AddProfile value)? addProfile,
+    TResult? Function(DeleteProfile value)? deleteProfile,
+    TResult? Function(SwitchProfile value)? switchProfile,
+    TResult? Function(RenameProfile value)? renameProfile,
+    TResult? Function(ExportSubscriptions value)? exportSubscriptions,
+    TResult? Function(ImportSubscriptions value)? importSubscriptions,
+    TResult? Function(SetSubtitleSize value)? setSubtitleSize,
+    TResult? Function(ToggleSearchHistoryEnabled value)?
+        toggleSearchHistoryEnabled,
+    TResult? Function(ToggleSearchHistoryVisibility value)?
+        toggleSearchHistoryVisibility,
+    TResult? Function(SetLastExportedFilePath value)? setLastExportedFilePath,
+    TResult? Function(ToggleAutoPip value)? toggleAutoPip,
+  }) {
+    return setDefaultVideoCodec?.call(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>({
+    TResult Function(InitializeSettings value)? initializeSettings,
+    TResult Function(GetDefaultLanguage value)? getDefaultLanguage,
+    TResult Function(GetDefaultQuality value)? getDefaultQuality,
+    TResult Function(GetDefaultRegion value)? getDefaultRegion,
+    TResult Function(ChangeTheme value)? changeTheme,
+    TResult Function(ToggleHistoryVisibility value)? toggleHistoryVisibility,
+    TResult Function(ToggleDislikeVisibility value)? toggleDislikeVisibility,
+    TResult Function(ToggleHlsPlayer value)? toggleHlsPlayer,
+    TResult Function(ToggleCommentVisibility value)? toggleCommentVisibility,
+    TResult Function(ToggleRelatedVideoVisibility value)?
+        toggleRelatedVideoVisibility,
+    TResult Function(FetchPipedInstances value)? fetchPipedInstances,
+    TResult Function(FetchInvidiousInstances value)? fetchInvidiousInstances,
+    TResult Function(SetInstance value)? setInstance,
+    TResult Function(SetYTService value)? setYTService,
+    TResult Function(TogglePipPlayer value)? togglePipPlayer,
+    TResult Function(SetSearchFilter value)? setSearchFilter,
+    TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
+    TResult Function(SetSkipInterval value)? setSkipInterval,
+    TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
+    TResult Function(SetSponsorBlockCategories value)?
+        setSponsorBlockCategories,
+    TResult Function(ToggleOpenLinksInBrowser value)? toggleOpenLinksInBrowser,
+    TResult Function(SetHomeFeedMode value)? setHomeFeedMode,
+    TResult Function(ToggleAudioFocus value)? toggleAudioFocus,
+    TResult Function(AddProfile value)? addProfile,
+    TResult Function(DeleteProfile value)? deleteProfile,
+    TResult Function(SwitchProfile value)? switchProfile,
+    TResult Function(RenameProfile value)? renameProfile,
+    TResult Function(ExportSubscriptions value)? exportSubscriptions,
+    TResult Function(ImportSubscriptions value)? importSubscriptions,
+    TResult Function(SetSubtitleSize value)? setSubtitleSize,
+    TResult Function(ToggleSearchHistoryEnabled value)?
+        toggleSearchHistoryEnabled,
+    TResult Function(ToggleSearchHistoryVisibility value)?
+        toggleSearchHistoryVisibility,
+    TResult Function(SetLastExportedFilePath value)? setLastExportedFilePath,
+    TResult Function(ToggleAutoPip value)? toggleAutoPip,
+    required TResult orElse(),
+  }) {
+    if (setDefaultVideoCodec != null) {
+      return setDefaultVideoCodec(this);
+    }
+    return orElse();
+  }
+}
+
+abstract class SetDefaultVideoCodec implements SettingsEvent {
+  factory SetDefaultVideoCodec({required final String codec}) =
+      _$SetDefaultVideoCodecImpl;
+
+  String get codec;
+
+  /// Create a copy of SettingsEvent
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  _$$SetDefaultVideoCodecImplCopyWith<_$SetDefaultVideoCodecImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
 
@@ -6152,6 +6620,7 @@ class _$SetSkipIntervalImpl implements SetSkipInterval {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -6195,6 +6664,7 @@ class _$SetSkipIntervalImpl implements SetSkipInterval {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -6236,6 +6706,7 @@ class _$SetSkipIntervalImpl implements SetSkipInterval {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -6286,6 +6757,7 @@ class _$SetSkipIntervalImpl implements SetSkipInterval {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -6333,6 +6805,7 @@ class _$SetSkipIntervalImpl implements SetSkipInterval {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -6378,6 +6851,7 @@ class _$SetSkipIntervalImpl implements SetSkipInterval {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -6477,6 +6951,7 @@ class _$ToggleSponsorBlockImpl implements ToggleSponsorBlock {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -6520,6 +6995,7 @@ class _$ToggleSponsorBlockImpl implements ToggleSponsorBlock {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -6561,6 +7037,7 @@ class _$ToggleSponsorBlockImpl implements ToggleSponsorBlock {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -6611,6 +7088,7 @@ class _$ToggleSponsorBlockImpl implements ToggleSponsorBlock {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -6658,6 +7136,7 @@ class _$ToggleSponsorBlockImpl implements ToggleSponsorBlock {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -6703,6 +7182,7 @@ class _$ToggleSponsorBlockImpl implements ToggleSponsorBlock {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -6832,6 +7312,7 @@ class _$SetSponsorBlockCategoriesImpl implements SetSponsorBlockCategories {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -6875,6 +7356,7 @@ class _$SetSponsorBlockCategoriesImpl implements SetSponsorBlockCategories {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -6916,6 +7398,7 @@ class _$SetSponsorBlockCategoriesImpl implements SetSponsorBlockCategories {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -6966,6 +7449,7 @@ class _$SetSponsorBlockCategoriesImpl implements SetSponsorBlockCategories {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -7013,6 +7497,7 @@ class _$SetSponsorBlockCategoriesImpl implements SetSponsorBlockCategories {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -7058,6 +7543,7 @@ class _$SetSponsorBlockCategoriesImpl implements SetSponsorBlockCategories {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -7161,6 +7647,7 @@ class _$ToggleOpenLinksInBrowserImpl implements ToggleOpenLinksInBrowser {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -7204,6 +7691,7 @@ class _$ToggleOpenLinksInBrowserImpl implements ToggleOpenLinksInBrowser {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -7245,6 +7733,7 @@ class _$ToggleOpenLinksInBrowserImpl implements ToggleOpenLinksInBrowser {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -7295,6 +7784,7 @@ class _$ToggleOpenLinksInBrowserImpl implements ToggleOpenLinksInBrowser {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -7342,6 +7832,7 @@ class _$ToggleOpenLinksInBrowserImpl implements ToggleOpenLinksInBrowser {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -7387,6 +7878,7 @@ class _$ToggleOpenLinksInBrowserImpl implements ToggleOpenLinksInBrowser {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -7506,6 +7998,7 @@ class _$SetHomeFeedModeImpl implements SetHomeFeedMode {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -7549,6 +8042,7 @@ class _$SetHomeFeedModeImpl implements SetHomeFeedMode {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -7590,6 +8084,7 @@ class _$SetHomeFeedModeImpl implements SetHomeFeedMode {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -7640,6 +8135,7 @@ class _$SetHomeFeedModeImpl implements SetHomeFeedMode {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -7687,6 +8183,7 @@ class _$SetHomeFeedModeImpl implements SetHomeFeedMode {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -7732,6 +8229,7 @@ class _$SetHomeFeedModeImpl implements SetHomeFeedMode {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -7831,6 +8329,7 @@ class _$ToggleAudioFocusImpl implements ToggleAudioFocus {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -7874,6 +8373,7 @@ class _$ToggleAudioFocusImpl implements ToggleAudioFocus {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -7915,6 +8415,7 @@ class _$ToggleAudioFocusImpl implements ToggleAudioFocus {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -7965,6 +8466,7 @@ class _$ToggleAudioFocusImpl implements ToggleAudioFocus {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -8012,6 +8514,7 @@ class _$ToggleAudioFocusImpl implements ToggleAudioFocus {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -8057,6 +8560,7 @@ class _$ToggleAudioFocusImpl implements ToggleAudioFocus {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -8176,6 +8680,7 @@ class _$AddProfileImpl implements AddProfile {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -8219,6 +8724,7 @@ class _$AddProfileImpl implements AddProfile {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -8260,6 +8766,7 @@ class _$AddProfileImpl implements AddProfile {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -8310,6 +8817,7 @@ class _$AddProfileImpl implements AddProfile {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -8357,6 +8865,7 @@ class _$AddProfileImpl implements AddProfile {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -8402,6 +8911,7 @@ class _$AddProfileImpl implements AddProfile {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -8529,6 +9039,7 @@ class _$DeleteProfileImpl implements DeleteProfile {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -8572,6 +9083,7 @@ class _$DeleteProfileImpl implements DeleteProfile {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -8613,6 +9125,7 @@ class _$DeleteProfileImpl implements DeleteProfile {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -8663,6 +9176,7 @@ class _$DeleteProfileImpl implements DeleteProfile {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -8710,6 +9224,7 @@ class _$DeleteProfileImpl implements DeleteProfile {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -8755,6 +9270,7 @@ class _$DeleteProfileImpl implements DeleteProfile {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -8883,6 +9399,7 @@ class _$SwitchProfileImpl implements SwitchProfile {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -8926,6 +9443,7 @@ class _$SwitchProfileImpl implements SwitchProfile {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -8967,6 +9485,7 @@ class _$SwitchProfileImpl implements SwitchProfile {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -9017,6 +9536,7 @@ class _$SwitchProfileImpl implements SwitchProfile {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -9064,6 +9584,7 @@ class _$SwitchProfileImpl implements SwitchProfile {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -9109,6 +9630,7 @@ class _$SwitchProfileImpl implements SwitchProfile {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -9244,6 +9766,7 @@ class _$RenameProfileImpl implements RenameProfile {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -9287,6 +9810,7 @@ class _$RenameProfileImpl implements RenameProfile {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -9328,6 +9852,7 @@ class _$RenameProfileImpl implements RenameProfile {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -9378,6 +9903,7 @@ class _$RenameProfileImpl implements RenameProfile {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -9425,6 +9951,7 @@ class _$RenameProfileImpl implements RenameProfile {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -9470,6 +9997,7 @@ class _$RenameProfileImpl implements RenameProfile {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -9602,6 +10130,7 @@ class _$ExportSubscriptionsImpl implements ExportSubscriptions {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -9645,6 +10174,7 @@ class _$ExportSubscriptionsImpl implements ExportSubscriptions {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -9686,6 +10216,7 @@ class _$ExportSubscriptionsImpl implements ExportSubscriptions {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -9736,6 +10267,7 @@ class _$ExportSubscriptionsImpl implements ExportSubscriptions {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -9783,6 +10315,7 @@ class _$ExportSubscriptionsImpl implements ExportSubscriptions {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -9828,6 +10361,7 @@ class _$ExportSubscriptionsImpl implements ExportSubscriptions {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -9968,6 +10502,7 @@ class _$ImportSubscriptionsImpl implements ImportSubscriptions {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -10011,6 +10546,7 @@ class _$ImportSubscriptionsImpl implements ImportSubscriptions {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -10052,6 +10588,7 @@ class _$ImportSubscriptionsImpl implements ImportSubscriptions {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -10102,6 +10639,7 @@ class _$ImportSubscriptionsImpl implements ImportSubscriptions {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -10149,6 +10687,7 @@ class _$ImportSubscriptionsImpl implements ImportSubscriptions {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -10194,6 +10733,7 @@ class _$ImportSubscriptionsImpl implements ImportSubscriptions {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -10324,6 +10864,7 @@ class _$SetSubtitleSizeImpl implements SetSubtitleSize {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -10367,6 +10908,7 @@ class _$SetSubtitleSizeImpl implements SetSubtitleSize {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -10408,6 +10950,7 @@ class _$SetSubtitleSizeImpl implements SetSubtitleSize {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -10458,6 +11001,7 @@ class _$SetSubtitleSizeImpl implements SetSubtitleSize {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -10505,6 +11049,7 @@ class _$SetSubtitleSizeImpl implements SetSubtitleSize {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -10550,6 +11095,7 @@ class _$SetSubtitleSizeImpl implements SetSubtitleSize {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -10652,6 +11198,7 @@ class _$ToggleSearchHistoryEnabledImpl implements ToggleSearchHistoryEnabled {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -10695,6 +11242,7 @@ class _$ToggleSearchHistoryEnabledImpl implements ToggleSearchHistoryEnabled {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -10736,6 +11284,7 @@ class _$ToggleSearchHistoryEnabledImpl implements ToggleSearchHistoryEnabled {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -10786,6 +11335,7 @@ class _$ToggleSearchHistoryEnabledImpl implements ToggleSearchHistoryEnabled {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -10833,6 +11383,7 @@ class _$ToggleSearchHistoryEnabledImpl implements ToggleSearchHistoryEnabled {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -10878,6 +11429,7 @@ class _$ToggleSearchHistoryEnabledImpl implements ToggleSearchHistoryEnabled {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -10974,6 +11526,7 @@ class _$ToggleSearchHistoryVisibilityImpl
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -11017,6 +11570,7 @@ class _$ToggleSearchHistoryVisibilityImpl
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -11058,6 +11612,7 @@ class _$ToggleSearchHistoryVisibilityImpl
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -11108,6 +11663,7 @@ class _$ToggleSearchHistoryVisibilityImpl
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -11155,6 +11711,7 @@ class _$ToggleSearchHistoryVisibilityImpl
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -11200,6 +11757,7 @@ class _$ToggleSearchHistoryVisibilityImpl
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -11322,6 +11880,7 @@ class _$SetLastExportedFilePathImpl implements SetLastExportedFilePath {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -11365,6 +11924,7 @@ class _$SetLastExportedFilePathImpl implements SetLastExportedFilePath {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -11406,6 +11966,7 @@ class _$SetLastExportedFilePathImpl implements SetLastExportedFilePath {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -11456,6 +12017,7 @@ class _$SetLastExportedFilePathImpl implements SetLastExportedFilePath {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -11503,6 +12065,7 @@ class _$SetLastExportedFilePathImpl implements SetLastExportedFilePath {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -11548,6 +12111,7 @@ class _$SetLastExportedFilePathImpl implements SetLastExportedFilePath {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -11648,6 +12212,7 @@ class _$ToggleAutoPipImpl implements ToggleAutoPip {
     required TResult Function() togglePipPlayer,
     required TResult Function(String filter) setSearchFilter,
     required TResult Function(String fitMode) setVideoFitMode,
+    required TResult Function(String codec) setDefaultVideoCodec,
     required TResult Function(int seconds) setSkipInterval,
     required TResult Function() toggleSponsorBlock,
     required TResult Function(List<String> categories)
@@ -11691,6 +12256,7 @@ class _$ToggleAutoPipImpl implements ToggleAutoPip {
     TResult? Function()? togglePipPlayer,
     TResult? Function(String filter)? setSearchFilter,
     TResult? Function(String fitMode)? setVideoFitMode,
+    TResult? Function(String codec)? setDefaultVideoCodec,
     TResult? Function(int seconds)? setSkipInterval,
     TResult? Function()? toggleSponsorBlock,
     TResult? Function(List<String> categories)? setSponsorBlockCategories,
@@ -11732,6 +12298,7 @@ class _$ToggleAutoPipImpl implements ToggleAutoPip {
     TResult Function()? togglePipPlayer,
     TResult Function(String filter)? setSearchFilter,
     TResult Function(String fitMode)? setVideoFitMode,
+    TResult Function(String codec)? setDefaultVideoCodec,
     TResult Function(int seconds)? setSkipInterval,
     TResult Function()? toggleSponsorBlock,
     TResult Function(List<String> categories)? setSponsorBlockCategories,
@@ -11782,6 +12349,7 @@ class _$ToggleAutoPipImpl implements ToggleAutoPip {
     required TResult Function(TogglePipPlayer value) togglePipPlayer,
     required TResult Function(SetSearchFilter value) setSearchFilter,
     required TResult Function(SetVideoFitMode value) setVideoFitMode,
+    required TResult Function(SetDefaultVideoCodec value) setDefaultVideoCodec,
     required TResult Function(SetSkipInterval value) setSkipInterval,
     required TResult Function(ToggleSponsorBlock value) toggleSponsorBlock,
     required TResult Function(SetSponsorBlockCategories value)
@@ -11829,6 +12397,7 @@ class _$ToggleAutoPipImpl implements ToggleAutoPip {
     TResult? Function(TogglePipPlayer value)? togglePipPlayer,
     TResult? Function(SetSearchFilter value)? setSearchFilter,
     TResult? Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult? Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult? Function(SetSkipInterval value)? setSkipInterval,
     TResult? Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult? Function(SetSponsorBlockCategories value)?
@@ -11874,6 +12443,7 @@ class _$ToggleAutoPipImpl implements ToggleAutoPip {
     TResult Function(TogglePipPlayer value)? togglePipPlayer,
     TResult Function(SetSearchFilter value)? setSearchFilter,
     TResult Function(SetVideoFitMode value)? setVideoFitMode,
+    TResult Function(SetDefaultVideoCodec value)? setDefaultVideoCodec,
     TResult Function(SetSkipInterval value)? setSkipInterval,
     TResult Function(ToggleSponsorBlock value)? toggleSponsorBlock,
     TResult Function(SetSponsorBlockCategories value)?
@@ -11911,6 +12481,7 @@ abstract class ToggleAutoPip implements SettingsEvent {
 mixin _$SettingsState {
   String get defaultLanguage => throw _privateConstructorUsedError;
   String get defaultQuality => throw _privateConstructorUsedError;
+  String get defaultVideoCodec => throw _privateConstructorUsedError;
   String get defaultRegion => throw _privateConstructorUsedError;
   String get themeMode => throw _privateConstructorUsedError;
   String? get version => throw _privateConstructorUsedError;
@@ -11978,6 +12549,7 @@ abstract class $SettingsStateCopyWith<$Res> {
   $Res call(
       {String defaultLanguage,
       String defaultQuality,
+      String defaultVideoCodec,
       String defaultRegion,
       String themeMode,
       String? version,
@@ -12033,6 +12605,7 @@ class _$SettingsStateCopyWithImpl<$Res, $Val extends SettingsState>
   $Res call({
     Object? defaultLanguage = null,
     Object? defaultQuality = null,
+    Object? defaultVideoCodec = null,
     Object? defaultRegion = null,
     Object? themeMode = null,
     Object? version = freezed,
@@ -12078,6 +12651,10 @@ class _$SettingsStateCopyWithImpl<$Res, $Val extends SettingsState>
       defaultQuality: null == defaultQuality
           ? _value.defaultQuality
           : defaultQuality // ignore: cast_nullable_to_non_nullable
+              as String,
+      defaultVideoCodec: null == defaultVideoCodec
+          ? _value.defaultVideoCodec
+          : defaultVideoCodec // ignore: cast_nullable_to_non_nullable
               as String,
       defaultRegion: null == defaultRegion
           ? _value.defaultRegion
@@ -12238,6 +12815,7 @@ abstract class _$$InitialImplCopyWith<$Res>
   $Res call(
       {String defaultLanguage,
       String defaultQuality,
+      String defaultVideoCodec,
       String defaultRegion,
       String themeMode,
       String? version,
@@ -12291,6 +12869,7 @@ class __$$InitialImplCopyWithImpl<$Res>
   $Res call({
     Object? defaultLanguage = null,
     Object? defaultQuality = null,
+    Object? defaultVideoCodec = null,
     Object? defaultRegion = null,
     Object? themeMode = null,
     Object? version = freezed,
@@ -12336,6 +12915,10 @@ class __$$InitialImplCopyWithImpl<$Res>
       defaultQuality: null == defaultQuality
           ? _value.defaultQuality
           : defaultQuality // ignore: cast_nullable_to_non_nullable
+              as String,
+      defaultVideoCodec: null == defaultVideoCodec
+          ? _value.defaultVideoCodec
+          : defaultVideoCodec // ignore: cast_nullable_to_non_nullable
               as String,
       defaultRegion: null == defaultRegion
           ? _value.defaultRegion
@@ -12491,6 +13074,7 @@ class _$InitialImpl implements _Initial {
   const _$InitialImpl(
       {required this.defaultLanguage,
       required this.defaultQuality,
+      required this.defaultVideoCodec,
       required this.defaultRegion,
       required this.themeMode,
       required this.version,
@@ -12536,6 +13120,8 @@ class _$InitialImpl implements _Initial {
   final String defaultLanguage;
   @override
   final String defaultQuality;
+  @override
+  final String defaultVideoCodec;
   @override
   final String defaultRegion;
   @override
@@ -12651,7 +13237,7 @@ class _$InitialImpl implements _Initial {
 
   @override
   String toString() {
-    return 'SettingsState(defaultLanguage: $defaultLanguage, defaultQuality: $defaultQuality, defaultRegion: $defaultRegion, themeMode: $themeMode, version: $version, isHistoryVisible: $isHistoryVisible, isDislikeVisible: $isDislikeVisible, isHlsPlayer: $isHlsPlayer, isHideComments: $isHideComments, isHideRelated: $isHideRelated, pipedInstances: $pipedInstances, pipedInstanceStatus: $pipedInstanceStatus, instance: $instance, invidiousInstances: $invidiousInstances, invidiousInstanceStatus: $invidiousInstanceStatus, ytService: $ytService, initialized: $initialized, settingsStatus: $settingsStatus, isPipDisabled: $isPipDisabled, connectingToInstance: $connectingToInstance, isTestingConnection: $isTestingConnection, userInstanceFailed: $userInstanceFailed, failedInstanceName: $failedInstanceName, searchFilter: $searchFilter, videoFitMode: $videoFitMode, skipInterval: $skipInterval, isSponsorBlockEnabled: $isSponsorBlockEnabled, sponsorBlockCategories: $sponsorBlockCategories, openLinksInBrowser: $openLinksInBrowser, homeFeedMode: $homeFeedMode, isAudioFocusEnabled: $isAudioFocusEnabled, currentProfile: $currentProfile, profiles: $profiles, subtitleSize: $subtitleSize, lastExportedFilePath: $lastExportedFilePath, isSearchHistoryEnabled: $isSearchHistoryEnabled, isSearchHistoryVisible: $isSearchHistoryVisible, isAutoPipEnabled: $isAutoPipEnabled)';
+    return 'SettingsState(defaultLanguage: $defaultLanguage, defaultQuality: $defaultQuality, defaultVideoCodec: $defaultVideoCodec, defaultRegion: $defaultRegion, themeMode: $themeMode, version: $version, isHistoryVisible: $isHistoryVisible, isDislikeVisible: $isDislikeVisible, isHlsPlayer: $isHlsPlayer, isHideComments: $isHideComments, isHideRelated: $isHideRelated, pipedInstances: $pipedInstances, pipedInstanceStatus: $pipedInstanceStatus, instance: $instance, invidiousInstances: $invidiousInstances, invidiousInstanceStatus: $invidiousInstanceStatus, ytService: $ytService, initialized: $initialized, settingsStatus: $settingsStatus, isPipDisabled: $isPipDisabled, connectingToInstance: $connectingToInstance, isTestingConnection: $isTestingConnection, userInstanceFailed: $userInstanceFailed, failedInstanceName: $failedInstanceName, searchFilter: $searchFilter, videoFitMode: $videoFitMode, skipInterval: $skipInterval, isSponsorBlockEnabled: $isSponsorBlockEnabled, sponsorBlockCategories: $sponsorBlockCategories, openLinksInBrowser: $openLinksInBrowser, homeFeedMode: $homeFeedMode, isAudioFocusEnabled: $isAudioFocusEnabled, currentProfile: $currentProfile, profiles: $profiles, subtitleSize: $subtitleSize, lastExportedFilePath: $lastExportedFilePath, isSearchHistoryEnabled: $isSearchHistoryEnabled, isSearchHistoryVisible: $isSearchHistoryVisible, isAutoPipEnabled: $isAutoPipEnabled)';
   }
 
   @override
@@ -12663,6 +13249,8 @@ class _$InitialImpl implements _Initial {
                 other.defaultLanguage == defaultLanguage) &&
             (identical(other.defaultQuality, defaultQuality) ||
                 other.defaultQuality == defaultQuality) &&
+            (identical(other.defaultVideoCodec, defaultVideoCodec) ||
+                other.defaultVideoCodec == defaultVideoCodec) &&
             (identical(other.defaultRegion, defaultRegion) ||
                 other.defaultRegion == defaultRegion) &&
             (identical(other.themeMode, themeMode) ||
@@ -12740,6 +13328,7 @@ class _$InitialImpl implements _Initial {
         runtimeType,
         defaultLanguage,
         defaultQuality,
+        defaultVideoCodec,
         defaultRegion,
         themeMode,
         version,
@@ -12791,6 +13380,7 @@ abstract class _Initial implements SettingsState {
   const factory _Initial(
       {required final String defaultLanguage,
       required final String defaultQuality,
+      required final String defaultVideoCodec,
       required final String defaultRegion,
       required final String themeMode,
       required final String? version,
@@ -12832,6 +13422,8 @@ abstract class _Initial implements SettingsState {
   String get defaultLanguage;
   @override
   String get defaultQuality;
+  @override
+  String get defaultVideoCodec;
   @override
   String get defaultRegion;
   @override

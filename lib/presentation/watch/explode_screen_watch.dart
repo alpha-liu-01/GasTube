@@ -373,6 +373,8 @@ class _ExplodeScreenWatchState extends State<ExplodeScreenWatch>
                                       watchInfo: state.explodeWatchResp,
                                       defaultQuality:
                                           settingsState.defaultQuality,
+                                      defaultVideoCodec:
+                                          settingsState.defaultVideoCodec,
                                       // Only use playback position if it's for the current video
                                       playbackPosition:
                                           savedState.videoInfo?.id == widget.id

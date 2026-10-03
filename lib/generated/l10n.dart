@@ -1077,6 +1077,26 @@ class S {
     );
   }
 
+  /// `Default video codec`
+  String get defaultVideoCodec {
+    return Intl.message(
+      'Default video codec',
+      name: 'defaultVideoCodec',
+      desc: 'Default video codec label',
+      args: [],
+    );
+  }
+
+  /// `Prefer H.264 or VP9 when a video offers both.`
+  String get defaultVideoCodecDescription {
+    return Intl.message(
+      'Prefer H.264 or VP9 when a video offers both.',
+      name: 'defaultVideoCodecDescription',
+      desc: 'Explains the default video codec setting',
+      args: [],
+    );
+  }
+
   /// `Retry`
   String get retry {
     return Intl.message('Retry', name: 'retry', desc: 'Retry label', args: []);

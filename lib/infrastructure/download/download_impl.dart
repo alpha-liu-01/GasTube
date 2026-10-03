@@ -15,6 +15,7 @@ import 'package:fluxtube/domain/watch/models/newpipe/newpipe_stream.dart';
 import 'package:fluxtube/domain/watch/models/newpipe/newpipe_watch_resp.dart';
 import 'package:fluxtube/domain/watch/playback/newpipe_stream_helper.dart';
 import 'package:fluxtube/core/api_client.dart';
+import 'package:fluxtube/core/settings.dart';
 import 'package:fluxtube/core/storage_paths.dart';
 import 'package:path/path.dart' as p;
 import 'package:fluxtube/infrastructure/database/database.dart';
@@ -169,6 +170,7 @@ class DownloadImpl implements DownloadService {
     List<NewPipeVideoStream>? videoStreams,
     List<NewPipeVideoStream>? videoOnlyStreams,
     List<NewPipeAudioStream>? audioStreams,
+    String preferredCodec = defaultVideoCodecH264,
   }) {
     log('[Download] Processing streams for $videoId:');
     log('[Download] videoOnlyStreams: ${videoOnlyStreams?.length ?? 0}');
@@ -189,7 +191,10 @@ class DownloadImpl implements DownloadService {
     );
 
     // Use NewPipeStreamHelper to get available qualities - same logic as the player
-    final availableQualities = NewPipeStreamHelper.getAvailableQualities(mockWatchResp);
+    final availableQualities = NewPipeStreamHelper.getAvailableQualities(
+      mockWatchResp,
+      preferredCodec: preferredCodec,
+    );
 
     log('[Download] NewPipeStreamHelper found ${availableQualities.length} qualities: ${availableQualities.map((q) => q.label).join(", ")}');
 

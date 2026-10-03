@@ -1,3 +1,4 @@
+import 'package:fluxtube/core/settings.dart';
 import 'package:fluxtube/domain/watch/models/newpipe/newpipe_watch_resp.dart';
 import 'package:fluxtube/domain/watch/playback/models/playback_configuration.dart';
 import 'package:fluxtube/domain/watch/playback/newpipe_stream_helper.dart';
@@ -12,6 +13,7 @@ class NewPipePlaybackResolver {
     required String preferredQuality,
     bool preferHighQuality = true,
     bool preferAdaptive = false,
+    String preferredCodec = defaultVideoCodecH264,
   }) {
     // Priority: Live streams -> optionally adaptive -> selected quality ->
     // adaptive fallback -> progressive fallback.
@@ -32,11 +34,14 @@ class NewPipePlaybackResolver {
     }
 
     // 3. Try to get the preferred quality via merging or progressive
-    final availableQualities =
-        NewPipeStreamHelper.getAvailableQualities(watchResp);
+    final availableQualities = NewPipeStreamHelper.getAvailableQualities(
+      watchResp,
+      preferredCodec: preferredCodec,
+    );
     final qualityInfo = NewPipeStreamHelper.findBestMatchingQuality(
       availableQualities,
       preferredQuality,
+      preferredCodec: preferredCodec,
     );
 
     if (qualityInfo != null) {
@@ -64,6 +69,7 @@ class NewPipePlaybackResolver {
         final bestQuality = NewPipeStreamHelper.findBestMatchingQuality(
               availableQualities,
               preferredQuality,
+              preferredCodec: preferredCodec,
             ) ??
             availableQualities.first;
         if (bestQuality.requiresMerging) {

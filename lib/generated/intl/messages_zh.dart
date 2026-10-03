@@ -102,6 +102,10 @@ class MessageLookup extends MessageLookupByLibrary {
     "debugConsole": MessageLookupByLibrary.simpleMessage("调试控制台"),
     "defaultProfile": MessageLookupByLibrary.simpleMessage("默认"),
     "defaultQuality": MessageLookupByLibrary.simpleMessage("默认质量"),
+    "defaultVideoCodec": MessageLookupByLibrary.simpleMessage("默认视频编码"),
+    "defaultVideoCodecDescription": MessageLookupByLibrary.simpleMessage(
+      "同一条视频同时有 H.264 和 VP9 时，优先使用哪一种。",
+    ),
     "delete": MessageLookupByLibrary.simpleMessage("删除"),
     "deleteDownload": MessageLookupByLibrary.simpleMessage("删除下载"),
     "deleteDownloadConfirm": MessageLookupByLibrary.simpleMessage("确定要删除此下载吗？"),

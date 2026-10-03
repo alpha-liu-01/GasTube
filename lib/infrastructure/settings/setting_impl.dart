@@ -63,6 +63,7 @@ class SettingImpl implements SettingsService {
     final settingsDefaults = [
       {"name": selectedDefaultLanguage, "default": "en"},
       {"name": selectedDefaultQuality, "default": "720p"},
+      {"name": defaultVideoCodecKey, "default": defaultVideoCodecH264},
       {"name": selectedDefaultRegion, "default": "IN"},
       {"name": selectedTheme, "default": "system"},
       {"name": historyVisibility, "default": "true"},
@@ -431,6 +432,17 @@ class SettingImpl implements SettingsService {
     return _setSetting(
       settingName: videoFitModeKey,
       value: fitMode,
+      toStringValue: (v) => v,
+    );
+  }
+
+  @override
+  Future<Either<MainFailure, String>> setDefaultVideoCodec(
+      {required String codec}) async {
+    final normalized = normalizeDefaultVideoCodec(codec);
+    return _setSetting(
+      settingName: defaultVideoCodecKey,
+      value: normalized,
       toStringValue: (v) => v,
     );
   }

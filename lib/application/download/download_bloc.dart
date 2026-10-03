@@ -9,6 +9,7 @@ import 'package:fluxtube/infrastructure/download/download_notification_service.d
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:injectable/injectable.dart';
 import 'package:fluxtube/core/enums.dart';
+import 'package:fluxtube/core/settings.dart';
 
 part 'download_event.dart';
 part 'download_state.dart';
@@ -98,6 +99,7 @@ class DownloadBloc extends Bloc<DownloadEvent, DownloadState> {
       videoStreams: event.videoStreams,
       videoOnlyStreams: event.videoOnlyStreams,
       audioStreams: event.audioStreams,
+      preferredCodec: event.preferredCodec,
     );
 
     emit(state.copyWith(

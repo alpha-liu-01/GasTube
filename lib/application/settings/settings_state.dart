@@ -5,6 +5,7 @@ class SettingsState with _$SettingsState {
   const factory SettingsState({
     required String defaultLanguage,
     required String defaultQuality,
+    required String defaultVideoCodec,
     required String defaultRegion,
     required String themeMode,
     required String? version,
@@ -60,6 +61,7 @@ class SettingsState with _$SettingsState {
   factory SettingsState.initialize() => SettingsState(
         defaultLanguage: 'en',
         defaultQuality: '720p',
+        defaultVideoCodec: defaultVideoCodecH264,
         defaultRegion: 'IN',
         themeMode: 'system',
         version: "",

@@ -54,6 +54,8 @@ class DownloadOptionsSheet extends StatefulWidget {
           videoStreams: videoStreams,
           videoOnlyStreams: videoOnlyStreams,
           audioStreams: audioStreams,
+          preferredCodec:
+              context.read<SettingsBloc>().state.defaultVideoCodec,
         ));
 
     return showModalBottomSheet<void>(

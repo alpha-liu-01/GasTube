@@ -232,6 +232,14 @@
   "@defaultQuality": {
     "description": "Default video quality label"
   },
+  "defaultVideoCodec": "默认视频编码",
+  "@defaultVideoCodec": {
+    "description": "Default video codec label"
+  },
+  "defaultVideoCodecDescription": "同一条视频同时有 H.264 和 VP9 时，优先使用哪一种。",
+  "@defaultVideoCodecDescription": {
+    "description": "Explains the default video codec setting"
+  },
   "retry": "重试",
   "@retry": {
     "description": "Retry label"

@@ -122,6 +122,12 @@ class MessageLookup extends MessageLookupByLibrary {
     "debugConsole": MessageLookupByLibrary.simpleMessage("Debug Console"),
     "defaultProfile": MessageLookupByLibrary.simpleMessage("Default"),
     "defaultQuality": MessageLookupByLibrary.simpleMessage("Default Quality"),
+    "defaultVideoCodec": MessageLookupByLibrary.simpleMessage(
+      "Default video codec",
+    ),
+    "defaultVideoCodecDescription": MessageLookupByLibrary.simpleMessage(
+      "Prefer H.264 or VP9 when a video offers both.",
+    ),
     "delete": MessageLookupByLibrary.simpleMessage("Delete"),
     "deleteDownload": MessageLookupByLibrary.simpleMessage("Delete Download"),
     "deleteDownloadConfirm": MessageLookupByLibrary.simpleMessage(
@@ -502,6 +508,10 @@ class MessageLookup extends MessageLookupByLibrary {
     "views": MessageLookupByLibrary.simpleMessage("views"),
     "watchSomeVideos": MessageLookupByLibrary.simpleMessage(
       "Videos you watch will appear here",
+    ),
+    "windowFullscreen": MessageLookupByLibrary.simpleMessage("Fullscreen"),
+    "windowFullscreenDescription": MessageLookupByLibrary.simpleMessage(
+      "Hide the title bar and use the whole screen",
     ),
     "youtubeService": MessageLookupByLibrary.simpleMessage("YouTube Service"),
   };

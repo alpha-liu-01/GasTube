@@ -5,8 +5,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluxtube/application/settings/settings_bloc.dart';
 import 'package:fluxtube/core/constants.dart';
+import 'package:fluxtube/core/settings.dart';
 import 'package:fluxtube/core/enums.dart';
 import 'package:fluxtube/generated/l10n.dart';
+
+List<DropdownMenuItem<String>> _getVideoCodecs() => const [
+      DropdownMenuItem(value: defaultVideoCodecH264, child: Text('H.264')),
+      DropdownMenuItem(value: defaultVideoCodecVp9, child: Text('VP9')),
+    ];
 
 List<DropdownMenuItem<String>> _getQualities(S locals) => [
   DropdownMenuItem(value: "144p", child: Text(locals.quality144p)),
@@ -104,6 +110,22 @@ class VideoSettingsSection extends StatelessWidget {
                   onChanged: (quality) => BlocProvider.of<SettingsBloc>(context)
                       .add(SettingsEvent.getDefaultQuality(
                           quality: quality.toString()))),
+            ),
+            ListTile(
+              title: Text(locals.defaultVideoCodec,
+                  style: Theme.of(context).textTheme.titleMedium),
+              subtitle: Text(locals.defaultVideoCodecDescription),
+              leading: const Icon(Icons.video_settings_outlined),
+              trailing: DropdownButton<String>(
+                value: normalizeDefaultVideoCodec(state.defaultVideoCodec),
+                items: _getVideoCodecs(),
+                onChanged: (codec) {
+                  if (codec == null) return;
+                  BlocProvider.of<SettingsBloc>(context).add(
+                    SettingsEvent.setDefaultVideoCodec(codec: codec),
+                  );
+                },
+              ),
             ),
             ListTile(
               title: Text(locals.youtubeService,

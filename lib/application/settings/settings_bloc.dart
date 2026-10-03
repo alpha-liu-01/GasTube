@@ -139,6 +139,8 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
         isHideRelated: hideRelated,
         homeFeedMode: homeFeed,
         videoFitMode: videoFit,
+        defaultVideoCodec:
+            normalizeDefaultVideoCodec(settingsMap[defaultVideoCodecKey]),
         skipInterval: skipIntervalValue,
         openLinksInBrowser: openInBrowser,
         isAudioFocusEnabled: audioFocusEnabled,
@@ -501,6 +503,17 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
       final _state = _result.fold(
           (MainFailure f) => state.copyWith(videoFitMode: state.videoFitMode),
           (String fitMode) => state.copyWith(videoFitMode: fitMode));
+      emit(_state);
+    });
+
+    on<SetDefaultVideoCodec>((event, emit) async {
+      final _result =
+          await settingsService.setDefaultVideoCodec(codec: event.codec);
+      final _state = _result.fold(
+          (MainFailure f) =>
+              state.copyWith(defaultVideoCodec: state.defaultVideoCodec),
+          (String codec) => state.copyWith(
+              defaultVideoCodec: normalizeDefaultVideoCodec(codec)));
       emit(_state);
     });
 

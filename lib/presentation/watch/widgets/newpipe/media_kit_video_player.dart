@@ -12,8 +12,10 @@ import 'package:fluxtube/domain/watch/models/newpipe/newpipe_stream.dart';
 import 'package:fluxtube/domain/watch/models/newpipe/newpipe_watch_resp.dart';
 import 'package:fluxtube/domain/watch/playback/models/playback_configuration.dart';
 import 'package:fluxtube/domain/watch/playback/models/stream_quality_info.dart';
+import 'package:fluxtube/core/settings.dart';
 import 'package:fluxtube/domain/watch/playback/newpipe_playback_resolver.dart';
 import 'package:fluxtube/domain/watch/playback/newpipe_stream_helper.dart';
+import 'package:fluxtube/domain/watch/playback/video_codec.dart';
 import 'package:fluxtube/presentation/watch/widgets/player/player_controls_overlay.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -32,6 +34,7 @@ class NewPipeMediaKitPlayer extends StatefulWidget {
     required this.videoId,
     required this.playbackPosition,
     this.defaultQuality = "720p",
+    this.defaultVideoCodec = defaultVideoCodecH264,
     this.isSaved = false,
     this.videoFitMode = "contain",
     this.skipInterval = 10,
@@ -45,6 +48,7 @@ class NewPipeMediaKitPlayer extends StatefulWidget {
   final NewPipeWatchResp watchInfo;
   final String videoId;
   final String defaultQuality;
+  final String defaultVideoCodec;
   final int playbackPosition;
   final bool isSaved;
   final String videoFitMode;
@@ -238,7 +242,10 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
 
   List<StreamQualityInfo> _loadQualities() {
     if (!UbuntuTouch.enabled) {
-      return NewPipeStreamHelper.getAvailableQualities(widget.watchInfo);
+      return NewPipeStreamHelper.getAvailableQualities(
+        widget.watchInfo,
+        preferredCodec: widget.defaultVideoCodec,
+      );
     }
     return _ubuntuTouchQualities(widget.watchInfo);
   }
@@ -250,6 +257,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
         preferredQuality: preferredQuality,
         preferHighQuality: true,
         preferAdaptive: widget.preferAdaptivePlayback,
+        preferredCodec: widget.defaultVideoCodec,
       );
     }
     if (widget.watchInfo.isLive == true) {
@@ -258,12 +266,14 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
         preferredQuality: preferredQuality,
         preferHighQuality: true,
         preferAdaptive: false,
+        preferredCodec: widget.defaultVideoCodec,
       );
     }
     final qualities = _availableQualities ?? _loadQualities();
     final match = NewPipeStreamHelper.findBestMatchingQuality(
       qualities,
       preferredQuality,
+      preferredCodec: widget.defaultVideoCodec,
     );
     final video = match?.videoStream;
     if (video?.url == null || video!.url!.isEmpty) {
@@ -298,7 +308,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
 
     void add(NewPipeVideoStream stream, {required bool merging}) {
       if (stream.url == null || stream.url!.isEmpty) return;
-      if (_codecFamily(stream) == 'AV1') return;
+      if (_codecFamily(stream) == 'av1') return;
       final height = _parseHeight(stream.resolution);
       if (height == null) return;
       var label = stream.resolution ?? 'Unknown';
@@ -306,13 +316,16 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
         label = '$label ${stream.fps}fps';
       }
       final family = _codecFamily(stream);
-      label = '$label $family';
+      final codecName = family == 'other'
+          ? (stream.codec ?? stream.format ?? 'video')
+          : videoCodecDisplayName(family);
+      label = '$label $codecName';
       if (!seen.add(label)) return;
       qualities.add(StreamQualityInfo(
         label: label,
         resolution: height,
         fps: stream.fps,
-        format: family == 'H.264' ? 'MP4' : stream.format,
+        format: stream.format,
         requiresMerging: merging,
         isVideoOnly: merging,
         videoStream: stream,
@@ -341,29 +354,11 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
   }
 
   String _codecFamily(NewPipeVideoStream stream) {
-    final codec = (stream.codec ?? '').toLowerCase();
-    if (codec.startsWith('avc1') ||
-        codec.startsWith('avc3') ||
-        codec.contains('h264')) {
-      return 'H.264';
-    }
-    if (codec.startsWith('vp9') || codec.contains('vp09')) return 'VP9';
-    if (codec.startsWith('av01') || codec.contains('av1')) return 'AV1';
-    final format = (stream.format ?? '').toUpperCase();
-    if (format == 'MPEG_4' || format == 'MP4') return 'H.264';
-    if (format == 'WEBM') return 'VP9';
-    return stream.codec ?? stream.format ?? 'video';
+    return videoCodecFamily(codec: stream.codec, format: stream.format);
   }
 
   int _codecRank(String family) {
-    switch (family) {
-      case 'H.264':
-        return 0;
-      case 'VP9':
-        return 1;
-      default:
-        return 2;
-    }
+    return videoCodecRank(family, widget.defaultVideoCodec);
   }
 
   String? _codecForLabel(String label) {
@@ -857,6 +852,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     return NewPipeStreamHelper.findBestMatchingQuality(
           _availableQualities!,
           targetQuality,
+          preferredCodec: widget.defaultVideoCodec,
         )?.label ??
         targetQuality;
   }

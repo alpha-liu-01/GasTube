@@ -1392,6 +1392,7 @@ class _ShortVideoController extends ChangeNotifier {
     _hasError = false;
     notifyListeners();
 
+    final preferredCodec = context.read<SettingsBloc>().state.defaultVideoCodec;
     try {
       // Fetch video info using NewPipe
       _watchResp = await NewPipeChannel.getStreamInfo(videoId);
@@ -1406,8 +1407,10 @@ class _ShortVideoController extends ChangeNotifier {
       _viewCount = _watchResp!.viewCount;
 
       // Get available qualities
-      _availableQualities =
-          NewPipeStreamHelper.getAvailableQualities(_watchResp!);
+      _availableQualities = NewPipeStreamHelper.getAvailableQualities(
+        _watchResp!,
+        preferredCodec: preferredCodec,
+      );
 
       // Get playable stream URL using resolver
       final resolver = NewPipePlaybackResolver();
@@ -1415,6 +1418,7 @@ class _ShortVideoController extends ChangeNotifier {
         watchResp: _watchResp!,
         preferredQuality: '720p',
         preferHighQuality: false,
+        preferredCodec: preferredCodec,
       );
 
       _currentQuality = _currentConfig!.qualityLabel;
@@ -1612,6 +1616,7 @@ class _ShortVideoController extends ChangeNotifier {
 
   Future<void> preload(String videoId, BuildContext context) async {
     if (_isInitialized) return;
+    final preferredCodec = context.read<SettingsBloc>().state.defaultVideoCodec;
     try {
       final watchResp = await NewPipeChannel.getStreamInfo(videoId);
       _title = watchResp.title;
@@ -1622,8 +1627,10 @@ class _ShortVideoController extends ChangeNotifier {
       _likeCount = watchResp.likeCount;
       _viewCount = watchResp.viewCount;
       _watchResp = watchResp;
-      _availableQualities =
-          NewPipeStreamHelper.getAvailableQualities(watchResp);
+      _availableQualities = NewPipeStreamHelper.getAvailableQualities(
+        watchResp,
+        preferredCodec: preferredCodec,
+      );
     } catch (e) {
       debugPrint('Error preloading short: $e');
     }

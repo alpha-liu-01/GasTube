@@ -28,7 +28,8 @@ mixin _$DownloadEvent {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)
         setDownloadOptionsFromStreams,
     required TResult Function(
             String videoId,
@@ -65,7 +66,8 @@ mixin _$DownloadEvent {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult? Function(
             String videoId,
@@ -101,7 +103,8 @@ mixin _$DownloadEvent {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult Function(
             String videoId,
@@ -295,7 +298,8 @@ class _$GetDownloadOptionsImpl implements _GetDownloadOptions {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)
         setDownloadOptionsFromStreams,
     required TResult Function(
             String videoId,
@@ -335,7 +339,8 @@ class _$GetDownloadOptionsImpl implements _GetDownloadOptions {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult? Function(
             String videoId,
@@ -374,7 +379,8 @@ class _$GetDownloadOptionsImpl implements _GetDownloadOptions {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult Function(
             String videoId,
@@ -504,7 +510,8 @@ abstract class _$$SetDownloadOptionsFromStreamsImplCopyWith<$Res> {
       int? duration,
       List<NewPipeVideoStream> videoStreams,
       List<NewPipeVideoStream> videoOnlyStreams,
-      List<NewPipeAudioStream> audioStreams});
+      List<NewPipeAudioStream> audioStreams,
+      String preferredCodec});
 }
 
 /// @nodoc
@@ -530,6 +537,7 @@ class __$$SetDownloadOptionsFromStreamsImplCopyWithImpl<$Res>
     Object? videoStreams = null,
     Object? videoOnlyStreams = null,
     Object? audioStreams = null,
+    Object? preferredCodec = null,
   }) {
     return _then(_$SetDownloadOptionsFromStreamsImpl(
       videoId: null == videoId
@@ -564,6 +572,10 @@ class __$$SetDownloadOptionsFromStreamsImplCopyWithImpl<$Res>
           ? _value._audioStreams
           : audioStreams // ignore: cast_nullable_to_non_nullable
               as List<NewPipeAudioStream>,
+      preferredCodec: null == preferredCodec
+          ? _value.preferredCodec
+          : preferredCodec // ignore: cast_nullable_to_non_nullable
+              as String,
     ));
   }
 }
@@ -580,7 +592,8 @@ class _$SetDownloadOptionsFromStreamsImpl
       this.duration,
       required final List<NewPipeVideoStream> videoStreams,
       required final List<NewPipeVideoStream> videoOnlyStreams,
-      required final List<NewPipeAudioStream> audioStreams})
+      required final List<NewPipeAudioStream> audioStreams,
+      this.preferredCodec = defaultVideoCodecH264})
       : _videoStreams = videoStreams,
         _videoOnlyStreams = videoOnlyStreams,
         _audioStreams = audioStreams;
@@ -621,8 +634,11 @@ class _$SetDownloadOptionsFromStreamsImpl
   }
 
   @override
+  final String preferredCodec;
+
+  @override
   String toString() {
-    return 'DownloadEvent.setDownloadOptionsFromStreams(videoId: $videoId, title: $title, channelName: $channelName, thumbnailUrl: $thumbnailUrl, duration: $duration, videoStreams: $videoStreams, videoOnlyStreams: $videoOnlyStreams, audioStreams: $audioStreams)';
+    return 'DownloadEvent.setDownloadOptionsFromStreams(videoId: $videoId, title: $title, channelName: $channelName, thumbnailUrl: $thumbnailUrl, duration: $duration, videoStreams: $videoStreams, videoOnlyStreams: $videoOnlyStreams, audioStreams: $audioStreams, preferredCodec: $preferredCodec)';
   }
 
   @override
@@ -643,7 +659,9 @@ class _$SetDownloadOptionsFromStreamsImpl
             const DeepCollectionEquality()
                 .equals(other._videoOnlyStreams, _videoOnlyStreams) &&
             const DeepCollectionEquality()
-                .equals(other._audioStreams, _audioStreams));
+                .equals(other._audioStreams, _audioStreams) &&
+            (identical(other.preferredCodec, preferredCodec) ||
+                other.preferredCodec == preferredCodec));
   }
 
   @override
@@ -656,7 +674,8 @@ class _$SetDownloadOptionsFromStreamsImpl
       duration,
       const DeepCollectionEquality().hash(_videoStreams),
       const DeepCollectionEquality().hash(_videoOnlyStreams),
-      const DeepCollectionEquality().hash(_audioStreams));
+      const DeepCollectionEquality().hash(_audioStreams),
+      preferredCodec);
 
   /// Create a copy of DownloadEvent
   /// with the given fields replaced by the non-null parameter values.
@@ -681,7 +700,8 @@ class _$SetDownloadOptionsFromStreamsImpl
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)
         setDownloadOptionsFromStreams,
     required TResult Function(
             String videoId,
@@ -707,7 +727,8 @@ class _$SetDownloadOptionsFromStreamsImpl
     required TResult Function(DownloadItem downloadItem) saveToDevice,
   }) {
     return setDownloadOptionsFromStreams(videoId, title, channelName,
-        thumbnailUrl, duration, videoStreams, videoOnlyStreams, audioStreams);
+        thumbnailUrl, duration, videoStreams, videoOnlyStreams, audioStreams,
+        preferredCodec);
   }
 
   @override
@@ -722,7 +743,8 @@ class _$SetDownloadOptionsFromStreamsImpl
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult? Function(
             String videoId,
@@ -747,7 +769,8 @@ class _$SetDownloadOptionsFromStreamsImpl
     TResult? Function(DownloadItem downloadItem)? saveToDevice,
   }) {
     return setDownloadOptionsFromStreams?.call(videoId, title, channelName,
-        thumbnailUrl, duration, videoStreams, videoOnlyStreams, audioStreams);
+        thumbnailUrl, duration, videoStreams, videoOnlyStreams, audioStreams,
+        preferredCodec);
   }
 
   @override
@@ -762,7 +785,8 @@ class _$SetDownloadOptionsFromStreamsImpl
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult Function(
             String videoId,
@@ -789,7 +813,8 @@ class _$SetDownloadOptionsFromStreamsImpl
   }) {
     if (setDownloadOptionsFromStreams != null) {
       return setDownloadOptionsFromStreams(videoId, title, channelName,
-          thumbnailUrl, duration, videoStreams, videoOnlyStreams, audioStreams);
+          thumbnailUrl, duration, videoStreams, videoOnlyStreams, audioStreams,
+          preferredCodec);
     }
     return orElse();
   }
@@ -872,7 +897,8 @@ abstract class _SetDownloadOptionsFromStreams implements DownloadEvent {
           final int? duration,
           required final List<NewPipeVideoStream> videoStreams,
           required final List<NewPipeVideoStream> videoOnlyStreams,
-          required final List<NewPipeAudioStream> audioStreams}) =
+          required final List<NewPipeAudioStream> audioStreams,
+          final String preferredCodec = defaultVideoCodecH264}) =
       _$SetDownloadOptionsFromStreamsImpl;
 
   String get videoId;
@@ -883,6 +909,7 @@ abstract class _SetDownloadOptionsFromStreams implements DownloadEvent {
   List<NewPipeVideoStream> get videoStreams;
   List<NewPipeVideoStream> get videoOnlyStreams;
   List<NewPipeAudioStream> get audioStreams;
+  String get preferredCodec;
 
   /// Create a copy of DownloadEvent
   /// with the given fields replaced by the non-null parameter values.
@@ -1070,7 +1097,8 @@ class _$StartDownloadImpl implements _StartDownload {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)
         setDownloadOptionsFromStreams,
     required TResult Function(
             String videoId,
@@ -1111,7 +1139,8 @@ class _$StartDownloadImpl implements _StartDownload {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult? Function(
             String videoId,
@@ -1151,7 +1180,8 @@ class _$StartDownloadImpl implements _StartDownload {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult Function(
             String videoId,
@@ -1360,7 +1390,8 @@ class _$PauseDownloadImpl implements _PauseDownload {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)
         setDownloadOptionsFromStreams,
     required TResult Function(
             String videoId,
@@ -1400,7 +1431,8 @@ class _$PauseDownloadImpl implements _PauseDownload {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult? Function(
             String videoId,
@@ -1439,7 +1471,8 @@ class _$PauseDownloadImpl implements _PauseDownload {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult Function(
             String videoId,
@@ -1632,7 +1665,8 @@ class _$ResumeDownloadImpl implements _ResumeDownload {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)
         setDownloadOptionsFromStreams,
     required TResult Function(
             String videoId,
@@ -1672,7 +1706,8 @@ class _$ResumeDownloadImpl implements _ResumeDownload {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult? Function(
             String videoId,
@@ -1711,7 +1746,8 @@ class _$ResumeDownloadImpl implements _ResumeDownload {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult Function(
             String videoId,
@@ -1904,7 +1940,8 @@ class _$CancelDownloadImpl implements _CancelDownload {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)
         setDownloadOptionsFromStreams,
     required TResult Function(
             String videoId,
@@ -1944,7 +1981,8 @@ class _$CancelDownloadImpl implements _CancelDownload {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult? Function(
             String videoId,
@@ -1983,7 +2021,8 @@ class _$CancelDownloadImpl implements _CancelDownload {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult Function(
             String videoId,
@@ -2176,7 +2215,8 @@ class _$DeleteDownloadImpl implements _DeleteDownload {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)
         setDownloadOptionsFromStreams,
     required TResult Function(
             String videoId,
@@ -2216,7 +2256,8 @@ class _$DeleteDownloadImpl implements _DeleteDownload {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult? Function(
             String videoId,
@@ -2255,7 +2296,8 @@ class _$DeleteDownloadImpl implements _DeleteDownload {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult Function(
             String videoId,
@@ -2449,7 +2491,8 @@ class _$GetAllDownloadsImpl implements _GetAllDownloads {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)
         setDownloadOptionsFromStreams,
     required TResult Function(
             String videoId,
@@ -2489,7 +2532,8 @@ class _$GetAllDownloadsImpl implements _GetAllDownloads {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult? Function(
             String videoId,
@@ -2528,7 +2572,8 @@ class _$GetAllDownloadsImpl implements _GetAllDownloads {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult Function(
             String videoId,
@@ -2723,7 +2768,8 @@ class _$UpdateDownloadProgressImpl implements _UpdateDownloadProgress {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)
         setDownloadOptionsFromStreams,
     required TResult Function(
             String videoId,
@@ -2763,7 +2809,8 @@ class _$UpdateDownloadProgressImpl implements _UpdateDownloadProgress {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult? Function(
             String videoId,
@@ -2802,7 +2849,8 @@ class _$UpdateDownloadProgressImpl implements _UpdateDownloadProgress {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult Function(
             String videoId,
@@ -2996,7 +3044,8 @@ class _$DownloadCompletedImpl implements _DownloadCompleted {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)
         setDownloadOptionsFromStreams,
     required TResult Function(
             String videoId,
@@ -3036,7 +3085,8 @@ class _$DownloadCompletedImpl implements _DownloadCompleted {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult? Function(
             String videoId,
@@ -3075,7 +3125,8 @@ class _$DownloadCompletedImpl implements _DownloadCompleted {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult Function(
             String videoId,
@@ -3276,7 +3327,8 @@ class _$DownloadFailedImpl implements _DownloadFailed {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)
         setDownloadOptionsFromStreams,
     required TResult Function(
             String videoId,
@@ -3316,7 +3368,8 @@ class _$DownloadFailedImpl implements _DownloadFailed {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult? Function(
             String videoId,
@@ -3355,7 +3408,8 @@ class _$DownloadFailedImpl implements _DownloadFailed {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult Function(
             String videoId,
@@ -3522,7 +3576,8 @@ class _$ClearDownloadOptionsImpl implements _ClearDownloadOptions {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)
         setDownloadOptionsFromStreams,
     required TResult Function(
             String videoId,
@@ -3562,7 +3617,8 @@ class _$ClearDownloadOptionsImpl implements _ClearDownloadOptions {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult? Function(
             String videoId,
@@ -3601,7 +3657,8 @@ class _$ClearDownloadOptionsImpl implements _ClearDownloadOptions {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult Function(
             String videoId,
@@ -3784,7 +3841,8 @@ class _$SaveToDeviceImpl implements _SaveToDevice {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)
         setDownloadOptionsFromStreams,
     required TResult Function(
             String videoId,
@@ -3824,7 +3882,8 @@ class _$SaveToDeviceImpl implements _SaveToDevice {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult? Function(
             String videoId,
@@ -3863,7 +3922,8 @@ class _$SaveToDeviceImpl implements _SaveToDevice {
             int? duration,
             List<NewPipeVideoStream> videoStreams,
             List<NewPipeVideoStream> videoOnlyStreams,
-            List<NewPipeAudioStream> audioStreams)?
+            List<NewPipeAudioStream> audioStreams,
+            String preferredCodec)?
         setDownloadOptionsFromStreams,
     TResult Function(
             String videoId,

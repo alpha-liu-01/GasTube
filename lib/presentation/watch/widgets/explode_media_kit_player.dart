@@ -8,7 +8,9 @@ import 'package:fluxtube/core/player/global_player_controller.dart';
 import 'package:fluxtube/domain/saved/models/local_store.dart';
 import 'package:fluxtube/domain/sponsorblock/models/sponsor_segment.dart';
 import 'package:fluxtube/domain/watch/models/explode/explode_watch.dart';
+import 'package:fluxtube/core/settings.dart';
 import 'package:fluxtube/domain/watch/playback/models/generic_quality_info.dart';
+import 'package:fluxtube/domain/watch/playback/video_codec.dart';
 import 'package:fluxtube/domain/watch/playback/models/generic_subtitle.dart';
 import 'package:fluxtube/presentation/watch/widgets/player/generic_player_controls_overlay.dart';
 import 'package:media_kit/media_kit.dart';
@@ -23,6 +25,7 @@ class ExplodeMediaKitPlayer extends StatefulWidget {
     required this.playbackPosition,
     required this.availableVideoTracks,
     this.defaultQuality = "720p",
+    this.defaultVideoCodec = defaultVideoCodecH264,
     this.isSaved = false,
     this.liveUrl,
     required this.subtitles,
@@ -36,6 +39,7 @@ class ExplodeMediaKitPlayer extends StatefulWidget {
   final ExplodeWatchResp watchInfo;
   final String videoId;
   final String defaultQuality;
+  final String defaultVideoCodec;
   final int playbackPosition;
   final bool isSaved;
   final String? liveUrl;
@@ -159,6 +163,7 @@ class _ExplodeMediaKitPlayerState extends State<ExplodeMediaKitPlayer> {
               displayLabel: v.quality,
               resolution: GenericQualityInfo.parseResolution(v.quality),
               format: v.container,
+              codec: v.videoCodec,
               url: v.url,
             ))
         .toList();
@@ -201,6 +206,7 @@ class _ExplodeMediaKitPlayerState extends State<ExplodeMediaKitPlayer> {
                 resolution: GenericQualityInfo.parseResolution(v.quality),
                 fps: v.framerate.framesPerSecond.round(),
                 format: v.container,
+                codec: v.videoCodec,
                 url: v.url,
               ))
           .toList();
@@ -251,20 +257,7 @@ class _ExplodeMediaKitPlayerState extends State<ExplodeMediaKitPlayer> {
         videoUrl = widget.liveUrl;
       } else {
         // Find the selected quality stream
-        MyMuxedStreamInfo? selectedStream;
-
-        // Try to find exact quality match
-        for (var track in widget.availableVideoTracks) {
-          if (track.quality == quality) {
-            selectedStream = track;
-            break;
-          }
-        }
-
-        // Fallback to first available if no match
-        if (selectedStream == null && widget.availableVideoTracks.isNotEmpty) {
-          selectedStream = widget.availableVideoTracks.first;
-        }
+        final selectedStream = _streamForQuality(quality);
 
         videoUrl =
             selectedStream?.url.isNotEmpty == true ? selectedStream!.url : null;
@@ -335,6 +328,25 @@ class _ExplodeMediaKitPlayerState extends State<ExplodeMediaKitPlayer> {
     }
   }
 
+  MyMuxedStreamInfo? _streamForQuality(String quality) {
+    final matches = widget.availableVideoTracks
+        .where((track) => track.quality == quality)
+        .toList();
+    final candidates = matches.isNotEmpty ? matches : widget.availableVideoTracks;
+    if (candidates.isEmpty) return null;
+    final sorted = List<MyMuxedStreamInfo>.from(candidates);
+    sorted.sort((a, b) {
+      return videoCodecRank(
+        videoCodecFamily(codec: a.videoCodec, format: a.container),
+        widget.defaultVideoCodec,
+      ).compareTo(videoCodecRank(
+        videoCodecFamily(codec: b.videoCodec, format: b.container),
+        widget.defaultVideoCodec,
+      ));
+    });
+    return sorted.first;
+  }
+
   /// Wait for buffering to complete after seek
   Future<void> _waitForBufferingComplete(
       {Duration timeout = const Duration(seconds: 5)}) async {
@@ -362,6 +374,7 @@ class _ExplodeMediaKitPlayerState extends State<ExplodeMediaKitPlayer> {
     return GenericQualityInfo.findBestMatchingQuality(
           _availableQualities!,
           targetQuality,
+          preferredCodec: widget.defaultVideoCodec,
         )?.label ??
         targetQuality;
   }
