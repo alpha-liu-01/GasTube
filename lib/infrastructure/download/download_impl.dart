@@ -17,6 +17,7 @@ import 'package:fluxtube/domain/watch/playback/newpipe_stream_helper.dart';
 import 'package:fluxtube/core/api_client.dart';
 import 'package:fluxtube/core/settings.dart';
 import 'package:fluxtube/core/storage_paths.dart';
+import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:path/path.dart' as p;
 import 'package:fluxtube/infrastructure/database/database.dart';
 import 'package:injectable/injectable.dart';
@@ -278,6 +279,11 @@ class DownloadImpl implements DownloadService {
       _pausedDownloads[item.id!] = false;
 
       final downloadDir = await _getDownloadDirectory();
+      _logUbuntuTouchDownload(
+        'download start type=${item.downloadType.name} '
+        'video=${item.videoQuality} audio=${item.audioQuality} '
+        'dir=${downloadDir.path}',
+      );
 
       if (item.downloadType == domain.DownloadType.audioOnly) {
         // Audio only download
@@ -294,6 +300,7 @@ class DownloadImpl implements DownloadService {
       if (_pausedDownloads[item.id] == true) {
         item.status = domain.DownloadStatus.paused;
         await _db.updateDownload(_toCompanion(item));
+        _logUbuntuTouchDownload('download paused file=${item.outputFilePath}');
         return Right(item);
       }
 
@@ -312,6 +319,7 @@ class DownloadImpl implements DownloadService {
 
       onComplete(item);
       _cleanup(item.id!);
+      _logUbuntuTouchDownload('download done file=${item.outputFilePath}');
 
       return Right(item);
     } catch (e) {
@@ -319,6 +327,9 @@ class DownloadImpl implements DownloadService {
         return Right(item);
       }
 
+      _logUbuntuTouchDownload(
+        'download failed file=${item.outputFilePath} error=$e',
+      );
       item.status = domain.DownloadStatus.failed;
       item.errorMessage = e.toString();
       item.retryCount++;
@@ -1000,6 +1011,11 @@ class DownloadImpl implements DownloadService {
     _lastVideoProgressMap.remove(downloadId);
     _lastAudioProgressMap.remove(downloadId);
     _speedSamplesMap.remove(downloadId);
+  }
+
+  void _logUbuntuTouchDownload(String message) {
+    if (!UbuntuTouch.enabled) return;
+    print('gastube: $message');
   }
 
   Future<Directory> _getDownloadDirectory() async {
