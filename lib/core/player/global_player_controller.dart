@@ -9,15 +9,40 @@ import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:fluxtube/core/services/audio_handler_service.dart';
 import 'package:fluxtube/core/services/exoplayer_notification_bridge.dart';
 
-Future<void> selectUbuntuTouchH264Decoder(Player player) async {
+Future<void> selectUbuntuTouchDecoder(Player player, {String? codec}) async {
   if (!UbuntuTouch.enabled) return;
-  const vd = 'h264_hybris,-';
+  final value = (codec ?? '').toLowerCase();
+  final h264 = value.startsWith('avc1') ||
+      value.startsWith('avc3') ||
+      value.contains('h264') ||
+      value == 'mpeg_4' ||
+      value == 'mp4';
+  final vp9 = value.startsWith('vp9') || value.contains('vp09') || value == 'webm';
+  final av1 = value.startsWith('av01') || value.contains('av1');
+  // H.264 keeps the Halium decoder and no software pad. VP9 and AV1 use the
+  // bundled software decoders. An unknown codec (live manifests) leaves
+  // h264_hybris first without the trailing "-", so other codecs still open.
+  final String vd;
+  final String fallback;
+  if (vp9) {
+    vd = 'vp9,-';
+    fallback = 'yes';
+  } else if (av1) {
+    vd = 'av1,-';
+    fallback = 'yes';
+  } else if (h264) {
+    vd = 'h264_hybris,-';
+    fallback = 'no';
+  } else {
+    vd = 'h264_hybris';
+    fallback = 'yes';
+  }
   await (player.platform as dynamic).setProperty('hwdec', 'no');
   await (player.platform as dynamic).setProperty('vd', vd);
   await (player.platform as dynamic)
-      .setProperty('vd-lavc-software-fallback', 'no');
+      .setProperty('vd-lavc-software-fallback', fallback);
   final readBack = await (player.platform as dynamic).getProperty('vd');
-  print('gastube: vd-set=$vd vd-read=$readBack fallback=no');
+  print('gastube: vd-set=$vd vd-read=$readBack fallback=$fallback codec=$codec');
 }
 
 /// Global player controller singleton that persists across navigation
@@ -109,8 +134,8 @@ class GlobalPlayerController extends ChangeNotifier {
     if (!UbuntuTouch.enabled) return;
     try {
       await (_player!.platform as dynamic).setProperty('ao', 'pulse');
-      await selectUbuntuTouchH264Decoder(_player!);
-      log('[GlobalPlayer] Audio output is PulseAudio, decoder is h264_hybris');
+      await selectUbuntuTouchDecoder(_player!);
+      log('[GlobalPlayer] Audio output is PulseAudio, H.264 uses h264_hybris');
     } catch (e) {
       log('[GlobalPlayer] Could not select PulseAudio: $e');
     }

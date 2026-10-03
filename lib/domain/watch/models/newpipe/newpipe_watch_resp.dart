@@ -66,8 +66,8 @@ class NewPipeWatchResp {
 
   Map<String, dynamic> toJson() => _$NewPipeWatchRespToJson(this);
 
-  /// Ubuntu Touch hardware-decode probe. Keeps H.264 video and drops VP9.
-  /// Live playback still uses HLS. Desktop playback does not call this.
+  /// Kept from the hardware-decode probe. The Ubuntu Touch player no longer
+  /// calls this; H.264, VP9, and AV1 all stay in the quality list.
   NewPipeWatchResp h264VideoOnly() {
     final live = isLive == true;
     return NewPipeWatchResp(

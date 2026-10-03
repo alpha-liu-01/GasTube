@@ -523,7 +523,7 @@ static int hybris_init(AVCodecContext *avctx)
         return AVERROR_EXTERNAL;
     }
     ctx->format = ctx->api.create_format("video/avc", avctx->width, avctx->height,
-                                         0, 8 * 1024 * 1024);
+                                         0, 16 * 1024 * 1024);
     if (!ctx->format) {
         fprintf(stderr, "gastube: mediacodec format failed\n");
         return AVERROR_EXTERNAL;
