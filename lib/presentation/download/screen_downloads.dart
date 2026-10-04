@@ -11,9 +11,9 @@ import 'package:fluxtube/core/colors.dart';
 import 'package:fluxtube/core/constants.dart';
 import 'package:fluxtube/core/enums.dart';
 import 'package:fluxtube/core/ubuntu_touch.dart';
+import 'package:fluxtube/core/ubuntu_touch_content_hub.dart';
 import 'package:fluxtube/domain/download/models/download_item.dart';
 import 'package:fluxtube/generated/l10n.dart';
-import 'package:fluxtube/presentation/download/local_file_player_page.dart';
 import 'package:fluxtube/presentation/main_navigation/main_navigation.dart';
 import 'package:open_filex/open_filex.dart';
 
@@ -294,15 +294,20 @@ class _ScreenDownloadsState extends State<ScreenDownloads>
       final file = File(item.outputFilePath!);
       if (await file.exists()) {
         if (UbuntuTouch.enabled) {
-          if (!mounted) return;
-          await Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => LocalFilePlayerPage(
-                path: item.outputFilePath!,
-                title: item.title,
-              ),
-            ),
+          final opened = await openInSystemPlayer(
+            path: item.outputFilePath!,
+            audioOnly: item.downloadType == DownloadType.audioOnly,
           );
+          if (!opened.ok && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  '${S.of(context).failedToOpenFile}: ${opened.message}',
+                ),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
           return;
         }
         final opened = await _openDownload(item.outputFilePath!);

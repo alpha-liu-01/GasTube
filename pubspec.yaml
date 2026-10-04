@@ -13,6 +13,7 @@ dependencies:
   awesome_bottom_bar: ^1.2.4
   cached_network_image: ^3.3.1
   cupertino_icons: ^1.0.6
+  dbus: ^0.7.11
   dartz: ^0.10.1
   dio: ^5.4.3+1
   dismissible_page: ^1.0.2

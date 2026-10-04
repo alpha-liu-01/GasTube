@@ -120,17 +120,18 @@ extern "C" EGLBoolean gastube_gated_egl_make_current(EGLDisplay display,
                                                     EGLSurface draw,
                                                     EGLSurface read,
                                                     EGLContext context) {
-  // Surfaceless calls still run. Those release the context. Binding the
-  // window surface while Lomiri is covering it is what drops the last frame.
-  if (!g_present_allowed.load(std::memory_order_acquire) &&
-      draw != EGL_NO_SURFACE && read != EGL_NO_SURFACE) {
+  // Keep the context that is already current. Returning failure lets GDK
+  // finish the frame with no context, and libepoxy then aborts in
+  // epoxy_get_proc_address. Calling the real bind or release while Lomiri
+  // is covering the surface drops the last frame. Swap and the surface
+  // commit stay gated, so this success does not present a new buffer.
+  if (!g_present_allowed.load(std::memory_order_acquire)) {
     bool already =
         g_logged_make_current.exchange(true, std::memory_order_relaxed);
     if (!already) {
-      g_message(
-          "present: skipped eglMakeCurrent while the window is unfocused");
+      g_message("present: kept egl context while the window is unfocused");
     }
-    return EGL_FALSE;
+    return EGL_TRUE;
   }
   if (g_real_make_current == nullptr) return EGL_FALSE;
   return g_real_make_current(display, draw, read, context);
