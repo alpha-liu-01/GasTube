@@ -776,5 +776,26 @@
   "sleepTimerEnded": "睡眠定时器已结束",
   "@sleepTimerEnded": {
     "description": "Sleep timer fired"
+  },
+  "savedInsideApp": "已保存在应用内，文件还没有离开 GasTube。",
+  "@savedInsideApp": {
+    "description": "Ubuntu Touch save confirmation while Content Hub is not connected"
+  },
+  "exportInsideApp": "已导出到应用内：{name}",
+  "@exportInsideApp": {
+    "description": "Ubuntu Touch export confirmation while Content Hub is not connected",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chooseFileInsideApp": "选择应用内的文件",
+  "@chooseFileInsideApp": {
+    "description": "Title for picking an export that is already inside the app"
+  },
+  "noFileInsideApp": "应用内还没有可以导入的文件。",
+  "@noFileInsideApp": {
+    "description": "Shown when Ubuntu Touch import has no file in Exports"
   }
 }

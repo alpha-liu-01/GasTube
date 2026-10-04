@@ -25,6 +25,17 @@ Future<Directory> persistentAppDirectory() async {
   return getApplicationSupportDirectory();
 }
 
+/// Exported and copied files that stay inside the app until Content Hub.
+///
+/// Call this on Ubuntu Touch. The directory is under
+/// `persistentAppDirectory()`, which confinement can write.
+Future<Directory> ubuntuTouchExportsDirectory() async {
+  final root = await persistentAppDirectory();
+  final dir = Directory(p.join(root.path, 'Exports'));
+  await dir.create(recursive: true);
+  return dir;
+}
+
 /// Copy [name] out of the old Documents location into [destination] once.
 ///
 /// Desktop builds wrote the database and playlists next to the user's

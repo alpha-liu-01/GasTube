@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:dartz/dartz.dart';
 import 'package:drift/drift.dart';
+import 'package:fluxtube/core/storage_paths.dart';
+import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:fluxtube/domain/core/failure/main_failure.dart';
 import 'package:fluxtube/infrastructure/database/database.dart';
 import 'package:injectable/injectable.dart';
@@ -69,7 +71,12 @@ class NewPipeDataService {
       final zipData = zipEncoder.encode(archive);
 
       // Save ZIP file
-      final docsDir = await getDownloadsDirectory();
+      final Directory? docsDir;
+      if (UbuntuTouch.enabled) {
+        docsDir = await ubuntuTouchExportsDirectory();
+      } else {
+        docsDir = await getDownloadsDirectory();
+      }
       if (docsDir == null) {
         return const Left(MainFailure.clientFailure());
       }
@@ -83,6 +90,9 @@ class NewPipeDataService {
           p.join(docsDir.path, 'FluxTubeData$profileSuffix-$timestamp.zip');
       final zipFile = File(zipPath);
       await zipFile.writeAsBytes(zipData);
+      if (UbuntuTouch.enabled) {
+        print('gastube: export zip file=$zipPath');
+      }
 
       // Cleanup temp directory
       await exportDir.delete(recursive: true);

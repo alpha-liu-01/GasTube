@@ -1,11 +1,16 @@
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluxtube/application/application.dart';
 import 'package:fluxtube/core/constants.dart';
+import 'package:fluxtube/core/storage_paths.dart';
+import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:fluxtube/generated/l10n.dart';
 import 'package:fluxtube/infrastructure/settings/newpipe_data_service.dart';
 import 'package:fluxtube/core/di/injectable.dart';
+import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart' show ShareParams, SharePlus, XFile;
 
 class BackupSettingsSection extends StatelessWidget {
@@ -139,19 +144,7 @@ class BackupSettingsSection extends StatelessWidget {
           );
 
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(locals.exportSuccess),
-              behavior: SnackBarBehavior.floating,
-              duration: const Duration(seconds: 5),
-              action: SnackBarAction(
-                label: locals.share,
-                onPressed: () async {
-                  await SharePlus.instance.share(
-                    ShareParams(files: [XFile(filePath)]),
-                  );
-                },
-              ),
-            ),
+            _exportSnackBar(locals, filePath),
           );
         },
       );
@@ -171,29 +164,12 @@ class BackupSettingsSection extends StatelessWidget {
   Future<void> _importFromZip(
       BuildContext context, String currentProfile, S locals) async {
     try {
-      // Open file picker for ZIP files
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['zip'],
-        allowMultiple: false,
+      final filePath = await _chooseImportFile(
+        context,
+        locals,
+        allowedExtensions: const ['zip'],
       );
-
-      if (result == null || result.files.isEmpty) {
-        return; // User cancelled
-      }
-
-      final filePath = result.files.first.path;
-      if (filePath == null) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(locals.importError),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-        return;
-      }
+      if (filePath == null) return;
 
       // Show import options dialog
       if (!context.mounted) return;
@@ -374,23 +350,19 @@ class BackupSettingsSection extends StatelessWidget {
 
     if (context.mounted) {
       ScaffoldMessenger.of(context).clearSnackBars();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(locals.exportSuccess),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 4),
-          action: exportedFilePath != null
-              ? SnackBarAction(
-                  label: locals.share,
-                  onPressed: () async {
-                    await SharePlus.instance.share(
-                      ShareParams(files: [XFile(exportedFilePath)]),
-                    );
-                  },
-                )
-              : null,
-        ),
-      );
+      if (exportedFilePath != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          _exportSnackBar(locals, exportedFilePath),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(locals.exportSuccess),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
     }
   }
 
@@ -398,28 +370,12 @@ class BackupSettingsSection extends StatelessWidget {
   Future<void> _importSubscriptionsJson(
       BuildContext context, String currentProfile, S locals) async {
     try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['json'],
-        allowMultiple: false,
+      final filePath = await _chooseImportFile(
+        context,
+        locals,
+        allowedExtensions: const ['json'],
       );
-
-      if (result == null || result.files.isEmpty) {
-        return;
-      }
-
-      final filePath = result.files.first.path;
-      if (filePath == null) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(locals.importError),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-        return;
-      }
+      if (filePath == null) return;
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -475,5 +431,86 @@ class BackupSettingsSection extends StatelessWidget {
         );
       }
     }
+  }
+
+  SnackBar _exportSnackBar(S locals, String filePath) {
+    final name = p.basename(filePath);
+    if (UbuntuTouch.enabled) {
+      return SnackBar(
+        content: Text(locals.exportInsideApp(name)),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 5),
+      );
+    }
+    return SnackBar(
+      content: Text(locals.exportSuccess),
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 5),
+      action: SnackBarAction(
+        label: locals.share,
+        onPressed: () async {
+          await SharePlus.instance.share(
+            ShareParams(files: [XFile(filePath)]),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<String?> _chooseImportFile(
+    BuildContext context,
+    S locals, {
+    required List<String> allowedExtensions,
+  }) async {
+    if (UbuntuTouch.enabled) {
+      final dir = await ubuntuTouchExportsDirectory();
+      final files = <File>[];
+      await for (final entity in dir.list()) {
+        if (entity is! File) continue;
+        final extension = p.extension(entity.path).replaceFirst('.', '').toLowerCase();
+        if (allowedExtensions.contains(extension)) files.add(entity);
+      }
+      files.sort((a, b) => b.statSync().modified.compareTo(a.statSync().modified));
+      if (!context.mounted) return null;
+      if (files.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(locals.noFileInsideApp),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return null;
+      }
+      return showDialog<String>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: Text(locals.chooseFileInsideApp),
+          children: [
+            for (final file in files)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, file.path),
+                child: Text(p.basename(file.path)),
+              ),
+          ],
+        ),
+      );
+    }
+
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: allowedExtensions,
+      allowMultiple: false,
+    );
+    if (result == null || result.files.isEmpty) return null;
+    final filePath = result.files.first.path;
+    if (filePath == null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(locals.importError),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+    return filePath;
   }
 }

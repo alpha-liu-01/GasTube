@@ -784,5 +784,26 @@
   "sleepTimerEnded": "Sleep timer ended",
   "@sleepTimerEnded": {
     "description": "Sleep timer fired"
+  },
+  "savedInsideApp": "Saved inside the app. The file has not left GasTube.",
+  "@savedInsideApp": {
+    "description": "Ubuntu Touch save confirmation while Content Hub is not connected"
+  },
+  "exportInsideApp": "Exported inside the app: {name}",
+  "@exportInsideApp": {
+    "description": "Ubuntu Touch export confirmation while Content Hub is not connected",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chooseFileInsideApp": "Choose a file inside the app",
+  "@chooseFileInsideApp": {
+    "description": "Title for picking an export that is already inside the app"
+  },
+  "noFileInsideApp": "There is no file inside the app to import.",
+  "@noFileInsideApp": {
+    "description": "Shown when Ubuntu Touch import has no file in Exports"
   }
 }

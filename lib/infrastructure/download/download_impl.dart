@@ -1478,6 +1478,9 @@ class DownloadImpl implements DownloadService {
           publicDir = Directory('/storage/emulated/0/Movies');
           subFolder = 'FluxTube';
         }
+      } else if (UbuntuTouch.enabled) {
+        publicDir = await ubuntuTouchExportsDirectory();
+        subFolder = '';
       } else {
         // On other platforms, use the downloads directory
         publicDir = await getDownloadsDirectory();
@@ -1488,8 +1491,9 @@ class DownloadImpl implements DownloadService {
         return const Left(MainFailure.unknown(message: 'Could not access public storage'));
       }
 
-      // Create the FluxTube subfolder
-      final targetDir = Directory('${publicDir.path}/$subFolder');
+      final targetDir = subFolder.isEmpty
+          ? publicDir
+          : Directory('${publicDir.path}/$subFolder');
       if (!await targetDir.exists()) {
         await targetDir.create(recursive: true);
       }
@@ -1517,6 +1521,7 @@ class DownloadImpl implements DownloadService {
       await sourceFile.copy(finalPath);
 
       log('[Download] Saved to device: $finalPath');
+      _logUbuntuTouchDownload('save exports file=$finalPath');
 
       return const Right(unit);
     } catch (e) {

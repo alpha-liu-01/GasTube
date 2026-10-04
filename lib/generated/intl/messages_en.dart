@@ -31,14 +31,16 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m6(title) => "Download failed: ${title}";
 
+  static String m7(name) => "Exported inside the app: ${name}";
+
   static String m1(count) =>
       "${Intl.plural(count, one: 'Reply', other: 'Replies')}";
 
-  static String m7(count) => "${count} minutes";
+  static String m8(count) => "${count} minutes";
 
-  static String m8(count) => "${count} min";
+  static String m9(count) => "${count} min";
 
-  static String m9(count) => "${count} videos";
+  static String m10(count) => "${count} videos";
 
   static String m2(count) =>
       "${Intl.plural(count, zero: 'No views', one: 'view', other: 'views')}";
@@ -95,6 +97,9 @@ class MessageLookup extends MessageLookupByLibrary {
     ),
     "channelSubscribers": m0,
     "channels": MessageLookupByLibrary.simpleMessage("Channels"),
+    "chooseFileInsideApp": MessageLookupByLibrary.simpleMessage(
+      "Choose a file inside the app",
+    ),
     "clearAll": MessageLookupByLibrary.simpleMessage("Clear all"),
     "clearAllHistory": MessageLookupByLibrary.simpleMessage(
       "Clear all history",
@@ -171,6 +176,7 @@ class MessageLookup extends MessageLookupByLibrary {
       "Enable HLS player to unlock all quality options. Disable if errors occur.",
     ),
     "exportData": MessageLookupByLibrary.simpleMessage("Export Data"),
+    "exportInsideApp": m7,
     "exportSubscriptions": MessageLookupByLibrary.simpleMessage(
       "Export Subscriptions",
     ),
@@ -250,6 +256,9 @@ class MessageLookup extends MessageLookupByLibrary {
     "noDownloads": MessageLookupByLibrary.simpleMessage("No Downloads"),
     "noDownloadsHint": MessageLookupByLibrary.simpleMessage(
       "Downloaded videos will appear here",
+    ),
+    "noFileInsideApp": MessageLookupByLibrary.simpleMessage(
+      "There is no file inside the app to import.",
     ),
     "noHistory": MessageLookupByLibrary.simpleMessage("No watch history"),
     "noLogs": MessageLookupByLibrary.simpleMessage("No logs yet"),
@@ -361,6 +370,9 @@ class MessageLookup extends MessageLookupByLibrary {
     ),
     "saveToPlaylist": MessageLookupByLibrary.simpleMessage("Save to playlist"),
     "saved": MessageLookupByLibrary.simpleMessage("Saved"),
+    "savedInsideApp": MessageLookupByLibrary.simpleMessage(
+      "Saved inside the app. The file has not left GasTube.",
+    ),
     "savedToDevice": MessageLookupByLibrary.simpleMessage("Saved to device"),
     "savedVideosTitle": MessageLookupByLibrary.simpleMessage("Saved Videos"),
     "savingToDevice": MessageLookupByLibrary.simpleMessage(
@@ -424,8 +436,8 @@ class MessageLookup extends MessageLookupByLibrary {
     "sleepTimerEnterMinutes": MessageLookupByLibrary.simpleMessage(
       "Enter minutes",
     ),
-    "sleepTimerMinutes": m7,
-    "sleepTimerMinutesShort": m8,
+    "sleepTimerMinutes": m8,
+    "sleepTimerMinutesShort": m9,
     "sleepTimerOff": MessageLookupByLibrary.simpleMessage("Off"),
     "sleepTimerSet": MessageLookupByLibrary.simpleMessage("Set"),
     "sort": MessageLookupByLibrary.simpleMessage("Sort"),
@@ -493,7 +505,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "version": MessageLookupByLibrary.simpleMessage("Version"),
     "video": MessageLookupByLibrary.simpleMessage("Video"),
     "videoAudio": MessageLookupByLibrary.simpleMessage("Video+Audio"),
-    "videoCountLabel": m9,
+    "videoCountLabel": m10,
     "videoFit": MessageLookupByLibrary.simpleMessage("Video Fit"),
     "videoFitContain": MessageLookupByLibrary.simpleMessage("Contain"),
     "videoFitCover": MessageLookupByLibrary.simpleMessage("Cover"),

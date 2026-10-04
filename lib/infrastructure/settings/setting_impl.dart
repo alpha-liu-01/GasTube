@@ -5,6 +5,8 @@ import 'dart:io';
 import 'package:dartz/dartz.dart';
 import 'package:dio/dio.dart';
 import 'package:fluxtube/core/api_client.dart';
+import 'package:fluxtube/core/storage_paths.dart';
+import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:fluxtube/core/enums.dart';
@@ -647,7 +649,12 @@ class SettingImpl implements SettingsService {
         'profile': profileName,
       };
 
-      final dir = await getDownloadsDirectory();
+      final Directory? dir;
+      if (UbuntuTouch.enabled) {
+        dir = await ubuntuTouchExportsDirectory();
+      } else {
+        dir = await getDownloadsDirectory();
+      }
       if (dir == null) {
         return const Left(MainFailure.serverFailure());
       }
@@ -658,6 +665,9 @@ class SettingImpl implements SettingsService {
         'fluxtube_subscriptions${profileSuffix}_$timestamp.json',
       ));
       await file.writeAsString(jsonEncode(exportData));
+      if (UbuntuTouch.enabled) {
+        print('gastube: export json file=${file.path}');
+      }
 
       return Right(file.path);
     } catch (e) {

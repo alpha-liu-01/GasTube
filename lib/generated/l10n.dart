@@ -2673,6 +2673,47 @@ class S {
       args: [],
     );
   }
+
+  /// `Saved inside the app. The file has not left GasTube.`
+  String get savedInsideApp {
+    return Intl.message(
+      'Saved inside the app. The file has not left GasTube.',
+      name: 'savedInsideApp',
+      desc: 'Ubuntu Touch save confirmation while Content Hub is not connected',
+      args: [],
+    );
+  }
+
+  /// `Exported inside the app: {name}`
+  String exportInsideApp(String name) {
+    return Intl.message(
+      'Exported inside the app: $name',
+      name: 'exportInsideApp',
+      desc:
+          'Ubuntu Touch export confirmation while Content Hub is not connected',
+      args: [name],
+    );
+  }
+
+  /// `Choose a file inside the app`
+  String get chooseFileInsideApp {
+    return Intl.message(
+      'Choose a file inside the app',
+      name: 'chooseFileInsideApp',
+      desc: 'Title for picking an export that is already inside the app',
+      args: [],
+    );
+  }
+
+  /// `There is no file inside the app to import.`
+  String get noFileInsideApp {
+    return Intl.message(
+      'There is no file inside the app to import.',
+      name: 'noFileInsideApp',
+      desc: 'Shown when Ubuntu Touch import has no file in Exports',
+      args: [],
+    );
+  }
 }
 
 class AppLocalizationDelegate extends LocalizationsDelegate<S> {
