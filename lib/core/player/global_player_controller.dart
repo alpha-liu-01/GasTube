@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer';
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:fluxtube/core/services/pip_service.dart';
 import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:fluxtube/core/services/media_controls.dart';
+import 'package:fluxtube/core/services/media_hub_player.dart';
 import 'package:fluxtube/core/services/exoplayer_notification_bridge.dart';
 
 Future<void> selectUbuntuTouchDecoder(Player player, {String? codec}) async {
@@ -68,6 +70,11 @@ class GlobalPlayerController extends ChangeNotifier {
 
   // Stream source info to avoid re-resolving
   String? _currentVideoUrl;
+
+  /// One URL media-hub can play after this process is paused. A separate
+  /// audio stream wins over the video URL. Empty means there is nothing to hand off.
+  String? _backgroundAudioUrl;
+  Map<String, String> _backgroundAudioHeaders = const {};
 
   // Audio track and subtitle selection (persists across widget rebuilds)
   String? _currentAudioTrackId;
@@ -166,6 +173,28 @@ class GlobalPlayerController extends ChangeNotifier {
   }
 
   String? get currentVideoId => _nativeVideoId ?? _currentVideoId;
+
+  String? get backgroundAudioUrl {
+    final url = _backgroundAudioUrl;
+    if (url == null || url.isEmpty) return null;
+    return url;
+  }
+
+  Map<String, String> get backgroundAudioHeaders => _backgroundAudioHeaders;
+
+  /// Remember the single URL to give media-hub. Pass the audio-only URL when
+  /// picture and sound are separate. Pass the opened URL when one stream
+  /// already contains the sound.
+  void noteBackgroundAudio({
+    String? url,
+    Map<String, String> headers = const {},
+  }) {
+    _backgroundAudioUrl = url;
+    _backgroundAudioHeaders = Map<String, String>.from(headers);
+    if (UbuntuTouch.enabled && url != null && url.isNotEmpty) {
+      unawaited(MediaHubPlayer.instance.prepare());
+    }
+  }
   bool get isPipMode => _isPipMode;
   bool get isSystemPipMode => _isSystemPipMode;
   Duration get lastPosition =>
@@ -632,6 +661,7 @@ class GlobalPlayerController extends ChangeNotifier {
     final stoppingVideoId = currentVideoId;
     _currentVideoId = null;
     _currentVideoUrl = null;
+    _backgroundAudioUrl = null;
     _isPipMode = false;
     _lastPosition = Duration.zero;
     _wasPlaying = false;
@@ -683,6 +713,7 @@ class GlobalPlayerController extends ChangeNotifier {
     _videoController = null;
     _currentVideoId = null;
     _currentVideoUrl = null;
+    _backgroundAudioUrl = null;
     _isPipMode = false;
     _lastPosition = Duration.zero;
     _wasPlaying = false;

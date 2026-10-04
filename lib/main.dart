@@ -24,6 +24,7 @@ import 'package:fluxtube/presentation/routes/app_routes.dart';
 import 'package:fluxtube/presentation/routes/bloc_observer.dart';
 import 'package:fluxtube/presentation/watch/widgets/global_pip_overlay.dart';
 import 'package:fluxtube/core/services/audio_handler_service.dart';
+import 'package:fluxtube/core/services/media_hub_player.dart';
 import 'package:fluxtube/core/services/mpris_player.dart';
 import 'package:fluxtube/core/services/log_collector.dart';
 import 'package:fluxtube/core/services/subscription_notifier.dart';
@@ -158,8 +159,19 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
+    if (UbuntuTouch.enabled) {
+      print('gastube: lifecycle $state');
+      if (state == AppLifecycleState.inactive ||
+          state == AppLifecycleState.hidden ||
+          state == AppLifecycleState.paused) {
+        unawaited(MediaHubPlayer.instance.handoff());
+      } else if (state == AppLifecycleState.resumed) {
+        unawaited(MediaHubPlayer.instance.takeBack());
+      }
+    }
     // When app is detached (being destroyed), stop the player to prevent crash
     if (state == AppLifecycleState.detached) {
+      unawaited(MediaHubPlayer.instance.stop());
       GlobalPlayerController().disposePlayer();
       NewPipeSidecar.instance.shutdown();
     }

@@ -628,6 +628,10 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
           debugPrint('Opened progressive stream');
           if (!mounted) return;
           await _applySelectedAudioTrack();
+          _globalPlayer.noteBackgroundAudio(
+            url: _selectedTrackAudioUrl() ?? config.videoUrl,
+            headers: _newPipePlaybackHeaders,
+          );
           break;
 
         case MediaSourceType.merging:
@@ -661,6 +665,10 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
           } else {
             debugPrint('Warning: No audio URL available');
           }
+          _globalPlayer.noteBackgroundAudio(
+            url: audioUrl,
+            headers: _newPipePlaybackHeaders,
+          );
 
           // Check mounted after async operation
           if (!mounted) return;
@@ -673,6 +681,10 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
             play: false,
           );
           debugPrint('Opened HLS stream');
+          _globalPlayer.noteBackgroundAudio(
+            url: config.manifestUrl,
+            headers: _newPipePlaybackHeaders,
+          );
           break;
 
         case MediaSourceType.dash:
@@ -682,6 +694,10 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
             play: false,
           );
           debugPrint('Opened DASH stream');
+          _globalPlayer.noteBackgroundAudio(
+            url: config.manifestUrl,
+            headers: _newPipePlaybackHeaders,
+          );
           break;
       }
 
@@ -1188,6 +1204,10 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
 
       // Set the new audio track
       await _player.setAudioTrack(AudioTrack.uri(audioStream!.url!));
+      _globalPlayer.noteBackgroundAudio(
+        url: audioStream.url,
+        headers: _newPipePlaybackHeaders,
+      );
 
       // Wait for audio to stabilize
       await Future.delayed(const Duration(milliseconds: 200));

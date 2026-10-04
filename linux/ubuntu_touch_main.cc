@@ -2,6 +2,7 @@
 
 #include <gdk/gdk.h>
 #include <gdk/gdkwayland.h>
+#include <glib-unix.h>
 #include <gtk/gtk.h>
 
 #include <sys/socket.h>
@@ -49,8 +50,51 @@ void install_fatal_signals() {
 
 namespace {
 
+gchar* g_media_hub_uuid = nullptr;
+
+// Swiping the app away destroys this window and returns from gtk_main before
+// Dart can reach the media-hub session. Locking and switching apps leave the
+// window in place, so this only runs when the process is actually going away.
+void destroy_media_hub_session() {
+  if (g_media_hub_uuid == nullptr) {
+    g_message("gastube: mediahub window-destroy uuid=");
+    return;
+  }
+  g_autoptr(GError) error = nullptr;
+  g_autoptr(GDBusConnection) bus =
+      g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &error);
+  if (bus == nullptr) {
+    g_message("gastube: mediahub window-destroy bus failed %s",
+              error != nullptr ? error->message : "unknown");
+    g_free(g_media_hub_uuid);
+    g_media_hub_uuid = nullptr;
+    return;
+  }
+  g_autoptr(GVariant) reply = g_dbus_connection_call_sync(
+      bus, "com.lomiri.MediaHub.Service", "/com/lomiri/MediaHub/Service",
+      "com.lomiri.MediaHub.Service", "DestroySession",
+      g_variant_new("(s)", g_media_hub_uuid), nullptr, G_DBUS_CALL_FLAGS_NONE,
+      500, nullptr, &error);
+  g_message("gastube: mediahub window-destroy uuid=%s ok=%d", g_media_hub_uuid,
+            reply != nullptr ? 1 : 0);
+  if (error != nullptr) {
+    g_message("gastube: mediahub window-destroy error=%s", error->message);
+  }
+  g_free(g_media_hub_uuid);
+  g_media_hub_uuid = nullptr;
+}
+
 void on_destroy(GtkWidget*, gpointer) {
+  g_message("gastube: mediahub window-destroy begin");
+  destroy_media_hub_session();
   gtk_main_quit();
+}
+
+gboolean on_shutdown_signal(gpointer) {
+  g_message("gastube: mediahub signal");
+  destroy_media_hub_session();
+  gtk_main_quit();
+  return G_SOURCE_REMOVE;
 }
 
 void log_scale_environment() {
@@ -388,7 +432,18 @@ void start_url_listener() {
 
 void url_method_call(FlMethodChannel*, FlMethodCall* call, gpointer) {
   g_autoptr(FlMethodResponse) response = nullptr;
-  if (g_strcmp0(fl_method_call_get_name(call), "drain") == 0) {
+  if (g_strcmp0(fl_method_call_get_name(call), "mediaHubSession") == 0) {
+    FlValue* args = fl_method_call_get_args(call);
+    g_free(g_media_hub_uuid);
+    g_media_hub_uuid = nullptr;
+    if (args != nullptr && fl_value_get_type(args) == FL_VALUE_TYPE_STRING) {
+      const gchar* uuid = fl_value_get_string(args);
+      if (uuid != nullptr && uuid[0] != '\0') g_media_hub_uuid = g_strdup(uuid);
+    }
+    g_message("gastube: mediahub session-note uuid=%s",
+              g_media_hub_uuid != nullptr ? g_media_hub_uuid : "");
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  } else if (g_strcmp0(fl_method_call_get_name(call), "drain") == 0) {
     g_autoptr(FlValue) list = fl_value_new_list();
     g_mutex_lock(&g_url_mutex);
     for (const std::string& url : g_url_pending) {
@@ -419,6 +474,10 @@ void install_url_channel(FlView* view) {
 }
 
 }  // namespace
+
+extern "C" void gastube_media_hub_on_exit() {
+  destroy_media_hub_session();
+}
 
 void gastube_ut_set_scale(int scale);
 extern "C" void gastube_ut_probe_media_codec();
@@ -483,6 +542,10 @@ extern "C" int gastube_ubuntu_touch_main(int argc, char** argv) {
   // context, and every later expose uploads this white background and swaps
   // it onto the same wl_surface Impeller is presenting.
   g_message("GDK_GL=gles; paint context left unset so exposes do not swap white");
+
+  g_unix_signal_add(SIGTERM, on_shutdown_signal, nullptr);
+  g_unix_signal_add(SIGINT, on_shutdown_signal, nullptr);
+  std::atexit(gastube_media_hub_on_exit);
 
   gtk_main();
   return 0;

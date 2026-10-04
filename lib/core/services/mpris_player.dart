@@ -28,6 +28,47 @@ class MprisPlayer {
     return _claiming ??= _claim();
   }
 
+  /// Drop the name so the sound indicator stops talking to this process.
+  /// The session bus connection stays open for [reclaim].
+  Future<void> release() async {
+    final client = _client;
+    if (client == null || !_claimed) return;
+    _claimed = false;
+    try {
+      final reply = await client.releaseName(busName);
+      print('gastube: mpris release reply=$reply');
+    } catch (error) {
+      print('gastube: mpris release failed error=$error');
+    }
+  }
+
+  /// Take the name back after [release] and publish the current item again.
+  Future<void> reclaim() async {
+    await claim();
+    final client = _client;
+    if (client == null || _claimed) return;
+    try {
+      final reply = await client.requestName(busName);
+      _claimed = true;
+      print('gastube: mpris reclaim reply=$reply');
+      final object = _object;
+      final item = _item;
+      if (object == null || item == null) return;
+      await object.emitPropertiesChanged(
+        'org.mpris.MediaPlayer2.Player',
+        changedProperties: {
+          'PlaybackStatus': DBusString(_status(item)),
+          'Metadata': _metadata(item),
+          'CanPlay': DBusBoolean(true),
+          'CanPause': DBusBoolean(true),
+          'CanSeek': DBusBoolean(true),
+        },
+      );
+    } catch (error) {
+      print('gastube: mpris reclaim failed error=$error');
+    }
+  }
+
   /// Publish the current item. [seeked] tells listeners the position jumped.
   void note(NowPlaying? item, {bool seeked = false}) {
     final previous = _item;
