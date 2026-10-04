@@ -126,8 +126,8 @@ class BackupSettingsSection extends StatelessWidget {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).clearSnackBars();
 
-      result.fold(
-        (failure) {
+      await result.fold(
+        (failure) async {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Export failed: ${failure.toString()}'),
@@ -135,8 +135,7 @@ class BackupSettingsSection extends StatelessWidget {
             ),
           );
         },
-        (filePath) {
-          // Update settings bloc with the exported file path
+        (filePath) async {
           BlocProvider.of<SettingsBloc>(context).add(
             SettingsEvent.setLastExportedFilePath(filePath: filePath),
           );
@@ -144,6 +143,19 @@ class BackupSettingsSection extends StatelessWidget {
           ScaffoldMessenger.of(context).showSnackBar(
             _exportSnackBar(locals, filePath),
           );
+          if (!UbuntuTouch.enabled) return;
+          // Commit this frame before the file manager covers the window.
+          await WidgetsBinding.instance.endOfFrame;
+          if (!context.mounted) return;
+          final handed = await exportDocument(filePath);
+          if (!handed.ok && context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Export failed: ${handed.message}'),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
         },
       );
     } catch (e) {

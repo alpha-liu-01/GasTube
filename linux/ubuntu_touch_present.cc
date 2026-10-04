@@ -239,6 +239,10 @@ extern "C" EGLBoolean gastube_gated_egl_swap(EGLDisplay display,
     }
     return EGL_TRUE;
   }
+  if (g_real_swap == nullptr) {
+    g_real_swap =
+        reinterpret_cast<EglSwapFn>(dlsym(RTLD_NEXT, "eglSwapBuffers"));
+  }
   if (g_real_swap == nullptr) return EGL_FALSE;
   // GTK's paint commits a transparent wl_buffer through wl_proxy_marshal.
   // That commit is what shows the wallpaper. The swap's own attach has to
@@ -636,13 +640,24 @@ extern "C" void wl_proxy_marshal(struct wl_proxy* proxy, uint32_t opcode, ...) {
   if (real != nullptr) real(proxy, opcode, args, nullptr);
 }
 
+// GDK calls libEGL's eglSwapBuffers from gdk_window_end_draw_frame. The
+// epoxy pointer gate does not see that call. The first unfocus of a process
+// can already be inside that paint; hybris then blocks in finishSwap and
+// the wayland client heap aborts. This definition is what libgdk binds.
+extern "C" EGLBoolean eglSwapBuffers(EGLDisplay display, EGLSurface surface) {
+  return gastube_gated_egl_swap(display, surface);
+}
+
 extern "C" int wl_display_flush(struct wl_display* display) {
+  // Surface attach and commit are already dropped. This flush still has to
+  // run: it carries the Wayland ping reply. Holding it while the file
+  // manager is open makes the compositor drop the client, and the last
+  // frame stays on screen with input dead.
   if (!g_present_allowed.load(std::memory_order_acquire)) {
     bool already = g_logged_flush.exchange(true, std::memory_order_relaxed);
     if (!already) {
-      g_message("present: skipped wl_display_flush");
+      g_message("present: flushed wayland while the window is unfocused");
     }
-    return 0;
   }
   using FlushFn = int (*)(struct wl_display*);
   static FlushFn real = nullptr;
