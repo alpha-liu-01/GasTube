@@ -12,6 +12,8 @@
 #include <gio/gio.h>
 #include <glib-unix.h>
 
+#include "pulse_route.h"
+
 namespace {
 
 constexpr int kRequestPrimaryOwner = 1;
@@ -413,6 +415,14 @@ extern "C" gboolean on_tick(gpointer /*data*/) {
   return G_SOURCE_CONTINUE;
 }
 
+extern "C" gboolean pause_for_unplug(gpointer /*data*/) {
+  note("unplug");
+  set_paused(&g_relay, true);
+  return G_SOURCE_REMOVE;
+}
+
+void on_route_unplug() { g_idle_add(pause_for_unplug, nullptr); }
+
 extern "C" gboolean on_sigterm(gpointer /*data*/) {
   note("stop");
   g_relay.quitting = true;
@@ -478,6 +488,7 @@ int main(int argc, char** argv) {
   g_unix_signal_add(SIGTERM, on_sigterm, nullptr);
   g_unix_signal_add(SIGINT, on_sigterm, nullptr);
   g_relay.tick = g_timeout_add(100, on_tick, nullptr);
+  gastube_pulse_route_watch(on_route_unplug);
   claim_name(&g_relay);
   g_main_loop_run(g_relay.loop);
   if (g_relay.tick != 0) g_source_remove(g_relay.tick);

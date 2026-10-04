@@ -65,6 +65,7 @@ add_executable(${BINARY_NAME}
   "main.cc"
   "my_application.cc"
   "pulse_unplug.cc"
+  "pulse_route.cc"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
 )
 
@@ -123,9 +124,9 @@ if(DEFINED ENV{GASTUBE_UBUNTU_TOUCH})
   set(MEDIA_KIT_LIBS_AVAILABLE ON CACHE BOOL
       "Ubuntu Touch click ships its own libmpv" FORCE)
   pkg_check_modules(GIO REQUIRED IMPORTED_TARGET gio-2.0)
-  add_executable(gastube-mpris-relay "mpris_relay.cc")
+  add_executable(gastube-mpris-relay "mpris_relay.cc" "pulse_route.cc")
   apply_standard_settings(gastube-mpris-relay)
-  target_link_libraries(gastube-mpris-relay PRIVATE PkgConfig::GIO ${CMAKE_DL_LIBS})
+  target_link_libraries(gastube-mpris-relay PRIVATE PkgConfig::GIO PkgConfig::PULSE ${CMAKE_DL_LIBS})
   set_target_properties(gastube-mpris-relay PROPERTIES
     INSTALL_RPATH "\$ORIGIN/lib"
     BUILD_RPATH "\$ORIGIN/lib")
