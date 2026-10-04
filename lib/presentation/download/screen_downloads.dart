@@ -106,9 +106,7 @@ class _ScreenDownloadsState extends State<ScreenDownloads>
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(
-                      UbuntuTouch.enabled
-                          ? locals.savedInsideApp
-                          : locals.savedToDevice,
+                      locals.savedToDevice,
                     ),
                     behavior: SnackBarBehavior.floating,
                     backgroundColor: AppColors.success,

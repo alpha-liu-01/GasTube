@@ -2714,6 +2714,16 @@ class S {
       args: [],
     );
   }
+
+  /// `The file manager is open. Choose where to save {name}.`
+  String exportChooseFolder(String name) {
+    return Intl.message(
+      'The file manager is open. Choose where to save $name.',
+      name: 'exportChooseFolder',
+      desc: 'Ubuntu Touch export handed to the file manager',
+      args: [name],
+    );
+  }
 }
 
 class AppLocalizationDelegate extends LocalizationsDelegate<S> {

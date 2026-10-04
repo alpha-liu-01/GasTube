@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:fluxtube/core/colors.dart';
 import 'package:fluxtube/core/constants.dart';
 import 'package:fluxtube/core/strings.dart';
+import 'package:fluxtube/core/ubuntu_touch.dart';
+import 'package:fluxtube/core/ubuntu_touch_content_hub.dart';
 import 'package:fluxtube/generated/l10n.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -70,6 +72,10 @@ class _ShareBottomSheetState extends State<ShareBottomSheet> {
 
   void _shareNative() async {
     Navigator.pop(context);
+    if (UbuntuTouch.enabled) {
+      await shareText(_shareContent);
+      return;
+    }
     await SharePlus.instance.share(ShareParams(text: _shareContent));
   }
 

@@ -1,12 +1,10 @@
-import 'dart:io';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluxtube/application/application.dart';
 import 'package:fluxtube/core/constants.dart';
-import 'package:fluxtube/core/storage_paths.dart';
 import 'package:fluxtube/core/ubuntu_touch.dart';
+import 'package:fluxtube/core/ubuntu_touch_content_hub.dart';
 import 'package:fluxtube/generated/l10n.dart';
 import 'package:fluxtube/infrastructure/settings/newpipe_data_service.dart';
 import 'package:fluxtube/core/di/injectable.dart';
@@ -437,7 +435,7 @@ class BackupSettingsSection extends StatelessWidget {
     final name = p.basename(filePath);
     if (UbuntuTouch.enabled) {
       return SnackBar(
-        content: Text(locals.exportInsideApp(name)),
+        content: Text(locals.exportChooseFolder(name)),
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 5),
       );
@@ -463,37 +461,30 @@ class BackupSettingsSection extends StatelessWidget {
     required List<String> allowedExtensions,
   }) async {
     if (UbuntuTouch.enabled) {
-      final dir = await ubuntuTouchExportsDirectory();
-      final files = <File>[];
-      await for (final entity in dir.list()) {
-        if (entity is! File) continue;
-        final extension = p.extension(entity.path).replaceFirst('.', '').toLowerCase();
-        if (allowedExtensions.contains(extension)) files.add(entity);
-      }
-      files.sort((a, b) => b.statSync().modified.compareTo(a.statSync().modified));
+      final picked = await importDocument();
       if (!context.mounted) return null;
-      if (files.isEmpty) {
+      if (!picked.ok || picked.path == null) {
+        if (picked.message != 'cancelled') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(locals.importError),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return null;
+      }
+      final extension = p.extension(picked.path!).replaceFirst('.', '').toLowerCase();
+      if (!allowedExtensions.contains(extension)) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(locals.noFileInsideApp),
+            content: Text(locals.importError),
             behavior: SnackBarBehavior.floating,
           ),
         );
         return null;
       }
-      return showDialog<String>(
-        context: context,
-        builder: (context) => SimpleDialog(
-          title: Text(locals.chooseFileInsideApp),
-          children: [
-            for (final file in files)
-              SimpleDialogOption(
-                onPressed: () => Navigator.pop(context, file.path),
-                child: Text(p.basename(file.path)),
-              ),
-          ],
-        ),
-      );
+      return picked.path;
     }
 
     final result = await FilePicker.platform.pickFiles(

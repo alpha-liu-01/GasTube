@@ -18,6 +18,7 @@ import 'package:fluxtube/core/api_client.dart';
 import 'package:fluxtube/core/settings.dart';
 import 'package:fluxtube/core/storage_paths.dart';
 import 'package:fluxtube/core/ubuntu_touch.dart';
+import 'package:fluxtube/core/ubuntu_touch_content_hub.dart';
 import 'package:path/path.dart' as p;
 import 'package:fluxtube/infrastructure/database/database.dart';
 import 'package:injectable/injectable.dart';
@@ -1479,8 +1480,14 @@ class DownloadImpl implements DownloadService {
           subFolder = 'FluxTube';
         }
       } else if (UbuntuTouch.enabled) {
-        publicDir = await ubuntuTouchExportsDirectory();
-        subFolder = '';
+        final handed = await exportDownload(
+          path: sourceFile.path,
+          audioOnly: item.downloadType == domain.DownloadType.audioOnly,
+        );
+        if (!handed.ok) {
+          return Left(MainFailure.unknown(message: handed.message));
+        }
+        return const Right(unit);
       } else {
         // On other platforms, use the downloads directory
         publicDir = await getDownloadsDirectory();

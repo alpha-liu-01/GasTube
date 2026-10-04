@@ -6,6 +6,7 @@ import 'package:dartz/dartz.dart';
 import 'package:drift/drift.dart';
 import 'package:fluxtube/core/storage_paths.dart';
 import 'package:fluxtube/core/ubuntu_touch.dart';
+import 'package:fluxtube/core/ubuntu_touch_content_hub.dart';
 import 'package:fluxtube/domain/core/failure/main_failure.dart';
 import 'package:fluxtube/infrastructure/database/database.dart';
 import 'package:injectable/injectable.dart';
@@ -92,6 +93,10 @@ class NewPipeDataService {
       await zipFile.writeAsBytes(zipData);
       if (UbuntuTouch.enabled) {
         print('gastube: export zip file=$zipPath');
+        final handed = await exportDocument(zipPath);
+        if (!handed.ok) {
+          return const Left(MainFailure.clientFailure());
+        }
       }
 
       // Cleanup temp directory

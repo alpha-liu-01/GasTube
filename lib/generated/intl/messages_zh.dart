@@ -31,16 +31,18 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m6(title) => "下载失败：${title}";
 
-  static String m7(name) => "已导出到应用内：${name}";
+  static String m7(name) => "文件管理器已打开，请选择 ${name} 的保存位置。";
+
+  static String m8(name) => "已导出到应用内：${name}";
 
   static String m1(count) =>
       "${Intl.plural(count, one: '回复', other: '${count}条回复')}";
 
-  static String m8(count) => "${count} 分钟";
-
   static String m9(count) => "${count} 分钟";
 
-  static String m10(count) => "${count} 个视频";
+  static String m10(count) => "${count} 分钟";
+
+  static String m11(count) => "${count} 个视频";
 
   static String m2(count) =>
       "${Intl.plural(count, zero: '无观看', one: '1次观看', other: '${count}次观看')}";
@@ -135,8 +137,9 @@ class MessageLookup extends MessageLookupByLibrary {
     "enableHlsPlayerDescription": MessageLookupByLibrary.simpleMessage(
       "启用 HLS 播放器以解锁所有质量选项。如果出现错误，请禁用。",
     ),
+    "exportChooseFolder": m7,
     "exportData": MessageLookupByLibrary.simpleMessage("导出数据"),
-    "exportInsideApp": m7,
+    "exportInsideApp": m8,
     "exportSubscriptions": MessageLookupByLibrary.simpleMessage("导出订阅"),
     "exportSuccess": MessageLookupByLibrary.simpleMessage("导出成功"),
     "failed": MessageLookupByLibrary.simpleMessage("失败"),
@@ -330,8 +333,8 @@ class MessageLookup extends MessageLookupByLibrary {
     "sleepTimerEndOfVideo": MessageLookupByLibrary.simpleMessage("视频结束时"),
     "sleepTimerEnded": MessageLookupByLibrary.simpleMessage("睡眠定时器已结束"),
     "sleepTimerEnterMinutes": MessageLookupByLibrary.simpleMessage("输入分钟数"),
-    "sleepTimerMinutes": m8,
-    "sleepTimerMinutesShort": m9,
+    "sleepTimerMinutes": m9,
+    "sleepTimerMinutesShort": m10,
     "sleepTimerOff": MessageLookupByLibrary.simpleMessage("关闭"),
     "sleepTimerSet": MessageLookupByLibrary.simpleMessage("设置"),
     "sort": MessageLookupByLibrary.simpleMessage("排序"),
@@ -383,7 +386,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "version": MessageLookupByLibrary.simpleMessage("版本"),
     "video": MessageLookupByLibrary.simpleMessage("视频"),
     "videoAudio": MessageLookupByLibrary.simpleMessage("视频+音频"),
-    "videoCountLabel": m10,
+    "videoCountLabel": m11,
     "videoFit": MessageLookupByLibrary.simpleMessage("画面适配"),
     "videoFitContain": MessageLookupByLibrary.simpleMessage("包含"),
     "videoFitCover": MessageLookupByLibrary.simpleMessage("覆盖"),

@@ -805,5 +805,14 @@
   "noFileInsideApp": "There is no file inside the app to import.",
   "@noFileInsideApp": {
     "description": "Shown when Ubuntu Touch import has no file in Exports"
+  },
+  "exportChooseFolder": "The file manager is open. Choose where to save {name}.",
+  "@exportChooseFolder": {
+    "description": "Ubuntu Touch export handed to the file manager",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
   }
 }

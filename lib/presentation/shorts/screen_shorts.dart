@@ -7,6 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluxtube/application/application.dart';
 import 'package:fluxtube/core/colors.dart';
+import 'package:fluxtube/core/ubuntu_touch.dart';
+import 'package:fluxtube/core/ubuntu_touch_content_hub.dart';
 import 'package:fluxtube/core/enums.dart';
 import 'package:fluxtube/core/player/global_player_controller.dart';
 import 'package:fluxtube/core/operations/math_operations.dart';
@@ -540,6 +542,10 @@ class _ScreenShortsState extends State<ScreenShorts> {
 
   void _handleShare(ShortItem short) {
     final url = 'https://www.youtube.com/shorts/${short.id}';
+    if (UbuntuTouch.enabled) {
+      shareText(url);
+      return;
+    }
     SharePlus.instance.share(ShareParams(text: url));
   }
 

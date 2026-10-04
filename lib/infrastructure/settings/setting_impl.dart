@@ -7,6 +7,7 @@ import 'package:dio/dio.dart';
 import 'package:fluxtube/core/api_client.dart';
 import 'package:fluxtube/core/storage_paths.dart';
 import 'package:fluxtube/core/ubuntu_touch.dart';
+import 'package:fluxtube/core/ubuntu_touch_content_hub.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:fluxtube/core/enums.dart';
@@ -667,6 +668,10 @@ class SettingImpl implements SettingsService {
       await file.writeAsString(jsonEncode(exportData));
       if (UbuntuTouch.enabled) {
         print('gastube: export json file=${file.path}');
+        final handed = await exportDocument(file.path);
+        if (!handed.ok) {
+          return const Left(MainFailure.serverFailure());
+        }
       }
 
       return Right(file.path);

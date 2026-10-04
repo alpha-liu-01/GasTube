@@ -14,12 +14,18 @@ class DeepLinkHandler {
   StreamSubscription<Uri>? _linkSubscription;
   StreamSubscription<List<SharedMediaFile>>? _shareSubscription;
   BuildContext? _context;
+  final List<String> _pendingSharedText = [];
 
   void init(BuildContext context) {
     _context = context;
     _appLinks = AppLinks();
     _setupDeepLinkListener();
     _handleInitialLink();
+    final pending = List<String>.from(_pendingSharedText);
+    _pendingSharedText.clear();
+    for (final text in pending) {
+      _handleSharedText(text);
+    }
     // receive_sharing_intent only has Android and iOS implementations.
     if (Platform.isAndroid || Platform.isIOS) {
       _setupShareIntentListener();
@@ -77,8 +83,17 @@ class DeepLinkHandler {
     }
   }
 
+  void acceptSharedText(String text) {
+    if (_context == null || !_context!.mounted) {
+      _pendingSharedText.add(text);
+      print('gastube: content share queued text=$text');
+      return;
+    }
+    _handleSharedText(text);
+  }
+
   void _handleSharedText(String text) {
-    debugPrint('Shared text received: $text');
+    print('gastube: content share text=$text');
     final result = parseYouTubeUrl(text);
     if (result != null) {
       _navigateToContent(result);

@@ -27,6 +27,7 @@ import 'package:fluxtube/core/services/audio_handler_service.dart';
 import 'package:fluxtube/core/services/log_collector.dart';
 import 'package:fluxtube/core/services/subscription_notifier.dart';
 import 'package:fluxtube/core/ubuntu_touch.dart';
+import 'package:fluxtube/core/ubuntu_touch_content_hub.dart';
 import 'package:fluxtube/core/ubuntu_touch_frame_timing.dart';
 import 'package:fluxtube/core/ubuntu_touch_image_cache.dart';
 import 'package:fluxtube/core/window_fullscreen.dart';
@@ -53,6 +54,7 @@ void main() async {
   // Ubuntu Touch loads the libmpv shipped beside the executable. Desktop
   // builds keep the system library.
   if (UbuntuTouch.enabled) {
+    unawaited(startUbuntuTouchContentHub());
     final libmpv = p.join(
       p.dirname(Platform.resolvedExecutable),
       'lib',

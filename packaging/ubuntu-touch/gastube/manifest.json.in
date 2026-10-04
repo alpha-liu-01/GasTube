@@ -9,7 +9,8 @@
     "hooks": {
         "gastube": {
             "apparmor": "gastube.apparmor",
-            "desktop": "gastube.desktop"
+            "desktop": "gastube.desktop",
+            "content-hub": "gastube-content.json"
         }
     }
 }

@@ -31,16 +31,19 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m6(title) => "Download failed: ${title}";
 
-  static String m7(name) => "Exported inside the app: ${name}";
+  static String m7(name) =>
+      "The file manager is open. Choose where to save ${name}.";
+
+  static String m8(name) => "Exported inside the app: ${name}";
 
   static String m1(count) =>
       "${Intl.plural(count, one: 'Reply', other: 'Replies')}";
 
-  static String m8(count) => "${count} minutes";
+  static String m9(count) => "${count} minutes";
 
-  static String m9(count) => "${count} min";
+  static String m10(count) => "${count} min";
 
-  static String m10(count) => "${count} videos";
+  static String m11(count) => "${count} videos";
 
   static String m2(count) =>
       "${Intl.plural(count, zero: 'No views', one: 'view', other: 'views')}";
@@ -175,8 +178,9 @@ class MessageLookup extends MessageLookupByLibrary {
     "enableHlsPlayerDescription": MessageLookupByLibrary.simpleMessage(
       "Enable HLS player to unlock all quality options. Disable if errors occur.",
     ),
+    "exportChooseFolder": m7,
     "exportData": MessageLookupByLibrary.simpleMessage("Export Data"),
-    "exportInsideApp": m7,
+    "exportInsideApp": m8,
     "exportSubscriptions": MessageLookupByLibrary.simpleMessage(
       "Export Subscriptions",
     ),
@@ -436,8 +440,8 @@ class MessageLookup extends MessageLookupByLibrary {
     "sleepTimerEnterMinutes": MessageLookupByLibrary.simpleMessage(
       "Enter minutes",
     ),
-    "sleepTimerMinutes": m8,
-    "sleepTimerMinutesShort": m9,
+    "sleepTimerMinutes": m9,
+    "sleepTimerMinutesShort": m10,
     "sleepTimerOff": MessageLookupByLibrary.simpleMessage("Off"),
     "sleepTimerSet": MessageLookupByLibrary.simpleMessage("Set"),
     "sort": MessageLookupByLibrary.simpleMessage("Sort"),
@@ -505,7 +509,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "version": MessageLookupByLibrary.simpleMessage("Version"),
     "video": MessageLookupByLibrary.simpleMessage("Video"),
     "videoAudio": MessageLookupByLibrary.simpleMessage("Video+Audio"),
-    "videoCountLabel": m10,
+    "videoCountLabel": m11,
     "videoFit": MessageLookupByLibrary.simpleMessage("Video Fit"),
     "videoFitContain": MessageLookupByLibrary.simpleMessage("Contain"),
     "videoFitCover": MessageLookupByLibrary.simpleMessage("Cover"),
