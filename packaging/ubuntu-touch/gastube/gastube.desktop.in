@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=GasTube
-Exec=gastube
+Exec=gastube %u
 Icon=gastube.png
 Terminal=false
 Type=Application

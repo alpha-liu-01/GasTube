@@ -8,3 +8,18 @@ class UbuntuTouch {
   /// `~/.local/share/<this>/`, not under the executable name.
   static const String clickPackage = 'gastube.alphaliu01';
 }
+
+/// URLs Lomiri put on the command line of this process.
+class UbuntuTouchUrls {
+  static final List<String> argv = [];
+
+  /// https links, plus the Android intent URL the mobile YouTube page uses
+  /// for its Open app button.
+  static bool isLaunchArgument(String arg) {
+    return arg.startsWith('https://') ||
+        arg.startsWith('http://') ||
+        arg.startsWith('intent://') ||
+        arg.startsWith('vnd.youtube:') ||
+        arg.startsWith('youtube:');
+  }
+}

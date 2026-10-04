@@ -37,7 +37,15 @@ import 'package:screen_brightness/screen_brightness.dart';
 
 import 'core/di/injectable.dart';
 
-void main() async {
+void main(List<String> args) async {
+  if (UbuntuTouch.enabled) {
+    for (final arg in args) {
+      if (UbuntuTouchUrls.isLaunchArgument(arg)) {
+        UbuntuTouchUrls.argv.add(arg);
+        print('gastube: url argv $arg');
+      }
+    }
+  }
   WidgetsFlutterBinding.ensureInitialized();
   installUbuntuTouchFrameTiming();
   installUbuntuTouchImageCache();

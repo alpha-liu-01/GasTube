@@ -58,8 +58,13 @@ class _ShareBottomSheetState extends State<ShareBottomSheet> {
     return _videoUrl;
   }
 
-  void _copyToClipboard() {
+  Future<void> _copyToClipboard() async {
     Clipboard.setData(ClipboardData(text: _shareContent));
+    if (UbuntuTouch.enabled) {
+      final ok = await copyToSystemPasteboard(_shareContent);
+      if (!mounted || !ok) return;
+    }
+    if (!mounted) return;
     Navigator.pop(context);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

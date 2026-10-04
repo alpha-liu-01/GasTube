@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dbus/dbus.dart';
 import 'package:fluxtube/core/deep_link_handler.dart';
@@ -45,6 +46,52 @@ Future<({bool ok, String message})> openInSystemPlayer({
   } finally {
     await client.close();
   }
+}
+
+/// Writes text onto the Lomiri pasteboard. Flutter's clipboard stays inside
+/// this process, so other apps only see a paste that Content Hub stored.
+Future<bool> copyToSystemPasteboard(String text) async {
+  final client = DBusClient.session();
+  try {
+    final hub = _service(client);
+    final reply = await hub.callMethod(
+      'com.lomiri.content.dbus.Service',
+      'CreatePaste',
+      [
+        DBusString(_appId()),
+        const DBusString(''),
+        DBusArray.byte(_pasteboardBytes(text)),
+        DBusArray.string(const ['text/plain']),
+      ],
+      replySignature: DBusSignature('b'),
+    );
+    final ok = reply.returnValues.first.asBoolean();
+    print('gastube: pasteboard ok=$ok bytes=${text.length}');
+    return ok;
+  } catch (error) {
+    print('gastube: pasteboard failed error=$error');
+    return false;
+  } finally {
+    await client.close();
+  }
+}
+
+/// Content Hub stores the QtMir clipboard layout: little-endian int header,
+/// then the format name, then the UTF-8 bytes.
+List<int> _pasteboardBytes(String text) {
+  final format = ascii.encode('text/plain');
+  final data = utf8.encode(text);
+  final header = 4 + 16;
+  final bytes = Uint8List(header + format.length + data.length);
+  final view = ByteData.sublistView(bytes);
+  view.setInt32(0, 1, Endian.little);
+  view.setInt32(4, header, Endian.little);
+  view.setInt32(8, format.length, Endian.little);
+  view.setInt32(12, header + format.length, Endian.little);
+  view.setInt32(16, data.length, Endian.little);
+  bytes.setRange(header, header + format.length, format);
+  bytes.setRange(header + format.length, bytes.length, data);
+  return bytes;
 }
 
 /// Hands a finished download to Gallery or Music so it leaves the click.
@@ -228,6 +275,10 @@ Future<void> startUbuntuTouchContentHub() async {
     final escaped = _dbusEscape(appId);
     final path = DBusObjectPath('/com/lomiri/content/handler/$escaped');
     await client.registerObject(_ContentHandler(path, client));
+    await client.registerObject(
+      _RunningUrlHandler(DBusObjectPath('/$escaped')),
+    );
+    print('gastube: url dbus path=/$escaped');
     await client.requestName('com.lomiri.content.handler.$escaped');
     final hub = _service(client);
     await hub.callMethod(
@@ -377,6 +428,54 @@ String? _structText(DBusValue item) {
   }
   if (bytes.isEmpty) return null;
   return utf8.decode(bytes, allowMalformed: true);
+}
+
+/// Lomiri sends a second link here when this process is already running.
+/// The path is the app id with every punctuation character written as _xx.
+class _RunningUrlHandler extends DBusObject {
+  _RunningUrlHandler(super.path);
+
+  @override
+  List<DBusIntrospectInterface> introspect() {
+    return [
+      DBusIntrospectInterface(
+        'org.freedesktop.Application',
+        methods: [
+          DBusIntrospectMethod(
+            'Open',
+            args: [
+              DBusIntrospectArgument(
+                DBusSignature('as'),
+                DBusArgumentDirection.in_,
+                name: 'uris',
+              ),
+              DBusIntrospectArgument(
+                DBusSignature('a{sv}'),
+                DBusArgumentDirection.in_,
+                name: 'platform_data',
+              ),
+            ],
+          ),
+        ],
+      ),
+    ];
+  }
+
+  @override
+  Future<DBusMethodResponse> handleMethodCall(DBusMethodCall methodCall) async {
+    if (methodCall.name != 'Open' || methodCall.values.isEmpty) {
+      return DBusMethodSuccessResponse();
+    }
+    final uris = methodCall.values.first;
+    if (uris is DBusArray) {
+      for (final child in uris.children) {
+        if (child is! DBusString || child.value.isEmpty) continue;
+        print('gastube: url open ${child.value}');
+        DeepLinkHandler().acceptSharedText(child.value);
+      }
+    }
+    return DBusMethodSuccessResponse();
+  }
 }
 
 class _ContentHandler extends DBusObject {

@@ -10,7 +10,8 @@
         "gastube": {
             "apparmor": "gastube.apparmor",
             "desktop": "gastube.desktop",
-            "content-hub": "gastube-content.json"
+            "content-hub": "gastube-content.json",
+            "urls": "gastube.url-dispatcher"
         }
     }
 }

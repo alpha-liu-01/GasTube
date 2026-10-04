@@ -1,0 +1,17 @@
+[
+    {
+        "protocol": "https",
+        "domain-suffix": "youtube.com"
+    },
+    {
+        "protocol": "https",
+        "domain-suffix": "youtu.be"
+    },
+    {
+        "protocol": "intent",
+        "domain-suffix": "com.google.android.youtube"
+    },
+    {
+        "protocol": "youtube"
+    }
+]
