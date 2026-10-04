@@ -133,7 +133,8 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       if (!UbuntuTouch.enabled) {
         DownloadNotificationService().initialize();
         WindowFullscreen.loadAndApply();
-        // Initialize audio service for background playback notification controls
+      }
+      if (!Platform.isLinux) {
         initAudioService();
       }
       // Look for new uploads from subscribed channels. Self-throttling and a

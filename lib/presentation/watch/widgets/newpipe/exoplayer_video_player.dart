@@ -8,7 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluxtube/application/application.dart';
 import 'package:fluxtube/core/player/global_player_controller.dart';
-import 'package:fluxtube/core/services/audio_handler_service.dart';
+import 'package:fluxtube/core/services/media_controls.dart';
 import 'package:fluxtube/core/services/exoplayer_notification_bridge.dart';
 import 'package:fluxtube/core/services/pip_service.dart';
 import 'package:fluxtube/domain/saved/models/local_store.dart';
@@ -548,10 +548,10 @@ class _NewPipeExoPlayerState extends State<NewPipeExoPlayer> {
   }
 
   Future<void> _initNotification() async {
-    final handler = await ensureAudioServiceInitialized();
-    if (handler == null || !mounted) return;
+    if (!mounted) return;
+    final controls = MediaControls.instance;
 
-    handler.configureExternalControls(
+    controls.bindCommands(
       play: () async {
         if (!mounted) return;
         setState(() => _isPlaying = true);
@@ -579,7 +579,8 @@ class _NewPipeExoPlayerState extends State<NewPipeExoPlayer> {
       },
     );
 
-    await handler.setExternalMediaItem(
+    await controls.setNowPlaying(
+      external: true,
       id: widget.videoId,
       title: widget.watchInfo.title ?? 'Video',
       artist: widget.watchInfo.uploaderName ?? 'Unknown',
@@ -602,8 +603,7 @@ class _NewPipeExoPlayerState extends State<NewPipeExoPlayer> {
     }
     _lastNotificationStateUpdate = now;
 
-    final handler = await ensureAudioServiceInitialized();
-    await handler?.updateExternalPlaybackState(
+    await MediaControls.instance.updateProgress(
       playing: _isPlaying,
       position: Duration(milliseconds: _positionMs),
       duration: Duration(milliseconds: _durationMs),

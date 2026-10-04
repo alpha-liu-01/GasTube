@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluxtube/application/application.dart';
 import 'package:fluxtube/core/player/global_player_controller.dart';
-import 'package:fluxtube/core/services/audio_handler_service.dart';
+import 'package:fluxtube/core/services/media_controls.dart';
 import 'package:fluxtube/core/services/exoplayer_notification_bridge.dart';
 import 'package:fluxtube/presentation/routes/app_routes.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -222,8 +222,7 @@ class _PipVideoWidgetState extends State<PipVideoWidget> {
         duration: Duration(milliseconds: durationMs),
       );
       await _globalPlayer.pipService.setVideoPlaying(isPlaying);
-      final handler = await ensureAudioServiceInitialized();
-      await handler?.updateExternalPlaybackState(
+      await MediaControls.instance.updateProgress(
         playing: isPlaying,
         position: Duration(milliseconds: positionMs),
         duration: Duration(milliseconds: durationMs),
@@ -234,8 +233,7 @@ class _PipVideoWidgetState extends State<PipVideoWidget> {
   }
 
   Future<void> _configureNativeNotificationControls() async {
-    final handler = await ensureAudioServiceInitialized();
-    handler?.configureExternalControls(
+    MediaControls.instance.bindCommands(
       stop: () async {
         await _globalPlayer.clearMediaNotification();
         if (mounted) {

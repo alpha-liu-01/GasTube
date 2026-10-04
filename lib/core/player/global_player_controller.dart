@@ -6,7 +6,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:fluxtube/core/services/pip_service.dart';
 import 'package:fluxtube/core/ubuntu_touch.dart';
-import 'package:fluxtube/core/services/audio_handler_service.dart';
+import 'package:fluxtube/core/services/media_controls.dart';
 import 'package:fluxtube/core/services/exoplayer_notification_bridge.dart';
 
 Future<void> selectUbuntuTouchDecoder(Player player, {String? codec}) async {
@@ -711,37 +711,32 @@ class GlobalPlayerController extends ChangeNotifier {
       ? _nativeBuffering
       : (_player?.state.buffering ?? false);
 
-  /// Update media notification with current video info
-  /// Call this when starting a new video to show notification controls
+  /// Publish what is playing. The player is not asked to play or pause here.
   Future<void> updateMediaNotification({
     required String title,
     required String artist,
     String? thumbnailUrl,
     Duration? duration,
   }) async {
-    // Ensure audio service is initialized before updating notification
-    final audioHandler = await ensureAudioServiceInitialized();
-    log('[GlobalPlayer] updateMediaNotification called - audioHandler: ${audioHandler != null}, videoId: $_currentVideoId');
-    if (audioHandler != null && _currentVideoId != null) {
-      await audioHandler.setMediaItem(
-        id: _currentVideoId!,
-        title: title,
-        artist: artist,
-        artUri: thumbnailUrl,
-        duration: duration,
-      );
-      log('[GlobalPlayer] Updated media notification: $title by $artist');
-    } else {
-      log('[GlobalPlayer] Cannot update notification - audioHandler: ${audioHandler != null}, videoId: $_currentVideoId');
+    final videoId = _currentVideoId;
+    log('[GlobalPlayer] updateMediaNotification called - videoId: $videoId');
+    if (videoId == null) {
+      log('[GlobalPlayer] Cannot update notification - videoId is empty');
+      return;
     }
+    await MediaControls.instance.setNowPlaying(
+      id: videoId,
+      title: title,
+      artist: artist,
+      artUri: thumbnailUrl,
+      duration: duration,
+    );
+    log('[GlobalPlayer] Updated media notification: $title by $artist');
   }
 
-  /// Clear media notification
+  /// Clear the published item.
   Future<void> clearMediaNotification() async {
-    final audioHandler = getAudioHandler();
-    if (audioHandler != null) {
-      await audioHandler.clearMedia();
-      log('[GlobalPlayer] Cleared media notification');
-    }
+    await MediaControls.instance.clear();
+    log('[GlobalPlayer] Cleared media notification');
   }
 }
