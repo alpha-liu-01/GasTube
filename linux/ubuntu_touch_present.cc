@@ -95,138 +95,8 @@ EglMakeCurrentFn g_real_make_current = nullptr;
 pthread_t g_gtk_thread{};
 bool g_gtk_thread_known = false;
 
-using EglChooseConfigFn = EGLBoolean (*)(EGLDisplay, const EGLint*, EGLConfig*,
-                                         EGLint, EGLint*);
-using EglCreateContextFn = EGLContext (*)(EGLDisplay, EGLConfig, EGLContext,
-                                          const EGLint*);
-using EglCreatePbufferFn = EGLSurface (*)(EGLDisplay, EGLConfig,
-                                          const EGLint*);
-using EglQueryContextFn = EGLBoolean (*)(EGLDisplay, EGLContext, EGLint,
-                                         EGLint*);
-using EglBindApiFn = EGLBoolean (*)(EGLenum);
-using EglGetErrorFn = EGLint (*)();
-
-struct EglFns {
-  EglChooseConfigFn choose = nullptr;
-  EglCreateContextFn create = nullptr;
-  EglCreatePbufferFn pbuffer = nullptr;
-  EglQueryContextFn query = nullptr;
-  EglBindApiFn bind_api = nullptr;
-  EglGetErrorFn get_error = nullptr;
-};
-
-const EglFns& egl_fns() {
-  static const EglFns fns = [] {
-    EglFns out;
-    out.choose = reinterpret_cast<EglChooseConfigFn>(
-        dlsym(RTLD_DEFAULT, "eglChooseConfig"));
-    out.create = reinterpret_cast<EglCreateContextFn>(
-        dlsym(RTLD_DEFAULT, "eglCreateContext"));
-    out.pbuffer = reinterpret_cast<EglCreatePbufferFn>(
-        dlsym(RTLD_DEFAULT, "eglCreatePbufferSurface"));
-    out.query = reinterpret_cast<EglQueryContextFn>(
-        dlsym(RTLD_DEFAULT, "eglQueryContext"));
-    out.bind_api =
-        reinterpret_cast<EglBindApiFn>(dlsym(RTLD_DEFAULT, "eglBindAPI"));
-    out.get_error =
-        reinterpret_cast<EglGetErrorFn>(dlsym(RTLD_DEFAULT, "eglGetError"));
-    return out;
-  }();
-  return fns;
-}
-
-EGLint last_egl_error() {
-  const EglFns& fns = egl_fns();
-  if (fns.get_error == nullptr) return 0;
-  return fns.get_error();
-}
-
-// One 1x1 pbuffer per thread. end_paint uploads a texture and deletes it
-// before returning, so drawing into this surface does not change the window.
-thread_local EGLDisplay t_pbuffer_display = EGL_NO_DISPLAY;
-thread_local EGLContext t_pbuffer_context = EGL_NO_CONTEXT;
-thread_local EGLSurface t_pbuffer = EGL_NO_SURFACE;
-thread_local EGLDisplay t_standby_display = EGL_NO_DISPLAY;
-thread_local EGLContext t_standby = EGL_NO_CONTEXT;
-thread_local EGLSurface t_standby_surface = EGL_NO_SURFACE;
-
 bool on_gtk_thread() {
   return g_gtk_thread_known && pthread_equal(g_gtk_thread, pthread_self());
-}
-
-bool bind_context_pbuffer(EGLDisplay display, EGLContext context) {
-  const EglFns& fns = egl_fns();
-  if (g_real_make_current == nullptr || fns.query == nullptr ||
-      fns.choose == nullptr || fns.pbuffer == nullptr ||
-      context == EGL_NO_CONTEXT) {
-    return false;
-  }
-  if (t_pbuffer == EGL_NO_SURFACE || t_pbuffer_display != display ||
-      t_pbuffer_context != context) {
-    EGLint config_id = 0;
-    if (fns.query(display, context, EGL_CONFIG_ID, &config_id) != EGL_TRUE) {
-      return false;
-    }
-    const EGLint config_attribs[] = {EGL_CONFIG_ID, config_id, EGL_NONE};
-    EGLConfig config = nullptr;
-    EGLint count = 0;
-    if (fns.choose(display, config_attribs, &config, 1, &count) != EGL_TRUE ||
-        count < 1) {
-      return false;
-    }
-    const EGLint surface_attribs[] = {EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE};
-    EGLSurface surface = fns.pbuffer(display, config, surface_attribs);
-    if (surface == EGL_NO_SURFACE) return false;
-    t_pbuffer_display = display;
-    t_pbuffer_context = context;
-    t_pbuffer = surface;
-  }
-  return g_real_make_current(display, t_pbuffer, t_pbuffer, context) ==
-         EGL_TRUE;
-}
-
-bool bind_standby_context(EGLDisplay display) {
-  const EglFns& fns = egl_fns();
-  if (g_real_make_current == nullptr || fns.choose == nullptr ||
-      fns.create == nullptr || display == EGL_NO_DISPLAY) {
-    return false;
-  }
-  if (t_standby == EGL_NO_CONTEXT || t_standby_display != display) {
-    if (fns.bind_api != nullptr) fns.bind_api(EGL_OPENGL_ES_API);
-    const EGLint config_attribs[] = {
-        EGL_RED_SIZE,     8,
-        EGL_GREEN_SIZE,   8,
-        EGL_BLUE_SIZE,    8,
-        EGL_ALPHA_SIZE,   8,
-        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
-        EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
-        EGL_NONE,
-    };
-    EGLConfig config = nullptr;
-    EGLint count = 0;
-    if (fns.choose(display, config_attribs, &config, 1, &count) != EGL_TRUE ||
-        count < 1) {
-      return false;
-    }
-    const EGLint context_attribs[] = {EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE};
-    EGLContext created =
-        fns.create(display, config, EGL_NO_CONTEXT, context_attribs);
-    if (created == EGL_NO_CONTEXT) return false;
-    EGLSurface surface = EGL_NO_SURFACE;
-    if (fns.pbuffer != nullptr) {
-      const EGLint surface_attribs[] = {EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE};
-      surface = fns.pbuffer(display, config, surface_attribs);
-    }
-    t_standby_display = display;
-    t_standby = created;
-    t_standby_surface = surface;
-  }
-  if (t_standby_surface != EGL_NO_SURFACE) {
-    return g_real_make_current(display, t_standby_surface, t_standby_surface,
-                               t_standby) == EGL_TRUE;
-  }
-  return g_real_make_current(display, EGL_NO_SURFACE, EGL_NO_SURFACE,
-                             t_standby) == EGL_TRUE;
 }
 
 extern "C" EGLBoolean gastube_gated_egl_swap(EGLDisplay display,
@@ -262,42 +132,25 @@ extern "C" EGLBoolean gastube_gated_egl_make_current(EGLDisplay display,
                                                     EGLContext context) {
   // The raster thread keeps the context it asked for. Swap and the surface
   // commit stay gated, so that frame is not attached.
-  // The GTK thread is the one inside gdk_window_end_draw_frame. That paint
-  // calls glGenTextures. epoxy aborts when this thread has no current
-  // context. The window surface itself fails to bind while unfocused, so
-  // bind the same context to a 1x1 pbuffer. If that context is already
-  // current on the raster thread, use a standby context on this thread.
+  // Creating another context here faults the hybris driver while the raster
+  // thread is still inside a GL call. The window paint context is detached
+  // while unfocused, so this thread should not draw. Leave EGL alone.
   if (!g_present_allowed.load(std::memory_order_acquire)) {
     if (!on_gtk_thread()) {
       if (g_real_make_current == nullptr) return EGL_FALSE;
       return g_real_make_current(display, draw, read, context);
     }
-    last_egl_error();
-    bool pbuffer = bind_context_pbuffer(display, context);
-    bool standby = false;
-    if (!pbuffer) {
-      last_egl_error();
-      standby = bind_standby_context(display);
-    }
+    (void)display;
+    (void)draw;
+    (void)read;
+    (void)context;
     bool already =
         g_logged_make_current.exchange(true, std::memory_order_relaxed);
     if (!already) {
-      if (pbuffer) {
-        g_message(
-            "present: bound the window egl context to a pbuffer while unfocused");
-      } else if (standby) {
-        g_message(
-            "present: bound a standby egl context while the window is unfocused");
-      } else {
-        g_message(
-            "present: egl context stayed unset while the window is unfocused (%#x)",
-            last_egl_error());
-      }
+      g_message(
+          "present: left the egl context unchanged while the window is unfocused");
     }
-    (void)draw;
-    (void)read;
-    if (pbuffer || standby) return EGL_TRUE;
-    return EGL_FALSE;
+    return EGL_TRUE;
   }
   if (g_real_make_current == nullptr) return EGL_FALSE;
   return g_real_make_current(display, draw, read, context);
@@ -506,6 +359,75 @@ void gastube_ut_install_present_hook(GtkWidget* view) {
       renderer != nullptr ? "" : " (FlViewRenderer not found)");
 }
 
+// gdk_window_create_gl_context stores the paint GL context on the native
+// window. begin_paint then calls eglMakeCurrent and uploads a full-window
+// texture on this thread. mpv still needs that context object, so the
+// pointer is only unhooked while the window is unfocused. Exposes then take
+// the cairo path, and the attach is dropped.
+GdkGLContext** g_paint_slot = nullptr;
+GdkGLContext* g_paint_context = nullptr;
+bool g_paint_hidden = false;
+bool g_logged_paint_slot = false;
+
+GdkGLContext** find_paint_slot(GdkWindow* window, GdkGLContext* paint) {
+  if (window == nullptr || paint == nullptr) return nullptr;
+  GTypeQuery query{};
+  g_type_query(G_OBJECT_TYPE(window), &query);
+  if (query.instance_size < sizeof(void*)) return nullptr;
+  auto* base = reinterpret_cast<char*>(window);
+  for (guint offset = 0; offset + sizeof(void*) <= query.instance_size;
+       offset += sizeof(void*)) {
+    auto* slot = reinterpret_cast<GdkGLContext**>(base + offset);
+    if (*slot == paint) return slot;
+  }
+  return nullptr;
+}
+
+void remember_paint_context(GdkWindow* window, GdkGLContext* created) {
+  if (g_paint_slot != nullptr || window == nullptr || created == nullptr) {
+    return;
+  }
+  GdkGLContext* paint = gdk_gl_context_get_shared_context(created);
+  if (paint == nullptr) return;
+  GdkWindow* cursor = window;
+  for (int i = 0; i < 8 && cursor != nullptr; i++) {
+    GdkGLContext** slot = find_paint_slot(cursor, paint);
+    if (slot != nullptr) {
+      g_paint_slot = slot;
+      g_paint_context = paint;
+      g_object_ref(paint);
+      if (!g_logged_paint_slot) {
+        g_logged_paint_slot = true;
+        g_message("present: window paint gl context is detachable");
+      }
+      return;
+    }
+    GdkWindow* toplevel = gdk_window_get_toplevel(cursor);
+    if (toplevel == cursor) break;
+    cursor = gdk_window_get_parent(cursor);
+  }
+  if (!g_logged_paint_slot) {
+    g_logged_paint_slot = true;
+    g_message("present: window paint gl context was not found on the window");
+  }
+}
+
+void hide_paint_context() {
+  if (g_paint_slot == nullptr || g_paint_context == nullptr) return;
+  if (*g_paint_slot != g_paint_context) return;
+  *g_paint_slot = nullptr;
+  g_paint_hidden = true;
+  g_message("present: hid the window paint gl context while unfocused");
+}
+
+void show_paint_context() {
+  if (!g_paint_hidden || g_paint_slot == nullptr || g_paint_context == nullptr) {
+    return;
+  }
+  if (*g_paint_slot == nullptr) *g_paint_slot = g_paint_context;
+  g_paint_hidden = false;
+}
+
 void gastube_ut_set_present_allowed(bool allowed) {
   bool previous = g_present_allowed.exchange(allowed, std::memory_order_release);
   if (previous == allowed) return;
@@ -515,13 +437,17 @@ void gastube_ut_set_present_allowed(bool allowed) {
   g_logged_expose.store(false, std::memory_order_relaxed);
   g_logged_shell.store(false, std::memory_order_relaxed);
   if (!allowed) {
+    hide_paint_context();
     g_hold_expose.store(true, std::memory_order_release);
-  } else if (g_renderer != nullptr && g_original_draw != nullptr) {
-    // Schedule the frame the expose would have scheduled. Calling the
-    // renderer draw from here does not enter GDK begin_paint, so it does
-    // not attach the white buffer. The onscreen draw only schedules.
-    g_original_draw(g_renderer, nullptr);
-    g_message("present: scheduled frame without a GTK paint");
+  } else {
+    show_paint_context();
+    if (g_renderer != nullptr && g_original_draw != nullptr) {
+      // Schedule the frame the expose would have scheduled. Calling the
+      // renderer draw from here does not enter GDK begin_paint, so it does
+      // not attach the white buffer. The onscreen draw only schedules.
+      g_original_draw(g_renderer, nullptr);
+      g_message("present: scheduled frame without a GTK paint");
+    }
   }
   g_message("present: %s", allowed ? "resume swap" : "pause swap");
 }
@@ -638,6 +564,38 @@ extern "C" void wl_proxy_marshal(struct wl_proxy* proxy, uint32_t opcode, ...) {
         dlsym(RTLD_NEXT, "wl_proxy_marshal_array_constructor"));
   }
   if (real != nullptr) real(proxy, opcode, args, nullptr);
+}
+
+// media_kit calls this and GDK stores the paint context on the window as a
+// side effect. Remember that slot so an unfocused expose can avoid it.
+extern "C" GdkGLContext* gdk_window_create_gl_context(GdkWindow* window,
+                                                     GError** error) {
+  using CreateFn = GdkGLContext* (*)(GdkWindow*, GError**);
+  static CreateFn real = nullptr;
+  if (real == nullptr) {
+    real = reinterpret_cast<CreateFn>(
+        dlsym(RTLD_NEXT, "gdk_window_create_gl_context"));
+  }
+  if (real == nullptr) return nullptr;
+  GdkGLContext* created = real(window, error);
+  remember_paint_context(window, created);
+  if (!g_present_allowed.load(std::memory_order_acquire)) hide_paint_context();
+  return created;
+}
+
+// libgtk calls this around every expose. Detach the paint context before
+// GDK reads it, or begin_paint makes a second EGL context current.
+extern "C" GdkDrawingContext* gdk_window_begin_draw_frame(
+    GdkWindow* window, const cairo_region_t* region) {
+  using BeginFn = GdkDrawingContext* (*)(GdkWindow*, const cairo_region_t*);
+  static BeginFn real = nullptr;
+  if (real == nullptr) {
+    real = reinterpret_cast<BeginFn>(
+        dlsym(RTLD_NEXT, "gdk_window_begin_draw_frame"));
+  }
+  if (!g_present_allowed.load(std::memory_order_acquire)) hide_paint_context();
+  if (real == nullptr) return nullptr;
+  return real(window, region);
 }
 
 // GDK calls libEGL's eglSwapBuffers from gdk_window_end_draw_frame. The
