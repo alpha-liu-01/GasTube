@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:developer' as dev;
 import 'dart:io';
 
+import 'package:dbus/dbus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:fluxtube/core/settings.dart';
@@ -14,8 +15,8 @@ import 'package:fluxtube/infrastructure/newpipe/newpipe_channel.dart';
 ///
 /// Checks run in the foreground — on startup and when the app returns from the
 /// background — throttled to [_minCheckInterval]. There is no periodic
-/// background job; adding one would need a WorkManager-style plugin and the
-/// matching platform configuration.
+/// background job. Desktop Linux and Ubuntu Touch post through the session
+/// notification service. Ubuntu Push is not used.
 ///
 /// State lives in the settings table so it survives restarts:
 ///  * [notifyNewVideosKey] — whether the feature is on,
@@ -50,8 +51,9 @@ class SubscriptionNotifier extends ChangeNotifier {
 
   AppDatabase get _db => AppDatabase.instance;
 
-  /// Only Android and iOS have a notification presenter wired up here.
-  static bool get isSupported => Platform.isAndroid || Platform.isIOS;
+  /// Android, iOS, desktop Linux, and Ubuntu Touch can present a notification.
+  static bool get isSupported =>
+      Platform.isAndroid || Platform.isIOS || Platform.isLinux;
 
   Future<bool> loadEnabled() async {
     final raw = await _db.getSetting(notifyNewVideosKey);
@@ -88,28 +90,36 @@ class SubscriptionNotifier extends ChangeNotifier {
       requestBadgePermission: false,
       requestSoundPermission: false,
     );
+    const linuxSettings =
+        LinuxInitializationSettings(defaultActionName: 'Open');
     await _notifications.initialize(
-      const InitializationSettings(android: androidSettings, iOS: iosSettings),
+      const InitializationSettings(
+        android: androidSettings,
+        iOS: iosSettings,
+        linux: linuxSettings,
+      ),
     );
     _initialized = true;
   }
 
   Future<bool> _ensurePermission() async {
     if (!isSupported) return false;
-    await initialize();
     try {
+      await initialize();
+      if (Platform.isLinux) return true;
       if (Platform.isAndroid) {
-        final android =
-            _notifications.resolvePlatformSpecificImplementation<
-                AndroidFlutterLocalNotificationsPlugin>();
+        final android = _notifications.resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
         // Null on Android 12 and below, where no runtime grant is needed.
         return await android?.requestNotificationsPermission() ?? true;
       }
       final ios = _notifications.resolvePlatformSpecificImplementation<
           IOSFlutterLocalNotificationsPlugin>();
-      return await ios?.requestPermissions(alert: true, badge: true, sound: true) ??
+      return await ios?.requestPermissions(
+              alert: true, badge: true, sound: true) ??
           true;
     } catch (e) {
+      print('gastube: subscription permission failed error=$e');
       dev.log('permission request failed: $e', name: 'SubNotifier');
       return false;
     }
@@ -125,8 +135,14 @@ class SubscriptionNotifier extends ChangeNotifier {
     if (_enabled == null) await loadEnabled();
     if (!_enabled!) return 0;
 
-    if (!force && !await _throttleElapsed()) return 0;
-    if (!await NewPipeChannel.isAvailable) return 0;
+    if (!force && !await _throttleElapsed()) {
+      print('gastube: subscription skip reason=throttle');
+      return 0;
+    }
+    if (!await NewPipeChannel.isAvailable) {
+      print('gastube: subscription skip reason=sidecar');
+      return 0;
+    }
 
     _checking = true;
     var notified = 0;
@@ -145,10 +161,10 @@ class SubscriptionNotifier extends ChangeNotifier {
       // subscription list longer than _maxChannelsPerRun still gets covered
       // across successive checks.
       final ordered = [...subscriptions]..sort((a, b) {
-        final aSeen = seen.containsKey(a.channelId) ? 1 : 0;
-        final bSeen = seen.containsKey(b.channelId) ? 1 : 0;
-        return aSeen.compareTo(bSeen);
-      });
+          final aSeen = seen.containsKey(a.channelId) ? 1 : 0;
+          final bSeen = seen.containsKey(b.channelId) ? 1 : 0;
+          return aSeen.compareTo(bSeen);
+        });
 
       for (final sub in ordered.take(_maxChannelsPerRun)) {
         notified += await _checkChannel(sub.channelId, sub.channelName, seen);
@@ -156,7 +172,12 @@ class SubscriptionNotifier extends ChangeNotifier {
 
       await _saveSeen(seen);
       await _stampCheck();
+      print(
+        'gastube: subscription check channels=${subscriptions.length} '
+        'notified=$notified',
+      );
     } catch (e) {
+      print('gastube: subscription check failed error=$e');
       dev.log('check failed: $e', name: 'SubNotifier');
     } finally {
       _checking = false;
@@ -183,7 +204,10 @@ class SubscriptionNotifier extends ChangeNotifier {
 
       // First time this channel is checked: record where it stands but stay
       // quiet, otherwise enabling the feature would notify the whole backlog.
-      if (baseline == null) return 0;
+      if (baseline == null) {
+        print('gastube: subscription baseline channel=$channelId');
+        return 0;
+      }
       if (baseline == latestId) return 0;
 
       // Everything above the baseline is new. If the baseline has fallen off
@@ -208,6 +232,7 @@ class SubscriptionNotifier extends ChangeNotifier {
       }
       return toNotify.length;
     } catch (e) {
+      print('gastube: subscription channel failed error=$e');
       dev.log('channel $channelId failed: $e', name: 'SubNotifier');
       return 0;
     }
@@ -220,6 +245,11 @@ class SubscriptionNotifier extends ChangeNotifier {
   ) async {
     final videoId = _videoId(upload);
     if (videoId == null) return;
+    print('gastube: subscription notify channel=$channelName video=$videoId');
+    if (Platform.isLinux) {
+      await _notifyLinux(channelName, upload.name ?? 'New video');
+      return;
+    }
     await _notifications.show(
       videoId.hashCode & 0x7fffffff,
       channelName,
@@ -238,6 +268,51 @@ class SubscriptionNotifier extends ChangeNotifier {
       ),
       payload: videoId,
     );
+  }
+
+  /// Session notification. Lomiri matches [desktop-entry] to the Click desktop
+  /// file, so the bubble uses GasTube's name and icon.
+  Future<void> _notifyLinux(String title, String body) async {
+    final client = DBusClient.session();
+    try {
+      final notifications = DBusRemoteObject(
+        client,
+        name: 'org.freedesktop.Notifications',
+        path: DBusObjectPath('/org/freedesktop/Notifications'),
+      );
+      await notifications.callMethod(
+        'org.freedesktop.Notifications',
+        'Notify',
+        [
+          const DBusString('GasTube'),
+          const DBusUint32(0),
+          DBusString(_notificationIcon),
+          DBusString(title),
+          DBusString(body),
+          DBusArray.string(const []),
+          DBusDict.stringVariant({
+            'desktop-entry': DBusString(_desktopEntry),
+          }),
+          const DBusInt32(-1),
+        ],
+        replySignature: DBusSignature('u'),
+      );
+    } finally {
+      await client.close();
+    }
+  }
+
+  static String get _notificationIcon {
+    const clickIcon =
+        '/opt/click.ubuntu.com/gastube.alphaliu01/current/gastube.png';
+    if (File(clickIcon).existsSync()) return clickIcon;
+    return '';
+  }
+
+  static String get _desktopEntry {
+    final appId = Platform.environment['APP_ID'];
+    if (appId != null && appId.isNotEmpty) return appId;
+    return 'gastube';
   }
 
   /// NewPipe returns full watch URLs; the notification key is the video id.
