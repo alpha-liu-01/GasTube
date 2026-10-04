@@ -127,6 +127,8 @@ class DownloadBloc extends Bloc<DownloadEvent, DownloadState> {
       audioUrl: event.audioQuality?.url,
       totalBytes: _calculateTotalBytes(event.videoQuality, event.audioQuality, event.downloadType),
     );
+    item.videoTotalBytes = event.videoQuality?.fileSize;
+    item.audioTotalBytes = event.audioQuality?.fileSize;
 
     // Add to active downloads
     final activeDownloads = List<DownloadItem>.from(state.activeDownloads);
