@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:dbus/dbus.dart';
 import 'package:flutter/services.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:fluxtube/core/player/global_player_controller.dart';
 import 'package:fluxtube/core/services/mpris_player.dart';
 import 'package:fluxtube/core/ubuntu_touch.dart';
@@ -149,10 +150,7 @@ class MediaHubPlayer {
     _away = false;
     print('gastube: mediahub back positionMs=${resumeAt.inMilliseconds}');
     try {
-      if (resumeAt > Duration.zero) {
-        await _player.player.seek(resumeAt);
-      }
-      await _player.player.play();
+      await _resumeInApp(resumeAt);
     } catch (error) {
       print('gastube: mediahub resume failed error=$error');
     }
@@ -213,6 +211,59 @@ class MediaHubPlayer {
             ? 'local'
             : (parsed.host.isEmpty ? 'unknown' : parsed.host);
     print('gastube: mediahub open ok=$ok host=$host');
+  }
+
+  /// The hardware decoder stays stuck after Lomiri stops the process, and a
+  /// keyframe seek lands on the position from before the handoff. Reload the
+  /// decoder and seek exactly. If the position falls back, pause and play,
+  /// then seek once more.
+  Future<void> _resumeInApp(Duration resumeAt) async {
+    final player = _player.player;
+    await _reloadVideo(player);
+    await _seekExact(player, resumeAt);
+    await player.play();
+    final landed = await _settledPosition(player, resumeAt);
+    if ((landed - resumeAt).inMilliseconds.abs() <= 1500) {
+      print(
+        'gastube: mediahub resume positionMs=${landed.inMilliseconds}',
+      );
+      return;
+    }
+    print(
+      'gastube: mediahub resume retry positionMs=${landed.inMilliseconds}',
+    );
+    await player.pause();
+    await player.play();
+    await _seekExact(player, resumeAt);
+    final again = await _settledPosition(player, resumeAt);
+    print('gastube: mediahub resume positionMs=${again.inMilliseconds}');
+  }
+
+  Future<void> _reloadVideo(Player player) async {
+    try {
+      await (player.platform as dynamic).command(['video-reload']);
+    } catch (error) {
+      print('gastube: mediahub video-reload failed error=$error');
+    }
+  }
+
+  Future<void> _seekExact(Player player, Duration position) async {
+    if (position <= Duration.zero) return;
+    await (player.platform as dynamic).command([
+      'seek',
+      (position.inMilliseconds / 1000).toStringAsFixed(4),
+      'absolute+exact',
+    ]);
+  }
+
+  Future<Duration> _settledPosition(Player player, Duration target) async {
+    var position = player.state.position;
+    for (var attempt = 0; attempt < 8; attempt++) {
+      await Future<void>.delayed(const Duration(milliseconds: 75));
+      position = player.state.position;
+      if ((position - target).inMilliseconds.abs() <= 1500) return position;
+    }
+    return position;
   }
 
   /// Seek once the local file has a duration. Returns false when the seek
