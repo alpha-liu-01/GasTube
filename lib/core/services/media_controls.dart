@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:fluxtube/core/player/global_player_controller.dart';
 import 'package:fluxtube/core/services/audio_handler_service.dart';
+import 'package:fluxtube/core/services/mpris_player.dart';
 
 /// What is on screen now, plus the commands a system session may send later.
 ///
@@ -64,7 +65,7 @@ abstract class MediaControls {
     Future<void> Function(Duration position)? seek,
   });
 
-  /// Commands a system session will call. Nothing calls these until MPRIS.
+  /// Commands a system session calls. MPRIS uses these on Linux.
   Future<void> sessionPlay();
   Future<void> sessionPause();
   Future<void> sessionSeek(Duration position);
@@ -195,7 +196,7 @@ class AudioServiceMediaControls implements MediaControls {
   }
 }
 
-/// Holds the current item in this process. Nothing on the system bus reads it yet.
+/// Holds the current item and publishes it on the MPRIS session bus.
 class LocalMediaControls implements MediaControls {
   bool _external = false;
   bool _listening = false;
@@ -233,10 +234,12 @@ class LocalMediaControls implements MediaControls {
         playing: playing,
       );
       print('gastube: media playing=$playing id=${current.id}');
+      MprisPlayer.instance.note(nowPlaying);
     });
     _positionSubscription = player.stream.position.listen((position) {
       final current = nowPlaying;
       if (_external || current == null) return;
+      final jump = (position - current.position).inMilliseconds.abs();
       nowPlaying = NowPlaying(
         id: current.id,
         title: current.title,
@@ -246,6 +249,7 @@ class LocalMediaControls implements MediaControls {
         position: position,
         playing: current.playing,
       );
+      MprisPlayer.instance.note(nowPlaying, seeked: jump > 2000);
     });
     _durationSubscription = player.stream.duration.listen((duration) {
       final current = nowPlaying;
@@ -259,6 +263,7 @@ class LocalMediaControls implements MediaControls {
         position: current.position,
         playing: current.playing,
       );
+      MprisPlayer.instance.note(nowPlaying);
     });
   }
 
@@ -285,6 +290,7 @@ class LocalMediaControls implements MediaControls {
       print('gastube: media controls local');
     }
     print('gastube: media now id=$id title=$title');
+    MprisPlayer.instance.note(nowPlaying);
   }
 
   @override
@@ -313,6 +319,7 @@ class LocalMediaControls implements MediaControls {
       position: position,
       playing: playing,
     );
+    MprisPlayer.instance.note(nowPlaying);
   }
 
   @override
@@ -387,5 +394,6 @@ class LocalMediaControls implements MediaControls {
     _durationSubscription = null;
     _listening = false;
     print('gastube: media clear');
+    MprisPlayer.instance.note(null);
   }
 }
