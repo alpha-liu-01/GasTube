@@ -92,12 +92,16 @@ gboolean texture_gl_populate_texture(FlTextureGL* texture,
   gint32 required_width = (guint32)video_output_get_width(video_output);
   gint32 required_height = (guint32)video_output_get_height(video_output);
   gboolean need_another = FALSE;
+  // An empty GDK context leaves mpv without a render context. Create it on
+  // this thread, where Flutter's GLES context is current, before the first
+  // frame has a size. Otherwise nothing ever marks the texture and playback
+  // stays at 0:00.
+  if (!video_output_ensure_render_context(video_output)) {
+    self->populating = FALSE;
+    g_print("media_kit: TextureGL: Flutter GL context not ready\n");
+    return FALSE;
+  }
   if (required_width > 0 && required_height > 0) {
-    // Bind mpv to Flutter's GLES context before allocating the texture.
-    if (!video_output_ensure_render_context(video_output)) {
-      self->populating = FALSE;
-      return FALSE;
-    }
     // The first texture name is imported while the draw is still empty.
     // Impeller keeps it. After the VO is moved onto this context, allocate
     // a new name so that import contains the picture.
