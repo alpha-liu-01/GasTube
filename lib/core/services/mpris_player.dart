@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dbus/dbus.dart';
 import 'package:fluxtube/core/services/media_controls.dart';
+import 'package:fluxtube/core/ubuntu_touch.dart';
 
 /// Session-bus MPRIS player for desktop Linux and Ubuntu Touch.
 ///
@@ -43,6 +45,7 @@ class MprisPlayer {
       _object = object;
       _claimed = true;
       print('gastube: mpris name=$busName reply=$reply');
+      print('gastube: mpris desktop=$_desktopEntry');
     } catch (error) {
       print('gastube: mpris failed error=$error');
     }
@@ -59,7 +62,9 @@ class MprisPlayer {
       print('gastube: mpris status=${_status(item)}');
     }
     if (metadataChanged && item != null) {
-      print('gastube: mpris metadata id=${item.id} title=${item.title}');
+      print(
+        'gastube: mpris metadata id=${item.id} title=${item.title} art=${_indicatorArt(item.artUri)}',
+      );
     }
     if (seeked && item != null) {
       print(
@@ -113,11 +118,29 @@ class MprisPlayer {
     if (duration != null && duration > Duration.zero) {
       values['mpris:length'] = DBusInt64(duration.inMicroseconds);
     }
-    final art = item.artUri;
+    final art = _indicatorArt(item.artUri);
     if (art != null && art.isNotEmpty) {
       values['mpris:artUrl'] = DBusString(art);
     }
     return DBusDict.stringVariant(values);
+  }
+
+  /// Local icon shown beside the title. This phone's thumbnailer rejects https.
+  static const _clickIconUrl =
+      'file:///opt/click.ubuntu.com/gastube.alphaliu01/current/gastube.png';
+
+  static String? _indicatorArt(String? art) {
+    if (!UbuntuTouch.enabled) return art;
+    if (File(_clickIconUrl.replaceFirst('file://', '')).existsSync()) {
+      return _clickIconUrl;
+    }
+    return art;
+  }
+
+  static String get _desktopEntry {
+    final appId = Platform.environment['APP_ID'];
+    if (appId != null && appId.isNotEmpty) return appId;
+    return 'gastube';
   }
 
   static String _trackPath(String id) {
@@ -265,7 +288,7 @@ class _MprisObject extends DBusObject {
         'CanRaise': const DBusBoolean(false),
         'HasTrackList': const DBusBoolean(false),
         'Identity': const DBusString('GasTube'),
-        'DesktopEntry': const DBusString('gastube'),
+        'DesktopEntry': DBusString(MprisPlayer._desktopEntry),
         'SupportedUriSchemes': DBusArray.string(const ['https', 'http']),
         'SupportedMimeTypes': DBusArray.string(const [
           'video/mp4',
