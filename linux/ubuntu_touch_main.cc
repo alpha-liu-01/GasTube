@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "pulse_unplug.h"
 
 void gastube_ut_install_present_hook(GtkWidget* view);
 void gastube_ut_set_present_allowed(bool allowed);
@@ -533,6 +534,7 @@ extern "C" int gastube_ubuntu_touch_main(int argc, char** argv) {
   gastube_ut_install_present_hook(GTK_WIDGET(view));
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
   install_url_channel(view);
+  gastube_pulse_unplug_attach(view);
 
   gtk_widget_show_all(window);
   use_application_stage(GTK_WINDOW(window));

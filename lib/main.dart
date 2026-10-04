@@ -26,6 +26,7 @@ import 'package:fluxtube/presentation/watch/widgets/global_pip_overlay.dart';
 import 'package:fluxtube/core/services/audio_handler_service.dart';
 import 'package:fluxtube/core/services/media_hub_player.dart';
 import 'package:fluxtube/core/services/mpris_player.dart';
+import 'package:fluxtube/core/services/pulse_unplug.dart';
 import 'package:fluxtube/core/services/log_collector.dart';
 import 'package:fluxtube/core/services/subscription_notifier.dart';
 import 'package:fluxtube/core/ubuntu_touch.dart';
@@ -140,6 +141,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         initAudioService();
       } else {
         unawaited(MprisPlayer.instance.claim());
+        PulseUnplug.listen();
       }
       // Look for new uploads from subscribed channels. Self-throttling and a
       // no-op unless the user turned notifications on.

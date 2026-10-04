@@ -5,6 +5,7 @@ import 'package:dbus/dbus.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:fluxtube/core/player/global_player_controller.dart';
+import 'package:fluxtube/core/services/media_controls.dart';
 import 'package:fluxtube/core/services/mpris_player.dart';
 import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:path/path.dart' as p;
@@ -32,6 +33,7 @@ class MediaHubPlayer {
   String? _openedUrl;
   bool _ready = false;
   bool _away = false;
+  bool _relayOn = false;
   Duration _pausedAt = Duration.zero;
   Future<void> _queue = Future<void>.value();
   String? _cachedUrl;
@@ -61,6 +63,20 @@ class MediaHubPlayer {
   Future<void> stop() {
     if (!UbuntuTouch.enabled) return Future<void>.value();
     return _enqueue(() => _dropSession(resume: false));
+  }
+
+  /// Pause the hub session when headphones are unplugged while it owns the
+  /// sound. Returns false when in-app playback is the thing to pause.
+  Future<bool> pauseIfAway() async {
+    if (!UbuntuTouch.enabled) return false;
+    var paused = false;
+    await _enqueue(() async {
+      if (!_away) return;
+      await _pauseHub();
+      paused = true;
+      print('gastube: pulse unplug hub');
+    });
+    return paused;
   }
 
   Future<void> _enqueue(Future<void> Function() action) {
@@ -93,10 +109,11 @@ class MediaHubPlayer {
     );
     var playingOnHub = false;
     try {
+      await _stopLeftoverRelay();
+      final local = _readyLocal(url) ?? _snapshotLocal(url, _pausedAt);
       if (!_ready || _openedUrl != url || _session == null) {
         await _open(url);
       }
-      final local = _readyLocal(url) ?? _snapshotLocal(url, _pausedAt);
       var seekLocal = false;
       if (local != null) {
         print('gastube: mediahub local bytes=${File(local).lengthSync()}');
@@ -132,7 +149,9 @@ class MediaHubPlayer {
       print('gastube: mediahub play');
       playingOnHub = true;
       await _player.pausePlayback();
+      await _startControlRelay();
       await MprisPlayer.instance.release();
+      await _waitRelayReady();
     } catch (error) {
       print('gastube: mediahub failed error=$error');
       if (!playingOnHub) _away = false;
@@ -145,12 +164,16 @@ class MediaHubPlayer {
     // A hub position behind the handoff point means playback restarted at
     // the beginning. Keep the in-app position in that case.
     final resumeAt = hubAt >= _pausedAt ? hubAt : _pausedAt;
+    final session = _session;
+    final status = session == null ? null : await _playbackStatus(session);
+    final stayPaused = status == 'Paused';
     await _pauseHub();
-    await MprisPlayer.instance.reclaim();
+    await _stopControlRelay();
+    await _reclaimMpris();
     _away = false;
     print('gastube: mediahub back positionMs=${resumeAt.inMilliseconds}');
     try {
-      await _resumeInApp(resumeAt);
+      await _resumeInApp(resumeAt, play: !stayPaused);
     } catch (error) {
       print('gastube: mediahub resume failed error=$error');
     }
@@ -217,10 +240,16 @@ class MediaHubPlayer {
   /// keyframe seek lands on the position from before the handoff. Reload the
   /// decoder and seek exactly. If the position falls back, pause and play,
   /// then seek once more.
-  Future<void> _resumeInApp(Duration resumeAt) async {
+  Future<void> _resumeInApp(Duration resumeAt, {required bool play}) async {
     final player = _player.player;
     await _reloadVideo(player);
     await _seekExact(player, resumeAt);
+    if (!play) {
+      print(
+        'gastube: mediahub resume paused positionMs=${resumeAt.inMilliseconds}',
+      );
+      return;
+    }
     await player.play();
     final landed = await _settledPosition(player, resumeAt);
     if ((landed - resumeAt).inMilliseconds.abs() <= 1500) {
@@ -430,11 +459,14 @@ class MediaHubPlayer {
     return null;
   }
 
-  int _be32At(Uint8List bytes, int offset) => _be32(bytes.sublist(offset, offset + 4));
+  int _be32At(Uint8List bytes, int offset) =>
+      _be32(bytes.sublist(offset, offset + 4));
 
-  int _be64At(Uint8List bytes, int offset) => _be64(bytes.sublist(offset, offset + 8));
+  int _be64At(Uint8List bytes, int offset) =>
+      _be64(bytes.sublist(offset, offset + 8));
 
-  int _be16At(Uint8List bytes, int offset) => (bytes[offset] << 8) | bytes[offset + 1];
+  int _be16At(Uint8List bytes, int offset) =>
+      (bytes[offset] << 8) | bytes[offset + 1];
 
   int _lastCompleteAtom(File file, int length) {
     final handle = file.openSync();
@@ -598,6 +630,7 @@ class MediaHubPlayer {
   }
 
   Future<void> _dropSession({required bool resume}) async {
+    await _stopControlRelay();
     await _destroySession();
     await _closeClient();
     _away = false;
@@ -687,6 +720,175 @@ class MediaHubPlayer {
     } catch (error) {
       print('gastube: mediahub destroy failed error=$error');
     }
+  }
+
+  static const _relayUnit = 'gastube-mpris-relay.service';
+  static const _clickArt =
+      'file:///opt/click.ubuntu.com/gastube.alphaliu01/current/gastube.png';
+
+  /// Stop a relay left by the previous package before media-hub starts.
+  Future<void> _stopLeftoverRelay() async {
+    if (_relayOn) return;
+    try {
+      await _systemd(
+        'StopUnit',
+        [const DBusString(_relayUnit), const DBusString('replace')],
+        DBusSignature('o'),
+      );
+      print('gastube: mpris relay leftover stop');
+    } catch (_) {}
+  }
+
+  /// Own the GasTube sound-indicator name from outside the stopped click.
+  /// The process only forwards pause and resume to the media-hub session.
+  Future<void> _startControlRelay() async {
+    final session = _session;
+    if (session == null) return;
+    final binary =
+        p.join(p.dirname(Platform.resolvedExecutable), 'gastube-mpris-relay');
+    if (!File(binary).existsSync()) {
+      print('gastube: mpris relay missing');
+      return;
+    }
+    final runtime = Platform.environment['XDG_RUNTIME_DIR'] ?? '';
+    if (runtime.isEmpty) {
+      print('gastube: mpris relay failed error=runtime');
+      return;
+    }
+    final ready = File(p.join(runtime, 'gastube-mpris-relay.ready'));
+    if (ready.existsSync()) ready.deleteSync();
+    final item = MediaControls.instance.nowPlaying;
+    final title = (item == null || item.title.isEmpty)
+        ? 'GasTube'
+        : item.title.replaceAll('\n', ' ');
+    final artist = item?.artist ?? '';
+    final desktop = Platform.environment['APP_ID'];
+    final args = <String>[
+      binary,
+      '--parent-pid',
+      '$pid',
+      '--session-path',
+      session.path.value,
+      '--title',
+      title,
+      '--artist',
+      artist,
+      '--art',
+      _clickArt,
+      '--desktop-entry',
+      (desktop == null || desktop.isEmpty) ? 'gastube' : desktop,
+      '--length-us',
+      '${item?.duration?.inMicroseconds ?? 0}',
+    ];
+    try {
+      await _systemd(
+        'StartTransientUnit',
+        [
+          const DBusString(_relayUnit),
+          const DBusString('replace'),
+          _relayUnitProperties(binary, args, runtime),
+          DBusArray(DBusSignature('(sa(sv))')),
+        ],
+        DBusSignature('o'),
+      );
+      _relayOn = true;
+      print('gastube: mpris relay started');
+    } catch (error) {
+      print('gastube: mpris relay failed error=$error');
+    }
+  }
+
+  Future<void> _waitRelayReady() async {
+    if (!_relayOn) return;
+    final runtime = Platform.environment['XDG_RUNTIME_DIR'] ?? '';
+    if (runtime.isEmpty) return;
+    final ready = File(p.join(runtime, 'gastube-mpris-relay.ready'));
+    for (var i = 0; i < 10; i++) {
+      if (ready.existsSync()) {
+        print('gastube: mpris relay ${ready.readAsStringSync().trim()}');
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    print('gastube: mpris relay waiting');
+  }
+
+  DBusArray _relayUnitProperties(
+    String binary,
+    List<String> args,
+    String runtime,
+  ) {
+    final home = Platform.environment['HOME'] ?? '';
+    final bus = Platform.environment['DBUS_SESSION_BUS_ADDRESS'];
+    final environment = <String>[
+      'XDG_RUNTIME_DIR=$runtime',
+      'HOME=$home',
+      if (bus != null && bus.isNotEmpty) 'DBUS_SESSION_BUS_ADDRESS=$bus',
+    ];
+    final exec = DBusArray(DBusSignature('(sasb)'), [
+      DBusStruct([
+        DBusString(binary),
+        DBusArray.string(args),
+        const DBusBoolean(false),
+      ]),
+    ]);
+    return DBusArray(DBusSignature('(sv)'), [
+      DBusStruct([
+        const DBusString('Description'),
+        const DBusVariant(DBusString('GasTube sound indicator')),
+      ]),
+      DBusStruct([const DBusString('ExecStart'), DBusVariant(exec)]),
+      DBusStruct([
+        const DBusString('Environment'),
+        DBusVariant(DBusArray.string(environment)),
+      ]),
+    ]);
+  }
+
+  Future<void> _stopControlRelay() async {
+    if (!_relayOn) return;
+    _relayOn = false;
+    try {
+      await _systemd(
+        'StopUnit',
+        [const DBusString(_relayUnit), const DBusString('replace')],
+        DBusSignature('o'),
+      );
+      print('gastube: mpris relay stop');
+    } catch (error) {
+      print('gastube: mpris relay stop failed error=$error');
+    }
+  }
+
+  Future<void> _reclaimMpris() async {
+    for (var i = 0; i < 30; i++) {
+      if (await MprisPlayer.instance.reclaim()) return;
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    print('gastube: mpris reclaim waiting');
+  }
+
+  Future<void> _systemd(
+    String method,
+    List<DBusValue> values,
+    DBusSignature reply,
+  ) async {
+    final client = await _bus();
+    final manager = DBusRemoteObject(
+      client,
+      name: 'org.freedesktop.systemd1',
+      path: DBusObjectPath('/org/freedesktop/systemd1'),
+    );
+    await manager.callMethod(
+      'org.freedesktop.systemd1.Manager',
+      method,
+      values,
+      replySignature: reply,
+    );
+  }
+
+  Future<DBusClient> _bus() async {
+    return _client ??= DBusClient.session();
   }
 
   Future<void> _closeClient() async {

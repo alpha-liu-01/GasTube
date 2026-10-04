@@ -43,17 +43,24 @@ class MprisPlayer {
   }
 
   /// Take the name back after [release] and publish the current item again.
-  Future<void> reclaim() async {
+  ///
+  /// Returns false when another process still owns [busName].
+  Future<bool> reclaim() async {
     await claim();
     final client = _client;
-    if (client == null || _claimed) return;
+    if (client == null) return false;
+    if (_claimed) return true;
     try {
       final reply = await client.requestName(busName);
-      _claimed = true;
       print('gastube: mpris reclaim reply=$reply');
+      if (reply == DBusRequestNameReply.exists ||
+          reply == DBusRequestNameReply.inQueue) {
+        return false;
+      }
+      _claimed = true;
       final object = _object;
       final item = _item;
-      if (object == null || item == null) return;
+      if (object == null || item == null) return true;
       await object.emitPropertiesChanged(
         'org.mpris.MediaPlayer2.Player',
         changedProperties: {
@@ -64,8 +71,10 @@ class MprisPlayer {
           'CanSeek': DBusBoolean(true),
         },
       );
+      return true;
     } catch (error) {
       print('gastube: mpris reclaim failed error=$error');
+      return false;
     }
   }
 
@@ -207,7 +216,8 @@ class _MprisObject extends DBusObject {
       );
     }
 
-    DBusIntrospectMethod method(String name, [List<DBusIntrospectArgument>? args]) {
+    DBusIntrospectMethod method(String name,
+        [List<DBusIntrospectArgument>? args]) {
       return DBusIntrospectMethod(name, args: args ?? const []);
     }
 
@@ -398,9 +408,7 @@ class _MprisObject extends DBusObject {
         if (methodCall.values.length < 2) break;
         final track = methodCall.values[0];
         final position = _int64([methodCall.values[1]]);
-        final wanted = _item == null
-            ? ''
-            : MprisPlayer._trackPath(_item!.id);
+        final wanted = _item == null ? '' : MprisPlayer._trackPath(_item!.id);
         if (track is DBusObjectPath && track.value == wanted) {
           print('gastube: mpris command=SetPosition position=$position');
           final next = Duration(microseconds: position);

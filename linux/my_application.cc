@@ -6,6 +6,7 @@
 #endif
 
 #include "flutter/generated_plugin_registrant.h"
+#include "pulse_unplug.h"
 
 struct _MyApplication {
   GtkApplication parent_instance;
@@ -78,6 +79,7 @@ static void my_application_activate(GApplication* application) {
   gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(view));
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
+  gastube_pulse_unplug_attach(view);
 
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }

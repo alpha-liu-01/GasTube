@@ -53,6 +53,7 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 # System-level dependencies.
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTK REQUIRED IMPORTED_TARGET gtk+-3.0)
+pkg_check_modules(PULSE REQUIRED IMPORTED_TARGET libpulse)
 
 add_definitions(-DAPPLICATION_ID="${APPLICATION_ID}")
 
@@ -63,6 +64,7 @@ add_definitions(-DAPPLICATION_ID="${APPLICATION_ID}")
 add_executable(${BINARY_NAME}
   "main.cc"
   "my_application.cc"
+  "pulse_unplug.cc"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
 )
 
@@ -73,6 +75,7 @@ apply_standard_settings(${BINARY_NAME})
 # Add dependency libraries. Add any application-specific dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter)
 target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::GTK)
+target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::PULSE)
 
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)
@@ -119,6 +122,13 @@ if(DEFINED ENV{GASTUBE_UBUNTU_TOUCH})
   # set GASTUBE_UBUNTU_TOUCH, so they keep the system libmpv.
   set(MEDIA_KIT_LIBS_AVAILABLE ON CACHE BOOL
       "Ubuntu Touch click ships its own libmpv" FORCE)
+  pkg_check_modules(GIO REQUIRED IMPORTED_TARGET gio-2.0)
+  add_executable(gastube-mpris-relay "mpris_relay.cc")
+  apply_standard_settings(gastube-mpris-relay)
+  target_link_libraries(gastube-mpris-relay PRIVATE PkgConfig::GIO ${CMAKE_DL_LIBS})
+  set_target_properties(gastube-mpris-relay PROPERTIES
+    INSTALL_RPATH "\$ORIGIN/lib"
+    BUILD_RPATH "\$ORIGIN/lib")
 endif()
 include(flutter/generated_plugins.cmake)
 if(DEFINED ENV{GASTUBE_UBUNTU_TOUCH} AND TARGET media_kit_video_plugin)
@@ -146,6 +156,10 @@ set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}/lib")
 
 install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)
+if(DEFINED ENV{GASTUBE_UBUNTU_TOUCH})
+  install(TARGETS gastube-mpris-relay RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
+    COMPONENT Runtime)
+endif()
 
 install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   COMPONENT Runtime)
