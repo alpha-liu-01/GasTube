@@ -1,0 +1,36 @@
+name: Ubuntu Touch Click
+
+# Focal arm64 Click. The runner is arm64, and the compile happens in an
+# Ubuntu 20.04 container so the binary stays within glibc 2.31.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  click:
+    name: Build Focal arm64 Click
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build the release bundle
+        run: bash packaging/ubuntu-touch/gastube/container-build.sh
+
+      - name: Install Clickable
+        run: pipx install clickable-ut
+
+      - name: Package the Click
+        working-directory: packaging/ubuntu-touch/gastube
+        run: clickable build --skip-review --arch arm64 --non-interactive --no-nvidia
+
+      - name: Upload the Click
+        uses: actions/upload-artifact@v4
+        with:
+          name: gastube-ubuntu-touch-arm64
+          path: packaging/ubuntu-touch/gastube/build/aarch64-linux-gnu/app/*.click
+          if-no-files-found: error
