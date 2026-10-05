@@ -63,10 +63,10 @@ else
     echo "No ${wanted} C compiler. Install gcc or clang." >&2
     exit 1
   fi
-  case "${wanted}" in
-    aarch64) mingw_asset="llvm-mingw-20260922-ucrt-aarch64.zip" ;;
-    *) mingw_asset="llvm-mingw-20260922-ucrt-x86_64.zip" ;;
-  esac
+  # Git Bash on ARM Windows is an x64 process and cannot start the aarch64
+  # llvm-mingw gcc.exe. The x64 toolchain still contains aarch64-w64-mingw32-gcc,
+  # an x64 program that emits ARM64 code.
+  mingw_asset="llvm-mingw-20260922-ucrt-x86_64.zip"
   mingw_root="${cache}/${mingw_asset%.zip}"
   if [[ ! -x "${mingw_root}/bin/gcc" && ! -x "${mingw_root}/bin/gcc.exe" ]]; then
     echo "Downloading ${mingw_asset}"
@@ -79,16 +79,23 @@ else
       tar -xf "${cache}/${mingw_asset}" -C "${cache}"
     fi
   fi
-  if [[ -x "${mingw_root}/bin/gcc.exe" ]]; then
+  mingw_cross_prefix=""
+  if [[ "${wanted}" == aarch64 ]]; then
+    if [[ -x "${mingw_root}/bin/aarch64-w64-mingw32-gcc.exe" ]]; then
+      CC="${mingw_root}/bin/aarch64-w64-mingw32-gcc.exe"
+    else
+      CC="${mingw_root}/bin/aarch64-w64-mingw32-gcc"
+    fi
+    mingw_cross_prefix="aarch64-w64-mingw32-"
+  elif [[ -x "${mingw_root}/bin/gcc.exe" ]]; then
     CC="${mingw_root}/bin/gcc.exe"
   else
     CC="${mingw_root}/bin/gcc"
   fi
-  # CC stays the absolute mingw gcc. /usr/bin stays ahead so make is Git's,
-  # not llvm-mingw's, when both exist.
+  # /usr/bin stays ahead so make is Git's, not llvm-mingw's, when both exist.
   export PATH="/usr/bin:${mingw_root}/bin:${PATH}"
   if ! compiler_matches "${CC}"; then
-    echo "llvm-mingw gcc does not target ${wanted}." >&2
+    echo "llvm-mingw ${CC} does not target ${wanted}: $("${CC}" -dumpmachine 2>&1 || true)" >&2
     exit 1
   fi
 fi
@@ -144,6 +151,9 @@ configure_args=(
 # uname and then requires nasm.
 if [[ "${is_windows}" -eq 1 ]]; then
   configure_args+=(--target-os=mingw64)
+fi
+if [[ -n "${mingw_cross_prefix:-}" ]]; then
+  configure_args+=(--cross-prefix="${mingw_cross_prefix}" --cc="${CC}")
 fi
 machine="$("${CC}" -dumpmachine)"
 echo "ffmpeg target ${wanted} compiler ${CC} (${machine})"
