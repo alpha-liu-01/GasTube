@@ -1,5 +1,13 @@
 ## Changelog
 
+
+### v0.9.4
+
+###### New Features
+
+- **Ubuntu Touch Support**: GasTube is available for download on OpenStore. 
+- **Playback Queue Fix**: Unified "up next" queue with shuffle, clear, and remove — accessible from the player and auto-populated from related videos, now on NewPipe Extractor.
+
 ### v0.9.3
 
 ###### New Features
