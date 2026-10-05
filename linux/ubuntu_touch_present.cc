@@ -10,14 +10,31 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdarg>
+#include <cstring>
 #include <vector>
 
 // Flutter's present and GDK's present both enter hybris on this window, and
 // a resize cancels the buffer the other side still has queued. finishSwap
-// then writes the freed buffer. One lock covers both. Recursive so a resize
-// that arrives from inside a swap on the same thread does not deadlock here.
+// then writes the freed buffer. One lock covers eglSwapBuffers and
+// eglSwapBuffersWithDamageEXT. A resize that arrives on the same thread
+// while a swap holds the lock is stored and applied after that swap returns,
+// so it does not free the buffer finishSwap is still using. The apply must
+// not re-enter this hook: hybris can dispatch another configure from inside
+// the resize, and that would call the hook again.
+struct wl_egl_window;
+using WlEglResizeFn = void (*)(struct wl_egl_window*, int, int, int, int);
+
 pthread_mutex_t g_hybris_window;
 pthread_once_t g_hybris_window_once = PTHREAD_ONCE_INIT;
+int g_hybris_depth = 0;
+bool g_resize_pending = false;
+struct wl_egl_window* g_resize_window = nullptr;
+int g_resize_w = 0;
+int g_resize_h = 0;
+int g_resize_dx = 0;
+int g_resize_dy = 0;
+WlEglResizeFn g_real_wl_resize = nullptr;
+bool g_applying_resize = false;
 
 void init_hybris_window_lock() {
   pthread_mutexattr_t attr;
@@ -30,9 +47,30 @@ void init_hybris_window_lock() {
 void lock_hybris_window() {
   pthread_once(&g_hybris_window_once, init_hybris_window_lock);
   pthread_mutex_lock(&g_hybris_window);
+  g_hybris_depth++;
 }
 
-void unlock_hybris_window() { pthread_mutex_unlock(&g_hybris_window); }
+void unlock_hybris_window() {
+  if (g_hybris_depth == 1 && g_resize_pending &&
+      g_real_wl_resize != nullptr && !g_applying_resize) {
+    g_applying_resize = true;
+    // One nested configure can update the saved size. A second pass applies
+    // that size. Further re-entry is dropped so this cannot loop.
+    for (int pass = 0; pass < 2 && g_resize_pending; pass++) {
+      g_resize_pending = false;
+      struct wl_egl_window* window = g_resize_window;
+      int width = g_resize_w;
+      int height = g_resize_h;
+      int dx = g_resize_dx;
+      int dy = g_resize_dy;
+      g_real_wl_resize(window, width, height, dx, dy);
+    }
+    g_resize_pending = false;
+    g_applying_resize = false;
+  }
+  g_hybris_depth--;
+  pthread_mutex_unlock(&g_hybris_window);
+}
 
 // Official full-frame engine. The window is always invalidated in full.
 // Frame time is split in two places:
@@ -95,10 +133,14 @@ int g_blit_h = 0;
 // present. Do not define the epoxy_* symbols; a definition here is the wrong
 // object and faults when the engine calls through it.
 extern "C" EGLBoolean (*epoxy_eglSwapBuffers)(EGLDisplay, EGLSurface);
+extern "C" EGLBoolean (*epoxy_eglSwapBuffersWithDamageEXT)(EGLDisplay,
+                                                          EGLSurface, EGLint*,
+                                                          EGLint);
 extern "C" EGLBoolean (*epoxy_eglMakeCurrent)(EGLDisplay, EGLSurface,
                                               EGLSurface, EGLContext);
 
 using EglSwapFn = EGLBoolean (*)(EGLDisplay, EGLSurface);
+using EglSwapDamageFn = EGLBoolean (*)(EGLDisplay, EGLSurface, EGLint*, EGLint);
 using EglMakeCurrentFn = EGLBoolean (*)(EGLDisplay, EGLSurface, EGLSurface,
                                         EGLContext);
 std::atomic<bool> g_present_allowed{true};
@@ -113,12 +155,74 @@ std::atomic<bool> g_logged_expose{false};
 std::atomic<bool> g_logged_shell{false};
 std::atomic<int> g_in_real_swap{0};
 EglSwapFn g_real_swap = nullptr;
+EglSwapDamageFn g_real_swap_damage = nullptr;
 EglMakeCurrentFn g_real_make_current = nullptr;
 pthread_t g_gtk_thread{};
 bool g_gtk_thread_known = false;
 
 bool on_gtk_thread() {
   return g_gtk_thread_known && pthread_equal(g_gtk_thread, pthread_self());
+}
+
+extern "C" EGLBoolean gastube_gated_egl_swap_damage(EGLDisplay display,
+                                                   EGLSurface surface,
+                                                   EGLint* rects,
+                                                   EGLint n_rects);
+
+// epoxy_eglSwapBuffersWithDamageEXT starts as a resolver. That resolver
+// tail-calls whatever is currently in the same slot. Saving the resolver
+// and then storing our gate in the slot makes the first call recurse until
+// the stack overflows, which is the enter-fullscreen crash with no
+// backtrace. The real entry point has to come from libEGL.
+EglSwapDamageFn real_damage_swap() {
+  void* egl = dlopen("libEGL.so.1", RTLD_NOW | RTLD_NOLOAD);
+  if (egl == nullptr) egl = dlopen("libEGL.so.1", RTLD_NOW);
+  if (egl == nullptr) return nullptr;
+  using GetProc = void* (*)(const char*);
+  auto get_proc = reinterpret_cast<GetProc>(dlsym(egl, "eglGetProcAddress"));
+  if (get_proc == nullptr) return nullptr;
+  void* fn = get_proc("eglSwapBuffersWithDamageEXT");
+  if (fn == nullptr ||
+      fn == reinterpret_cast<void*>(gastube_gated_egl_swap_damage)) {
+    return nullptr;
+  }
+  // Mesa's loader can answer before hybris is current. Calling that
+  // pointer on the hybris surface faults. Only the hybris entry is safe,
+  // and it is not the epoxy resolver that tail-calls this slot.
+  Dl_info info{};
+  if (dladdr(fn, &info) == 0 || info.dli_fname == nullptr ||
+      std::strstr(info.dli_fname, "hybris") == nullptr) {
+    return nullptr;
+  }
+  return reinterpret_cast<EglSwapDamageFn>(fn);
+}
+
+bool g_logged_damage_lookup = false;
+
+void install_damage_gate() {
+  if (g_real_swap_damage != nullptr) return;
+  if (epoxy_eglSwapBuffersWithDamageEXT == nullptr ||
+      epoxy_eglSwapBuffersWithDamageEXT == gastube_gated_egl_swap_damage) {
+    return;
+  }
+  EglSwapDamageFn real = real_damage_swap();
+  if (real == nullptr) {
+    if (!g_logged_damage_lookup) {
+      g_logged_damage_lookup = true;
+      g_message(
+          "present: eglSwapBuffersWithDamageEXT left on epoxy's resolver");
+    }
+    return;
+  }
+  g_real_swap_damage = real;
+  epoxy_eglSwapBuffersWithDamageEXT = gastube_gated_egl_swap_damage;
+  Dl_info info{};
+  const char* from = "libEGL";
+  if (dladdr(reinterpret_cast<void*>(real), &info) != 0 &&
+      info.dli_fname != nullptr) {
+    from = info.dli_fname;
+  }
+  g_message("present: eglSwapBuffersWithDamageEXT gated via %s", from);
 }
 
 extern "C" EGLBoolean gastube_gated_egl_swap(EGLDisplay display,
@@ -136,12 +240,40 @@ extern "C" EGLBoolean gastube_gated_egl_swap(EGLDisplay display,
         reinterpret_cast<EglSwapFn>(dlsym(RTLD_NEXT, "eglSwapBuffers"));
   }
   if (g_real_swap == nullptr) return EGL_FALSE;
+  install_damage_gate();
   // GTK's paint commits a transparent wl_buffer through wl_proxy_marshal.
   // That commit is what shows the wallpaper. The swap's own attach has to
   // go through, so mark this call.
   lock_hybris_window();
   g_in_real_swap.fetch_add(1, std::memory_order_acq_rel);
   EGLBoolean ok = g_real_swap(display, surface);
+  g_in_real_swap.fetch_sub(1, std::memory_order_acq_rel);
+  unlock_hybris_window();
+  if (ok == EGL_TRUE) {
+    g_hold_expose.store(false, std::memory_order_release);
+  }
+  return ok;
+}
+
+// GDK's fullscreen exit paints through this entry, not eglSwapBuffers. It
+// reaches the same finishSwap. Leaving it ungated lets that paint race the
+// resize that puts the panel back.
+extern "C" EGLBoolean gastube_gated_egl_swap_damage(EGLDisplay display,
+                                                   EGLSurface surface,
+                                                   EGLint* rects,
+                                                   EGLint n_rects) {
+  if (!g_present_allowed.load(std::memory_order_acquire)) {
+    bool already = g_logged_skip.exchange(true, std::memory_order_relaxed);
+    if (!already) {
+      g_message(
+          "present: skipped eglSwapBuffersWithDamageEXT while the window is unfocused");
+    }
+    return EGL_TRUE;
+  }
+  if (g_real_swap_damage == nullptr) return EGL_FALSE;
+  lock_hybris_window();
+  g_in_real_swap.fetch_add(1, std::memory_order_acq_rel);
+  EGLBoolean ok = g_real_swap_damage(display, surface, rects, n_rects);
   g_in_real_swap.fetch_sub(1, std::memory_order_acq_rel);
   unlock_hybris_window();
   if (ok == EGL_TRUE) {
@@ -198,6 +330,7 @@ void install_swap_gate() {
       g_message("present: eglSwapBuffers gated on window focus");
     }
   }
+  install_damage_gate();
   if (g_real_make_current == nullptr) {
     g_real_make_current = reinterpret_cast<EglMakeCurrentFn>(
         dlsym(RTLD_NEXT, "eglMakeCurrent"));
@@ -631,19 +764,28 @@ extern "C" EGLBoolean eglSwapBuffers(EGLDisplay display, EGLSurface surface) {
 }
 
 // GDK resizes the hybris window from the configure event while a present may
-// still own the previous buffer. The same lock as eglSwapBuffers keeps the
-// cancel from freeing that buffer mid-swap.
+// still own the previous buffer. The same lock as both swap entry points
+// keeps the cancel from freeing that buffer mid-swap. A resize that arrives
+// on this thread during the swap is applied after the swap returns.
 struct wl_egl_window;
 extern "C" void wl_egl_window_resize(struct wl_egl_window* window, int width,
                                     int height, int dx, int dy) {
-  using ResizeFn = void (*)(struct wl_egl_window*, int, int, int, int);
-  static ResizeFn real = nullptr;
-  if (real == nullptr) {
-    real = reinterpret_cast<ResizeFn>(dlsym(RTLD_NEXT, "wl_egl_window_resize"));
+  if (g_real_wl_resize == nullptr) {
+    g_real_wl_resize =
+        reinterpret_cast<WlEglResizeFn>(dlsym(RTLD_NEXT, "wl_egl_window_resize"));
   }
-  if (real == nullptr) return;
+  if (g_real_wl_resize == nullptr) return;
   lock_hybris_window();
-  real(window, width, height, dx, dy);
+  if (g_hybris_depth > 1 || g_applying_resize) {
+    g_resize_pending = true;
+    g_resize_window = window;
+    g_resize_w = width;
+    g_resize_h = height;
+    g_resize_dx = dx;
+    g_resize_dy = dy;
+  } else {
+    g_real_wl_resize(window, width, height, dx, dy);
+  }
   unlock_hybris_window();
 }
 

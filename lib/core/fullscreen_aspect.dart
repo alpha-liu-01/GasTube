@@ -35,8 +35,15 @@ class FullscreenAspect {
   static int? _deviceQ;
 
   /// 1 or 3. Remembered from the last sideways hold so a later portrait
-  /// frame does not flip the page the other way.
+  /// frame does not flip the page the other way. [_latchedOdd] assumes the
+  /// shell has kept the window upright. [_latchedOddFixed] assumes the
+  /// window is stuck to the phone, which is what rotation lock does.
   static int? _latchedOdd;
+  static int? _latchedOddFixed;
+  static bool _shellFixed = false;
+  static bool? _windowLandscape;
+  static DateTime? _disagreeSince;
+  static Timer? _shellFixedTimer;
   static bool _sensorStarted = false;
   static DBusRemoteObject? _sensor;
   static Socket? _sensorSocket;
@@ -134,6 +141,7 @@ class FullscreenAspect {
     await SystemChrome.setPreferredOrientations(
       wantLandscape ? _landscape : _portrait,
     );
+    _observeShell();
     _syncTurns();
     print(
       'gastube: fullscreen aspect lock='
@@ -177,6 +185,7 @@ class FullscreenAspect {
 
   static void onMetrics() {
     if (!enabled) return;
+    _observeShell();
     if (_session > 0) {
       _syncTurns();
       return;
@@ -198,22 +207,81 @@ class FullscreenAspect {
       return;
     }
     final mismatch = allowed != _viewIsLandscape();
-    final next = mismatch ? (_latchedOdd ?? _defaultOdd()) : 0;
+    final fixed = _shellFixed && _session > 0;
+    final next = !mismatch
+        ? 0
+        : fixed
+            ? (_latchedOddFixed ?? _defaultOddFixed())
+            : (_latchedOdd ?? _defaultOdd());
     if (turns.value != next) {
       turns.value = next;
       print(
-        'gastube: fullscreen aspect turns=$next device=$_deviceQ',
+        'gastube: fullscreen aspect turns=$next device=$_deviceQ '
+        'fixed=$_shellFixed',
       );
     }
   }
 
-  /// Page top toward the phone's top. The shell keeps the window upright, so
-  /// this only matters while the window aspect is the one we locked out.
+  /// Page top toward the phone's top while Lomiri keeps the window upright.
   /// Right-up is a normal grip turned 90 degrees counterclockwise.
   static int _defaultOdd() {
     final device = _deviceQ;
     if (device == 1 || device == 2) return 3;
     return 1;
+  }
+
+  /// Same goal when rotation lock has glued the window to the phone, so the
+  /// window's top is the phone's top instead of the sky. The upright quarter
+  /// turn is the opposite of [_defaultOdd].
+  static int _defaultOddFixed() {
+    final device = _deviceQ;
+    if (device == 1 || device == 2) return 1;
+    return 3;
+  }
+
+  /// Rotation lock leaves the window aspect unchanged while the phone turns.
+  /// A short disagreement is the shell's rotate animation. Sensor reads keep
+  /// arriving every 250ms, so the wait must not restart on each of them.
+  static void _observeShell() {
+    final windowLandscape = _viewIsLandscape();
+    if (_windowLandscape != null && _windowLandscape != windowLandscape) {
+      _shellFixed = false;
+      _cancelShellWait();
+    }
+    _windowLandscape = windowLandscape;
+    final device = _deviceQ;
+    if (device == null) return;
+    final deviceLandscape = device == 1 || device == 3;
+    if (deviceLandscape == windowLandscape) {
+      _cancelShellWait();
+      return;
+    }
+    if (_shellFixed) return;
+    final now = DateTime.now();
+    if (_disagreeSince == null) {
+      _disagreeSince = now;
+      _shellFixedTimer ??= Timer(const Duration(milliseconds: 800), () {
+        _shellFixedTimer = null;
+        _observeShell();
+      });
+      return;
+    }
+    if (now.difference(_disagreeSince!) < const Duration(milliseconds: 800)) {
+      return;
+    }
+    _shellFixed = true;
+    _cancelShellWait();
+    _syncTurns();
+    print(
+      'gastube: fullscreen aspect shell fixed device=$device '
+      'turns=${turns.value}',
+    );
+  }
+
+  static void _cancelShellWait() {
+    _disagreeSince = null;
+    _shellFixedTimer?.cancel();
+    _shellFixedTimer = null;
   }
 
   static Future<void> _ensureSensor() async {
@@ -393,8 +461,15 @@ class FullscreenAspect {
     if (device == null) return;
     final changed = _deviceQ != device;
     _deviceQ = device;
-    if (device == 1) _latchedOdd = 3;
-    if (device == 3) _latchedOdd = 1;
+    if (device == 1) {
+      _latchedOdd = 3;
+      _latchedOddFixed = 1;
+    }
+    if (device == 3) {
+      _latchedOdd = 1;
+      _latchedOddFixed = 3;
+    }
+    _observeShell();
     if (!changed || !enabled) return;
     _syncTurns();
     print(
