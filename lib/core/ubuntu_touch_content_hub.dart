@@ -308,7 +308,7 @@ DBusRemoteObject _service(DBusClient client) {
 String _appId() {
   final appId = Platform.environment['APP_ID'];
   if (appId != null && appId.isNotEmpty) return appId;
-  return 'gastube.alphaliu01_gastube_0.9.3';
+  return 'gastube.alphaliu01_gastube_0.9.4';
 }
 
 String _dbusEscape(String id) {

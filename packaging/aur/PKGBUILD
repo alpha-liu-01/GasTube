@@ -6,8 +6,8 @@
 # distro mpv package, so this package does not depend on jdk or ffmpeg.
 # !strip keeps makepkg away from the bundled runtime.
 pkgname=gastube
-pkgver=0.9.3
-pkgrel=16
+pkgver=0.9.4
+pkgrel=1
 pkgdesc='Ad-free YouTube client'
 arch=('x86_64')
 url='https://github.com/alpha-liu-01/GasTube'
