@@ -3,6 +3,7 @@
         "networking",
         "audio",
         "camera",
+        "sensors",
         "content_exchange",
         "content_exchange_source"
     ],

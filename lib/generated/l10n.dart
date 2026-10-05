@@ -2715,6 +2715,26 @@ class S {
     );
   }
 
+  /// `Rotate fullscreen with the video`
+  String get fullscreenAspectRotate {
+    return Intl.message(
+      'Rotate fullscreen with the video',
+      name: 'fullscreenAspectRotate',
+      desc: 'Setting for the player fullscreen button to follow video aspect',
+      args: [],
+    );
+  }
+
+  /// `The fullscreen button uses the video's width and height. Leaving fullscreen returns to the previous direction.`
+  String get fullscreenAspectRotateDescription {
+    return Intl.message(
+      'The fullscreen button uses the video\'s width and height. Leaving fullscreen returns to the previous direction.',
+      name: 'fullscreenAspectRotateDescription',
+      desc: 'Explains fullscreen aspect rotation',
+      args: [],
+    );
+  }
+
   /// `The file manager is open. Choose where to save {name}.`
   String exportChooseFolder(String name) {
     return Intl.message(

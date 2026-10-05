@@ -12,6 +12,28 @@
 #include <cstdarg>
 #include <vector>
 
+// Flutter's present and GDK's present both enter hybris on this window, and
+// a resize cancels the buffer the other side still has queued. finishSwap
+// then writes the freed buffer. One lock covers both. Recursive so a resize
+// that arrives from inside a swap on the same thread does not deadlock here.
+pthread_mutex_t g_hybris_window;
+pthread_once_t g_hybris_window_once = PTHREAD_ONCE_INIT;
+
+void init_hybris_window_lock() {
+  pthread_mutexattr_t attr;
+  pthread_mutexattr_init(&attr);
+  pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+  pthread_mutex_init(&g_hybris_window, &attr);
+  pthread_mutexattr_destroy(&attr);
+}
+
+void lock_hybris_window() {
+  pthread_once(&g_hybris_window_once, init_hybris_window_lock);
+  pthread_mutex_lock(&g_hybris_window);
+}
+
+void unlock_hybris_window() { pthread_mutex_unlock(&g_hybris_window); }
+
 // Official full-frame engine. The window is always invalidated in full.
 // Frame time is split in two places:
 //   gastube: frame  — UI build and raster, from the engine. Raster ends when
@@ -117,9 +139,11 @@ extern "C" EGLBoolean gastube_gated_egl_swap(EGLDisplay display,
   // GTK's paint commits a transparent wl_buffer through wl_proxy_marshal.
   // That commit is what shows the wallpaper. The swap's own attach has to
   // go through, so mark this call.
+  lock_hybris_window();
   g_in_real_swap.fetch_add(1, std::memory_order_acq_rel);
   EGLBoolean ok = g_real_swap(display, surface);
   g_in_real_swap.fetch_sub(1, std::memory_order_acq_rel);
+  unlock_hybris_window();
   if (ok == EGL_TRUE) {
     g_hold_expose.store(false, std::memory_order_release);
   }
@@ -604,6 +628,23 @@ extern "C" GdkDrawingContext* gdk_window_begin_draw_frame(
 // the wayland client heap aborts. This definition is what libgdk binds.
 extern "C" EGLBoolean eglSwapBuffers(EGLDisplay display, EGLSurface surface) {
   return gastube_gated_egl_swap(display, surface);
+}
+
+// GDK resizes the hybris window from the configure event while a present may
+// still own the previous buffer. The same lock as eglSwapBuffers keeps the
+// cancel from freeing that buffer mid-swap.
+struct wl_egl_window;
+extern "C" void wl_egl_window_resize(struct wl_egl_window* window, int width,
+                                    int height, int dx, int dy) {
+  using ResizeFn = void (*)(struct wl_egl_window*, int, int, int, int);
+  static ResizeFn real = nullptr;
+  if (real == nullptr) {
+    real = reinterpret_cast<ResizeFn>(dlsym(RTLD_NEXT, "wl_egl_window_resize"));
+  }
+  if (real == nullptr) return;
+  lock_hybris_window();
+  real(window, width, height, dx, dy);
+  unlock_hybris_window();
 }
 
 extern "C" int wl_display_flush(struct wl_display* display) {

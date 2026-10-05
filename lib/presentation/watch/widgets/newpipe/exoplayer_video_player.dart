@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluxtube/application/application.dart';
+import 'package:fluxtube/core/fullscreen_aspect.dart';
 import 'package:fluxtube/core/player/global_player_controller.dart';
 import 'package:fluxtube/core/services/media_controls.dart';
 import 'package:fluxtube/core/services/exoplayer_notification_bridge.dart';
@@ -182,8 +183,12 @@ class _NewPipeExoPlayerState extends State<NewPipeExoPlayer> {
     }
     if (widget.isFullscreen) {
       unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
-      unawaited(
-          SystemChrome.setPreferredOrientations(DeviceOrientation.values));
+      if (FullscreenAspect.sessionActive) {
+        unawaited(FullscreenAspect.restore());
+      } else {
+        unawaited(
+            SystemChrome.setPreferredOrientations(DeviceOrientation.values));
+      }
     }
     super.dispose();
   }
@@ -270,7 +275,8 @@ class _NewPipeExoPlayerState extends State<NewPipeExoPlayer> {
             _errorMessage = null;
             _isBuffering = true;
           });
-          await _channel?.invokeMethod('load', _sourceParams(keepPosition: false));
+          await _channel?.invokeMethod(
+              'load', _sourceParams(keepPosition: false));
         }
       }
     } catch (_) {
@@ -1455,12 +1461,39 @@ class _NewPipeExoFullscreenRouteState
   @override
   void initState() {
     super.initState();
-    unawaited(
-        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky));
-    unawaited(SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]));
+    unawaited(_applyFullscreenChrome());
+  }
+
+  Future<void> _applyFullscreenChrome() async {
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    await FullscreenAspect.ensureLoaded();
+    if (!FullscreenAspect.enabled) {
+      await SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+      return;
+    }
+    final size = _videoSize();
+    await FullscreenAspect.choose(size.$1, size.$2);
+  }
+
+  (int?, int?) _videoSize() {
+    final player = widget.player;
+    if (player is! NewPipeExoPlayer) return (null, null);
+    int? squareWidth;
+    int? squareHeight;
+    for (final stream in player.watchInfo.videoStreams ?? const []) {
+      final width = stream.width;
+      final height = stream.height;
+      if (width == null || height == null || width <= 0 || height <= 0) {
+        continue;
+      }
+      if (width != height) return (width, height);
+      squareWidth ??= width;
+      squareHeight ??= height;
+    }
+    return (squareWidth, squareHeight);
   }
 
   @override

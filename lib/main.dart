@@ -12,6 +12,7 @@ import 'package:fluxtube/application/settings/settings_bloc.dart';
 import 'package:fluxtube/application/subscribe/subscribe_bloc.dart';
 import 'package:fluxtube/application/trending/trending_bloc.dart';
 import 'package:fluxtube/application/watch/watch_bloc.dart';
+import 'package:fluxtube/core/fullscreen_aspect.dart';
 import 'package:fluxtube/core/app_info.dart';
 import 'package:fluxtube/core/app_theme.dart';
 import 'package:fluxtube/core/locals.dart';
@@ -35,6 +36,7 @@ import 'package:fluxtube/core/ubuntu_touch_frame_timing.dart';
 import 'package:fluxtube/core/ubuntu_touch_image_cache.dart';
 import 'package:fluxtube/core/window_fullscreen.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 import 'package:path/path.dart' as p;
 import 'package:screen_brightness/screen_brightness.dart';
 
@@ -50,6 +52,13 @@ void main(List<String> args) async {
     }
   }
   WidgetsFlutterBinding.ensureInitialized();
+  fullscreenAspectEnter = FullscreenAspect.handleMediaKitEnter;
+  fullscreenAspectExit = FullscreenAspect.handleMediaKitExit;
+  try {
+    await FullscreenAspect.ensureLoaded();
+  } catch (error) {
+    print('gastube: fullscreen aspect load failed error=$error');
+  }
   installUbuntuTouchFrameTiming();
   installUbuntuTouchImageCache();
 
@@ -206,6 +215,17 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     setState(() => _lomiriBrightness = brightness);
   }
 
+  Widget _appShell(BuildContext context, Widget? child) {
+    return AppTheme.withCjkText(
+      context,
+      FullscreenAspectScope(
+        child: GlobalPipOverlay(
+          child: child ?? const SizedBox.shrink(),
+        ),
+      ),
+    );
+  }
+
   ThemeMode _themeModeFor(String themeMode) {
     switch (themeMode) {
       case 'dark':
@@ -255,8 +275,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                 }
                 return MaterialApp.router(
                   title: AppInfo.myApp.name,
-                  theme: AppTheme.dynamicTheme(lightDynamic ?? ColorScheme.fromSeed(seedColor: Colors.blue)),
-                  darkTheme: AppTheme.dynamicTheme(darkDynamic ?? const ColorScheme.dark()),
+                  theme: AppTheme.dynamicTheme(lightDynamic ??
+                      ColorScheme.fromSeed(seedColor: Colors.blue)),
+                  darkTheme: AppTheme.dynamicTheme(
+                      darkDynamic ?? const ColorScheme.dark()),
                   themeMode: _themeModeFor(mode),
                   debugShowCheckedModeBanner: false,
                   routerConfig: router,
@@ -269,12 +291,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                   supportedLocales: supportedLocales,
                   locale: Locale(state.defaultLanguage),
                   builder: (context, child) {
-                    return AppTheme.withCjkText(
-                      context,
-                      GlobalPipOverlay(
-                        child: child ?? const SizedBox.shrink(),
-                      ),
-                    );
+                    return _appShell(context, child);
                   },
                 );
               },
@@ -298,17 +315,11 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             supportedLocales: supportedLocales,
             locale: Locale(state.defaultLanguage),
             builder: (context, child) {
-              return AppTheme.withCjkText(
-                context,
-                GlobalPipOverlay(
-                  child: child ?? const SizedBox.shrink(),
-                ),
-              );
+              return _appShell(context, child);
             },
           );
         },
       ),
     );
   }
-
 }

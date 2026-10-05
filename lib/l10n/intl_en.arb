@@ -806,6 +806,14 @@
   "@noFileInsideApp": {
     "description": "Shown when Ubuntu Touch import has no file in Exports"
   },
+  "fullscreenAspectRotate": "Rotate fullscreen with the video",
+  "@fullscreenAspectRotate": {
+    "description": "Setting for the player fullscreen button to follow video aspect"
+  },
+  "fullscreenAspectRotateDescription": "The fullscreen button uses the video's width and height. Leaving fullscreen returns to the previous direction.",
+  "@fullscreenAspectRotateDescription": {
+    "description": "Explains fullscreen aspect rotation"
+  },
   "exportChooseFolder": "The file manager is open. Choose where to save {name}.",
   "@exportChooseFolder": {
     "description": "Ubuntu Touch export handed to the file manager",

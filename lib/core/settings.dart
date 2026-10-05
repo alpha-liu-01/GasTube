@@ -12,6 +12,7 @@ String normalizeDefaultVideoCodec(String? value) {
       ? defaultVideoCodecVp9
       : defaultVideoCodecH264;
 }
+
 const selectedTheme = 'theme';
 const historyVisibility = 'history-visibility';
 const dislikeVisibility = 'dislike-visibility';
@@ -64,6 +65,9 @@ const autoPipEnabledKey = 'auto-pip-enabled';
 
 // Desktop window fullscreen. Hides the title bar on Linux phones (Phosh).
 const windowFullscreenKey = 'window-fullscreen';
+
+// Player fullscreen follows the video aspect. Default off, per install.
+const fullscreenAspectRotateKey = 'fullscreen-aspect-rotate';
 
 // New-upload notifications for subscribed channels
 const notifyNewVideosKey = 'notify-new-videos';

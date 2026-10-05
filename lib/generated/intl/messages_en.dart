@@ -196,6 +196,12 @@ class MessageLookup extends MessageLookupByLibrary {
     "filterPlaylists": MessageLookupByLibrary.simpleMessage("Playlists"),
     "filterVideos": MessageLookupByLibrary.simpleMessage("Videos"),
     "france": MessageLookupByLibrary.simpleMessage("France"),
+    "fullscreenAspectRotate": MessageLookupByLibrary.simpleMessage(
+      "Rotate fullscreen with the video",
+    ),
+    "fullscreenAspectRotateDescription": MessageLookupByLibrary.simpleMessage(
+      "The fullscreen button uses the video\'s width and height. Leaving fullscreen returns to the previous direction.",
+    ),
     "hideComments": MessageLookupByLibrary.simpleMessage("Hide Comments"),
     "hideCommentsButtonFromWatchScreen": MessageLookupByLibrary.simpleMessage(
       "Hide comments button from watch screen.",

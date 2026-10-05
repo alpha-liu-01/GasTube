@@ -151,6 +151,10 @@ class MessageLookup extends MessageLookupByLibrary {
     "filterPlaylists": MessageLookupByLibrary.simpleMessage("播放列表"),
     "filterVideos": MessageLookupByLibrary.simpleMessage("视频"),
     "france": MessageLookupByLibrary.simpleMessage("法国"),
+    "fullscreenAspectRotate": MessageLookupByLibrary.simpleMessage("全屏按视频方向旋转"),
+    "fullscreenAspectRotateDescription": MessageLookupByLibrary.simpleMessage(
+      "全屏按钮按视频宽高选择横屏或竖屏。退出全屏回到进入前的方向。",
+    ),
     "hideComments": MessageLookupByLibrary.simpleMessage("隐藏评论"),
     "hideCommentsButtonFromWatchScreen": MessageLookupByLibrary.simpleMessage(
       "隐藏视频播放屏幕的评论按钮。",
