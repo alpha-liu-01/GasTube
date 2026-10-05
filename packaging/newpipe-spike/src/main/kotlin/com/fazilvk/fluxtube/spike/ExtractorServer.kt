@@ -326,7 +326,7 @@ object ExtractorServer {
         "text" to comment.commentText?.content,
         "authorName" to comment.uploaderName,
         "authorUrl" to comment.uploaderUrl,
-        "authorAvatarUrl" to comment.uploaderAvatars.firstOrNull()?.url,
+        "authorAvatarUrl" to bestImage(comment.uploaderAvatars),
         "authorVerified" to comment.isUploaderVerified,
         "likeCount" to comment.likeCount,
         "replyCount" to comment.replyCount,

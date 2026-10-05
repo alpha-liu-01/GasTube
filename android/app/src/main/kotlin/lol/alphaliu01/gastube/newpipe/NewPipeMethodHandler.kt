@@ -469,7 +469,7 @@ class NewPipeMethodHandler : MethodChannel.MethodCallHandler {
                             "text" to comment.commentText?.content,
                             "authorName" to comment.uploaderName,
                             "authorUrl" to comment.uploaderUrl,
-                            "authorAvatarUrl" to comment.uploaderAvatars.firstOrNull()?.url,
+                            "authorAvatarUrl" to bestAvatar(comment.uploaderAvatars),
                             "authorVerified" to comment.isUploaderVerified,
                             "likeCount" to comment.likeCount,
                             "replyCount" to comment.replyCount,
@@ -522,7 +522,7 @@ class NewPipeMethodHandler : MethodChannel.MethodCallHandler {
                             "text" to comment.commentText?.content,
                             "authorName" to comment.uploaderName,
                             "authorUrl" to comment.uploaderUrl,
-                            "authorAvatarUrl" to comment.uploaderAvatars.firstOrNull()?.url,
+                            "authorAvatarUrl" to bestAvatar(comment.uploaderAvatars),
                             "authorVerified" to comment.isUploaderVerified,
                             "likeCount" to comment.likeCount,
                             "replyCount" to comment.replyCount,
@@ -573,7 +573,7 @@ class NewPipeMethodHandler : MethodChannel.MethodCallHandler {
                             "text" to comment.commentText?.content,
                             "authorName" to comment.uploaderName,
                             "authorUrl" to comment.uploaderUrl,
-                            "authorAvatarUrl" to comment.uploaderAvatars.firstOrNull()?.url,
+                            "authorAvatarUrl" to bestAvatar(comment.uploaderAvatars),
                             "authorVerified" to comment.isUploaderVerified,
                             "likeCount" to comment.likeCount,
                             "replyCount" to comment.replyCount,
@@ -899,6 +899,20 @@ class NewPipeMethodHandler : MethodChannel.MethodCallHandler {
             "playlistUploaderName" to (item as? org.schabi.newpipe.extractor.playlist.PlaylistInfoItem)?.uploaderName,
             "playlistUploaderUrl" to (item as? org.schabi.newpipe.extractor.playlist.PlaylistInfoItem)?.uploaderUrl
         )
+    }
+
+    private fun bestAvatar(images: List<org.schabi.newpipe.extractor.Image>?): String? {
+        if (images.isNullOrEmpty()) return null
+        return images.maxWithOrNull(
+            compareBy<org.schabi.newpipe.extractor.Image> {
+                when (it.estimatedResolutionLevel) {
+                    org.schabi.newpipe.extractor.Image.ResolutionLevel.HIGH -> 3
+                    org.schabi.newpipe.extractor.Image.ResolutionLevel.MEDIUM -> 2
+                    org.schabi.newpipe.extractor.Image.ResolutionLevel.LOW -> 1
+                    else -> 0
+                }
+            }.thenByDescending { it.width.toLong() * it.height.toLong() }
+        )?.url?.takeIf { it.isNotBlank() }
     }
 
     /**
