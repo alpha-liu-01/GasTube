@@ -96,6 +96,18 @@ class PlaybackQueue extends ChangeNotifier {
     }
   }
 
+  /// Appends [videos] that are not already queued. Keeps the current item.
+  void appendNew(List<VideoBasicInfo> videos) {
+    if (videos.isEmpty || !_userManaged) return;
+    final known = _queue.map((video) => video.id).toSet();
+    final added = videos.where((video) => video.id.isNotEmpty && known.add(video.id));
+    final next = added.toList();
+    if (next.isEmpty) return;
+    _queue.addAll(next);
+    notifyListeners();
+    log('[Queue] Appended ${next.length} videos, size=${_queue.length}');
+  }
+
   void setQueue(List<VideoBasicInfo> videos, {int startIndex = 0}) {
     _queue.clear();
     _queue.addAll(videos);

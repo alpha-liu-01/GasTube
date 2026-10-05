@@ -1,14 +1,19 @@
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluxtube/application/application.dart';
 import 'package:fluxtube/core/colors.dart';
 import 'package:fluxtube/core/constants.dart';
 import 'package:fluxtube/core/enums.dart';
+import 'package:fluxtube/core/player/playback_queue.dart';
 import 'package:fluxtube/core/youtube_media_id.dart';
 import 'package:fluxtube/domain/playlist/models/newpipe/newpipe_playlist_resp.dart';
+import 'package:fluxtube/domain/watch/models/newpipe/newpipe_related.dart';
 import 'package:fluxtube/domain/watch/models/basic_info.dart';
 import 'package:fluxtube/generated/l10n.dart';
+import 'package:fluxtube/infrastructure/newpipe/newpipe_channel.dart';
 import 'package:fluxtube/widgets/widgets.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -355,9 +360,11 @@ class ScreenPlaylist extends StatelessWidget {
     required int? views,
     required String? uploadedDate,
     required bool? uploaderVerified,
+    VoidCallback? beforeOpen,
   }) {
     return InkWell(
       onTap: () {
+        beforeOpen?.call();
         BlocProvider.of<WatchBloc>(context).add(
           WatchEvent.setSelectedVideoBasicDetails(
             details: VideoBasicInfo(
@@ -590,6 +597,14 @@ class _NewPipePlaylistViewState extends State<_NewPipePlaylistView> {
   Widget build(BuildContext context) {
     final playlist = widget.playlist;
     final videos = playlist.videos ?? [];
+    final entries = <VideoBasicInfo>[];
+    final queueIndexById = <String, int>{};
+    for (final video in videos) {
+      final info = _basicInfoFromPlaylistVideo(video);
+      if (info == null || queueIndexById.containsKey(info.id)) continue;
+      queueIndexById[info.id] = entries.length;
+      entries.add(info);
+    }
 
     return Scaffold(
       body: CustomScrollView(
@@ -609,21 +624,30 @@ class _NewPipePlaylistViewState extends State<_NewPipePlaylistView> {
               (context, index) {
                 if (index < videos.length) {
                   final video = videos[index];
-                  final videoId = youtubeVideoId(video.url);
-                  if (videoId == null) return const SizedBox.shrink();
+                  final info = _basicInfoFromPlaylistVideo(video);
+                  if (info == null) return const SizedBox.shrink();
+                  final queueIndex = queueIndexById[info.id];
                   return ScreenPlaylist._buildVideoItem(
                     context: context,
                     index: index,
-                    videoId: videoId,
-                    channelId: youtubeChannelId(video.uploaderUrl) ?? 'channel',
-                    title: video.name,
-                    thumbnail: video.thumbnailUrl,
-                    uploaderName: video.uploaderName,
-                    uploaderAvatar: video.uploaderAvatarUrl,
+                    videoId: info.id,
+                    channelId: info.channelId ?? 'channel',
+                    title: info.title,
+                    thumbnail: info.thumbnailUrl,
+                    uploaderName: info.channelName,
+                    uploaderAvatar: info.channelThumbnailUrl,
                     duration: video.duration,
                     views: video.viewCount,
                     uploadedDate: video.uploadDate,
-                    uploaderVerified: video.uploaderVerified,
+                    uploaderVerified: info.uploaderVerified,
+                    beforeOpen: queueIndex == null
+                        ? null
+                        : () => queueNewPipePlaylist(
+                              playlistId: widget.playlistId,
+                              entries: entries,
+                              startIndex: queueIndex,
+                              nextPage: playlist.nextPage,
+                            ),
                   );
                 }
                 if (!widget.isMoreFetchCompleted) {
@@ -641,5 +665,86 @@ class _NewPipePlaylistViewState extends State<_NewPipePlaylistView> {
         ],
       ),
     );
+  }
+}
+
+int _playlistQueueGeneration = 0;
+
+VideoBasicInfo? _basicInfoFromPlaylistVideo(NewPipeRelatedStream video) {
+  final id = youtubeVideoId(video.url);
+  if (id == null) return null;
+  return VideoBasicInfo(
+    id: id,
+    title: video.name,
+    thumbnailUrl: video.thumbnailUrl,
+    channelName: video.uploaderName,
+    channelThumbnailUrl: video.uploaderAvatarUrl,
+    channelId: youtubeChannelId(video.uploaderUrl) ?? 'channel',
+    uploaderVerified: video.uploaderVerified,
+  );
+}
+
+/// Replaces the playback queue with the loaded playlist, starting at
+/// [startIndex]. Later pages are appended while this queue is still the one
+/// the viewer opened.
+void queueNewPipePlaylist({
+  required String playlistId,
+  required List<VideoBasicInfo> entries,
+  required int startIndex,
+  String? nextPage,
+}) {
+  if (entries.isEmpty) return;
+  final generation = ++_playlistQueueGeneration;
+  final anchorId = entries.first.id;
+  final tappedId = entries[startIndex.clamp(0, entries.length - 1)].id;
+  PlaybackQueue().setQueue(entries, startIndex: startIndex);
+  if (nextPage == null || nextPage.isEmpty) return;
+  unawaited(_appendPlaylistPages(
+    generation: generation,
+    playlistId: playlistId,
+    nextPage: nextPage,
+    anchorId: anchorId,
+    tappedId: tappedId,
+  ));
+}
+
+bool _playlistQueueStillOpen(String anchorId, String tappedId) {
+  final queue = PlaybackQueue();
+  if (!queue.isUserManaged || queue.queue.isEmpty) return false;
+  if (queue.queue.first.id != anchorId) return false;
+  return queue.queue.any((video) => video.id == tappedId);
+}
+
+Future<void> _appendPlaylistPages({
+  required int generation,
+  required String playlistId,
+  required String nextPage,
+  required String anchorId,
+  required String tappedId,
+}) async {
+  var page = nextPage;
+  while (page.isNotEmpty) {
+    if (generation != _playlistQueueGeneration) return;
+    if (!_playlistQueueStillOpen(anchorId, tappedId)) return;
+    try {
+      final more = await NewPipeChannel.getMorePlaylist(
+        playlistId: playlistId,
+        nextPage: page,
+      );
+      if (generation != _playlistQueueGeneration) return;
+      if (!_playlistQueueStillOpen(anchorId, tappedId)) return;
+      final added = <VideoBasicInfo>[];
+      for (final video in more.videos ?? const <NewPipeRelatedStream>[]) {
+        final info = _basicInfoFromPlaylistVideo(video);
+        if (info != null) added.add(info);
+      }
+      if (added.isEmpty) return;
+      PlaybackQueue().appendNew(added);
+      final next = more.nextPage;
+      if (next == null || next.isEmpty) return;
+      page = next;
+    } catch (_) {
+      return;
+    }
   }
 }
