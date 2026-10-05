@@ -10,7 +10,9 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdarg>
+#include <cstdint>
 #include <cstring>
+#include <new>
 #include <vector>
 
 // Flutter's present and GDK's present both enter hybris on this window, and
@@ -35,6 +37,129 @@ int g_resize_dx = 0;
 int g_resize_dy = 0;
 WlEglResizeFn g_real_wl_resize = nullptr;
 bool g_applying_resize = false;
+
+// wl_egl_window from this image's libwayland-egl. +0x20 is the hybris
+// WaylandNativeWindow. The swap queue is a std::deque at +0x138 of that
+// object, and m_lastBuffer is +0x198. finishSwap does queue.front() without
+// checking empty(). An empty deque still has a slot there, and that slot is
+// not cleared, so the read is a leftover pointer. Writing busy at +0xc0 of
+// it is the exit-fullscreen SIGSEGV, and it only faults when that leftover
+// is non-null. m_bufList is the std::list at +0xd8.
+constexpr int kEglWindowPrivate = 0x20;
+constexpr int kNativeBufferList = 0xd8;
+constexpr int kNativeQueue = 0x138;
+constexpr int kNativeLastBuffer = 0x198;
+constexpr int kDequeChunkBytes = 0x200;
+struct wl_egl_window* g_egl_windows[4] = {};
+int g_egl_window_count = 0;
+
+void remember_egl_window(struct wl_egl_window* window) {
+  if (window == nullptr) return;
+  for (int i = 0; i < g_egl_window_count; i++) {
+    if (g_egl_windows[i] == window) return;
+  }
+  if (g_egl_window_count >= 4) return;
+  g_egl_windows[g_egl_window_count++] = window;
+}
+
+void forget_egl_window(struct wl_egl_window* window) {
+  int next = 0;
+  for (int i = 0; i < g_egl_window_count; i++) {
+    if (g_egl_windows[i] == window) continue;
+    g_egl_windows[next++] = g_egl_windows[i];
+  }
+  g_egl_window_count = next;
+}
+
+bool buffer_still_listed(char* native, void* buffer) {
+  char* sentinel = native + kNativeBufferList;
+  char* node = *reinterpret_cast<char**>(sentinel);
+  for (int guard = 0; guard < 64 && node != nullptr && node != sentinel;
+       guard++) {
+    if (*reinterpret_cast<void**>(node + 0x10) == buffer) return true;
+    node = *reinterpret_cast<char**>(node);
+  }
+  return false;
+}
+
+// Matches libstdc++ deque::pop_front for a pointer element. The chunk is
+// 512 bytes. The last slot of a chunk also frees that chunk.
+void pop_swap_queue(char* native) {
+  char* deque = native + kNativeQueue;
+  char* cur = *reinterpret_cast<char**>(deque + 0x10);
+  char* last = *reinterpret_cast<char**>(deque + 0x20);
+  if (cur == nullptr || last == nullptr) return;
+  if (cur + sizeof(void*) != last) {
+    *reinterpret_cast<char**>(deque + 0x10) = cur + sizeof(void*);
+    return;
+  }
+  void* chunk = *reinterpret_cast<void**>(deque + 0x18);
+  void** node = *reinterpret_cast<void***>(deque + 0x28);
+  if (node == nullptr) return;
+  void** next_node = node + 1;
+  void* next_chunk = *next_node;
+  *reinterpret_cast<void**>(deque + 0x18) = next_chunk;
+  *reinterpret_cast<void***>(deque + 0x28) = next_node;
+  *reinterpret_cast<char**>(deque + 0x20) =
+      static_cast<char*>(next_chunk) + kDequeChunkBytes;
+  *reinterpret_cast<void**>(deque + 0x10) = next_chunk;
+  ::operator delete(chunk);
+}
+
+// finishSwap pops whatever front() returns and writes its busy flag. Drop
+// pointers whose buffer object is already gone, and make an empty queue read
+// as null so the existing m_lastBuffer fallback runs.
+void prepare_swap_queue(struct wl_egl_window* window) {
+  if (window == nullptr) return;
+  // libwayland-egl writes 3 at the start of a live wl_egl_window.
+  if (*reinterpret_cast<uintptr_t*>(window) != 3) return;
+  int width = *reinterpret_cast<int*>(reinterpret_cast<char*>(window) + 8);
+  int height = *reinterpret_cast<int*>(reinterpret_cast<char*>(window) + 12);
+  if (width <= 0 || height <= 0 || width > 10000 || height > 10000) return;
+  char* native = *reinterpret_cast<char**>(
+      reinterpret_cast<char*>(window) + kEglWindowPrivate);
+  if (native == nullptr) return;
+  char* deque = native + kNativeQueue;
+  void* start = *reinterpret_cast<void**>(deque + 0x10);
+  void* finish = *reinterpret_cast<void**>(deque + 0x30);
+  if (start == nullptr) return;
+
+  int dropped = 0;
+  while (start != finish && dropped < 8) {
+    void* front = *reinterpret_cast<void**>(start);
+    if (front == nullptr || buffer_still_listed(native, front)) break;
+    pop_swap_queue(native);
+    dropped++;
+    start = *reinterpret_cast<void**>(deque + 0x10);
+    finish = *reinterpret_cast<void**>(deque + 0x30);
+  }
+  if (dropped > 0) {
+    g_message("present: dropped %d destroyed buffer%s from the swap queue",
+              dropped, dropped == 1 ? "" : "s");
+  }
+
+  void** last_slot = reinterpret_cast<void**>(native + kNativeLastBuffer);
+  if (*last_slot != nullptr && !buffer_still_listed(native, *last_slot)) {
+    *last_slot = nullptr;
+    g_message("present: cleared destroyed last swap buffer");
+  }
+
+  if (start != finish) return;
+  void* stale = *reinterpret_cast<void**>(start);
+  if (stale == nullptr) return;
+  *reinterpret_cast<void**>(start) = nullptr;
+  static int cleared = 0;
+  if (cleared < 4) {
+    cleared++;
+    g_message("present: cleared stale empty swap queue");
+  }
+}
+
+void prepare_known_swap_queues() {
+  for (int i = 0; i < g_egl_window_count; i++) {
+    prepare_swap_queue(g_egl_windows[i]);
+  }
+}
 
 void init_hybris_window_lock() {
   pthread_mutexattr_t attr;
@@ -245,6 +370,7 @@ extern "C" EGLBoolean gastube_gated_egl_swap(EGLDisplay display,
   // That commit is what shows the wallpaper. The swap's own attach has to
   // go through, so mark this call.
   lock_hybris_window();
+  prepare_known_swap_queues();
   g_in_real_swap.fetch_add(1, std::memory_order_acq_rel);
   EGLBoolean ok = g_real_swap(display, surface);
   g_in_real_swap.fetch_sub(1, std::memory_order_acq_rel);
@@ -272,6 +398,7 @@ extern "C" EGLBoolean gastube_gated_egl_swap_damage(EGLDisplay display,
   }
   if (g_real_swap_damage == nullptr) return EGL_FALSE;
   lock_hybris_window();
+  prepare_known_swap_queues();
   g_in_real_swap.fetch_add(1, std::memory_order_acq_rel);
   EGLBoolean ok = g_real_swap_damage(display, surface, rects, n_rects);
   g_in_real_swap.fetch_sub(1, std::memory_order_acq_rel);
@@ -767,7 +894,30 @@ extern "C" EGLBoolean eglSwapBuffers(EGLDisplay display, EGLSurface surface) {
 // still own the previous buffer. The same lock as both swap entry points
 // keeps the cancel from freeing that buffer mid-swap. A resize that arrives
 // on this thread during the swap is applied after the swap returns.
-struct wl_egl_window;
+struct wl_surface;
+extern "C" struct wl_egl_window* wl_egl_window_create(struct wl_surface* surface,
+                                                     int width, int height) {
+  using CreateFn = struct wl_egl_window* (*)(struct wl_surface*, int, int);
+  static CreateFn real = nullptr;
+  if (real == nullptr) {
+    real = reinterpret_cast<CreateFn>(dlsym(RTLD_NEXT, "wl_egl_window_create"));
+  }
+  if (real == nullptr) return nullptr;
+  struct wl_egl_window* window = real(surface, width, height);
+  remember_egl_window(window);
+  return window;
+}
+
+extern "C" void wl_egl_window_destroy(struct wl_egl_window* window) {
+  using DestroyFn = void (*)(struct wl_egl_window*);
+  static DestroyFn real = nullptr;
+  if (real == nullptr) {
+    real = reinterpret_cast<DestroyFn>(dlsym(RTLD_NEXT, "wl_egl_window_destroy"));
+  }
+  forget_egl_window(window);
+  if (real != nullptr) real(window);
+}
+
 extern "C" void wl_egl_window_resize(struct wl_egl_window* window, int width,
                                     int height, int dx, int dy) {
   if (g_real_wl_resize == nullptr) {
@@ -775,6 +925,7 @@ extern "C" void wl_egl_window_resize(struct wl_egl_window* window, int width,
         reinterpret_cast<WlEglResizeFn>(dlsym(RTLD_NEXT, "wl_egl_window_resize"));
   }
   if (g_real_wl_resize == nullptr) return;
+  remember_egl_window(window);
   lock_hybris_window();
   if (g_hybris_depth > 1 || g_applying_resize) {
     g_resize_pending = true;
