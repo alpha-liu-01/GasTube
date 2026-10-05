@@ -5,6 +5,8 @@ import 'package:fluxtube/application/application.dart';
 import 'package:fluxtube/core/colors.dart';
 import 'package:fluxtube/core/constants.dart';
 import 'package:fluxtube/core/enums.dart';
+import 'package:fluxtube/core/youtube_media_id.dart';
+import 'package:fluxtube/domain/playlist/models/newpipe/newpipe_playlist_resp.dart';
 import 'package:fluxtube/domain/watch/models/basic_info.dart';
 import 'package:fluxtube/generated/l10n.dart';
 import 'package:fluxtube/widgets/widgets.dart';
@@ -56,6 +58,15 @@ class ScreenPlaylist extends StatelessWidget {
           );
         }
 
+        if (state.newpipePlaylistResp != null) {
+          return _NewPipePlaylistView(
+            playlistId: playlistId,
+            playlist: state.newpipePlaylistResp!,
+            moreFetchStatus: state.moreFetchStatus,
+            isMoreFetchCompleted: state.isMoreFetchCompleted,
+          );
+        }
+
         // Invidious playlist
         if (state.invidiousPlaylistResp != null) {
           return _buildInvidiousPlaylist(context, state, locals, settingsBloc);
@@ -102,7 +113,7 @@ class ScreenPlaylist extends StatelessWidget {
       body: CustomScrollView(
         controller: scrollController,
         slivers: [
-          _buildSliverAppBar(
+          ScreenPlaylist._buildSliverAppBar(
             context,
             title: playlist.name ?? 'Playlist',
             thumbnailUrl: playlist.thumbnailUrl,
@@ -119,7 +130,7 @@ class ScreenPlaylist extends StatelessWidget {
                   final videoId = video.url?.split('=').last ?? '';
                   final channelId = video.uploaderUrl?.split('/').last ?? '';
 
-                  return _buildVideoItem(
+                  return ScreenPlaylist._buildVideoItem(
                     context: context,
                     index: index,
                     videoId: videoId,
@@ -161,7 +172,7 @@ class ScreenPlaylist extends StatelessWidget {
     return Scaffold(
       body: CustomScrollView(
         slivers: [
-          _buildSliverAppBar(
+          ScreenPlaylist._buildSliverAppBar(
             context,
             title: playlist.title ?? 'Playlist',
             thumbnailUrl: playlist.playlistThumbnail,
@@ -186,7 +197,7 @@ class ScreenPlaylist extends StatelessWidget {
                     }
                   }
 
-                  return _buildVideoItem(
+                  return ScreenPlaylist._buildVideoItem(
                     context: context,
                     index: index,
                     videoId: videoId,
@@ -211,7 +222,7 @@ class ScreenPlaylist extends StatelessWidget {
     );
   }
 
-  Widget _buildSliverAppBar(
+  static Widget _buildSliverAppBar(
     BuildContext context, {
     required String title,
     required String? thumbnailUrl,
@@ -331,7 +342,7 @@ class ScreenPlaylist extends StatelessWidget {
     );
   }
 
-  Widget _buildVideoItem({
+  static Widget _buildVideoItem({
     required BuildContext context,
     required int index,
     required String videoId,
@@ -488,7 +499,7 @@ class ScreenPlaylist extends StatelessWidget {
     );
   }
 
-  String _formatDuration(int seconds) {
+  static String _formatDuration(int seconds) {
     final hours = seconds ~/ 3600;
     final minutes = (seconds % 3600) ~/ 60;
     final secs = seconds % 60;
@@ -499,11 +510,136 @@ class ScreenPlaylist extends StatelessWidget {
     return '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
   }
 
-  String _formatCount(int? count) {
+  static String _formatCount(int? count) {
     if (count == null) return '0';
     if (count >= 1000) {
       return NumberFormat.compact().format(count);
     }
     return count.toString();
+  }
+}
+
+class _NewPipePlaylistView extends StatefulWidget {
+  const _NewPipePlaylistView({
+    required this.playlistId,
+    required this.playlist,
+    required this.moreFetchStatus,
+    required this.isMoreFetchCompleted,
+  });
+
+  final String playlistId;
+  final NewPipePlaylistResp playlist;
+  final ApiStatus moreFetchStatus;
+  final bool isMoreFetchCompleted;
+
+  @override
+  State<_NewPipePlaylistView> createState() => _NewPipePlaylistViewState();
+}
+
+class _NewPipePlaylistViewState extends State<_NewPipePlaylistView> {
+  final ScrollController _scrollController = ScrollController();
+  String? _requestedPage;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_maybeLoadMore);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeLoadMore());
+  }
+
+  @override
+  void didUpdateWidget(_NewPipePlaylistView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.playlist.nextPage != oldWidget.playlist.nextPage) {
+      _requestedPage = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _maybeLoadMore());
+    } else if (widget.moreFetchStatus == ApiStatus.error) {
+      _requestedPage = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_maybeLoadMore);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _maybeLoadMore() {
+    if (!mounted || !_scrollController.hasClients) return;
+    if (widget.isMoreFetchCompleted) return;
+    if (widget.moreFetchStatus == ApiStatus.loading) return;
+    final nextPage = widget.playlist.nextPage;
+    if (nextPage == null || nextPage.isEmpty) return;
+    if (_requestedPage == nextPage) return;
+    final position = _scrollController.position;
+    if (position.maxScrollExtent > 0 &&
+        position.pixels < position.maxScrollExtent - 240) {
+      return;
+    }
+    _requestedPage = nextPage;
+    context.read<PlaylistBloc>().add(
+          PlaylistEvent.getMorePlaylistVideos(
+            playlistId: widget.playlistId,
+            nextPage: nextPage,
+          ),
+        );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final playlist = widget.playlist;
+    final videos = playlist.videos ?? [];
+
+    return Scaffold(
+      body: CustomScrollView(
+        controller: _scrollController,
+        slivers: [
+          ScreenPlaylist._buildSliverAppBar(
+            context,
+            title: playlist.name ?? 'Playlist',
+            thumbnailUrl: playlist.thumbnailUrl,
+            bannerUrl: null,
+            videoCount: playlist.streamCount,
+            uploaderName: playlist.uploaderName,
+            uploaderAvatar: playlist.uploaderAvatarUrl,
+          ),
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                if (index < videos.length) {
+                  final video = videos[index];
+                  final videoId = youtubeVideoId(video.url);
+                  if (videoId == null) return const SizedBox.shrink();
+                  return ScreenPlaylist._buildVideoItem(
+                    context: context,
+                    index: index,
+                    videoId: videoId,
+                    channelId: youtubeChannelId(video.uploaderUrl) ?? 'channel',
+                    title: video.name,
+                    thumbnail: video.thumbnailUrl,
+                    uploaderName: video.uploaderName,
+                    uploaderAvatar: video.uploaderAvatarUrl,
+                    duration: video.duration,
+                    views: video.viewCount,
+                    uploadedDate: video.uploadDate,
+                    uploaderVerified: video.uploaderVerified,
+                  );
+                }
+                if (!widget.isMoreFetchCompleted) {
+                  return Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Center(child: cIndicator(context)),
+                  );
+                }
+                return null;
+              },
+              childCount:
+                  videos.length + (widget.isMoreFetchCompleted ? 0 : 1),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

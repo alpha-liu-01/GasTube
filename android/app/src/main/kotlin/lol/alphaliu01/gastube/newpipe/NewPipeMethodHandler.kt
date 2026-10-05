@@ -64,6 +64,7 @@ class NewPipeMethodHandler : MethodChannel.MethodCallHandler {
             "getMoreComments" -> handleGetMoreComments(call, result)
             "getCommentReplies" -> handleGetCommentReplies(call, result)
             "getPlaylist" -> handleGetPlaylist(call, result)
+            "getMorePlaylist" -> handleGetMorePlaylist(call, result)
             "getRelatedStreams" -> handleGetRelatedStreams(call, result)
             else -> result.notImplemented()
         }
@@ -627,12 +628,48 @@ class NewPipeMethodHandler : MethodChannel.MethodCallHandler {
                     "uploaderAvatarUrl" to bestUploaderAvatar,
                     "streamCount" to playlistInfo.streamCount,
                     "videos" to playlistInfo.relatedItems.map { mapInfoItem(it) },
-                    "nextPage" to playlistInfo.nextPage?.url
+                    "nextPage" to serializePage(playlistInfo.nextPage)
                 )
 
                 sendSuccess(result, gson.toJson(response))
             } catch (e: Exception) {
                 sendError(result, "EXTRACTION_ERROR", e.message ?: "Failed to get playlist", null)
+            }
+        }
+    }
+
+    /**
+     * Next page of a playlist. [nextPage] is the serialized Page from getPlaylist.
+     */
+    private fun handleGetMorePlaylist(call: MethodCall, result: MethodChannel.Result) {
+        val playlistId = call.argument<String>("id") ?: run {
+            result.error("INVALID_ARGUMENT", "Playlist ID is required", null)
+            return
+        }
+        val nextPageJson = call.argument<String>("nextPage") ?: run {
+            result.error("INVALID_ARGUMENT", "Next page is required", null)
+            return
+        }
+
+        scope.launch {
+            try {
+                val url = if (playlistId.startsWith("http")) {
+                    playlistId
+                } else {
+                    "https://www.youtube.com/playlist?list=$playlistId"
+                }
+                val more = PlaylistInfo.getMoreItems(
+                    ServiceList.YouTube,
+                    url,
+                    deserializePage(nextPageJson),
+                )
+                val response = mapOf(
+                    "videos" to more.items.map { mapInfoItem(it) },
+                    "nextPage" to serializePage(more.nextPage),
+                )
+                sendSuccess(result, gson.toJson(response))
+            } catch (e: Exception) {
+                sendError(result, "EXTRACTION_ERROR", e.message ?: "Failed to get more playlist videos", null)
             }
         }
     }

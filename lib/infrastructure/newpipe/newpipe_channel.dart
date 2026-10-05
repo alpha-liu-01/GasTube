@@ -6,6 +6,7 @@ import 'package:fluxtube/domain/channel/models/newpipe/newpipe_channel_resp.dart
 import 'package:fluxtube/infrastructure/newpipe/newpipe_sidecar.dart';
 import 'package:fluxtube/domain/search/models/newpipe/newpipe_search_resp.dart';
 import 'package:fluxtube/domain/trending/models/newpipe/newpipe_trending_resp.dart';
+import 'package:fluxtube/domain/playlist/models/newpipe/newpipe_playlist_resp.dart';
 import 'package:fluxtube/domain/watch/models/newpipe/newpipe_comments_resp.dart';
 import 'package:fluxtube/domain/watch/models/newpipe/newpipe_watch_resp.dart';
 
@@ -227,6 +228,34 @@ class NewPipeChannel {
       return NewPipeCommentsResp.fromJson(json);
     } on PlatformException catch (e) {
       throw Exception('Failed to get comment replies: ${e.message}');
+    }
+  }
+
+  /// Playlist details. [playlistId] may be a bare id or a playlist URL.
+  static Future<NewPipePlaylistResp> getPlaylist(String playlistId) async {
+    try {
+      final result = await _invoke('getPlaylist', {'id': playlistId});
+      final json = jsonDecode(result) as Map<String, dynamic>;
+      return NewPipePlaylistResp.fromJson(json);
+    } on PlatformException catch (e) {
+      throw Exception('Failed to get playlist: ${e.message}');
+    }
+  }
+
+  /// Next page of a playlist. [nextPage] is the serialized page from [getPlaylist].
+  static Future<NewPipePlaylistResp> getMorePlaylist({
+    required String playlistId,
+    required String nextPage,
+  }) async {
+    try {
+      final result = await _invoke('getMorePlaylist', {
+        'id': playlistId,
+        'nextPage': nextPage,
+      });
+      final json = jsonDecode(result) as Map<String, dynamic>;
+      return NewPipePlaylistResp.fromJson(json);
+    } on PlatformException catch (e) {
+      throw Exception('Failed to get more playlist videos: ${e.message}');
     }
   }
 

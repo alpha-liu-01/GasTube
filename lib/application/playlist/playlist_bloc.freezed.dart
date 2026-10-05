@@ -439,6 +439,8 @@ mixin _$PlaylistState {
   PlaylistResp? get pipedPlaylistResp => throw _privateConstructorUsedError;
   InvidiousPlaylistResp? get invidiousPlaylistResp =>
       throw _privateConstructorUsedError;
+  NewPipePlaylistResp? get newpipePlaylistResp =>
+      throw _privateConstructorUsedError;
 
   /// Create a copy of PlaylistState
   /// with the given fields replaced by the non-null parameter values.
@@ -458,7 +460,8 @@ abstract class $PlaylistStateCopyWith<$Res> {
       ApiStatus moreFetchStatus,
       bool isMoreFetchCompleted,
       PlaylistResp? pipedPlaylistResp,
-      InvidiousPlaylistResp? invidiousPlaylistResp});
+      InvidiousPlaylistResp? invidiousPlaylistResp,
+      NewPipePlaylistResp? newpipePlaylistResp});
 }
 
 /// @nodoc
@@ -481,6 +484,7 @@ class _$PlaylistStateCopyWithImpl<$Res, $Val extends PlaylistState>
     Object? isMoreFetchCompleted = null,
     Object? pipedPlaylistResp = freezed,
     Object? invidiousPlaylistResp = freezed,
+    Object? newpipePlaylistResp = freezed,
   }) {
     return _then(_value.copyWith(
       fetchStatus: null == fetchStatus
@@ -503,6 +507,10 @@ class _$PlaylistStateCopyWithImpl<$Res, $Val extends PlaylistState>
           ? _value.invidiousPlaylistResp
           : invidiousPlaylistResp // ignore: cast_nullable_to_non_nullable
               as InvidiousPlaylistResp?,
+      newpipePlaylistResp: freezed == newpipePlaylistResp
+          ? _value.newpipePlaylistResp
+          : newpipePlaylistResp // ignore: cast_nullable_to_non_nullable
+              as NewPipePlaylistResp?,
     ) as $Val);
   }
 }
@@ -520,7 +528,8 @@ abstract class _$$PlaylistStateImplCopyWith<$Res>
       ApiStatus moreFetchStatus,
       bool isMoreFetchCompleted,
       PlaylistResp? pipedPlaylistResp,
-      InvidiousPlaylistResp? invidiousPlaylistResp});
+      InvidiousPlaylistResp? invidiousPlaylistResp,
+      NewPipePlaylistResp? newpipePlaylistResp});
 }
 
 /// @nodoc
@@ -541,6 +550,7 @@ class __$$PlaylistStateImplCopyWithImpl<$Res>
     Object? isMoreFetchCompleted = null,
     Object? pipedPlaylistResp = freezed,
     Object? invidiousPlaylistResp = freezed,
+    Object? newpipePlaylistResp = freezed,
   }) {
     return _then(_$PlaylistStateImpl(
       fetchStatus: null == fetchStatus
@@ -563,6 +573,10 @@ class __$$PlaylistStateImplCopyWithImpl<$Res>
           ? _value.invidiousPlaylistResp
           : invidiousPlaylistResp // ignore: cast_nullable_to_non_nullable
               as InvidiousPlaylistResp?,
+      newpipePlaylistResp: freezed == newpipePlaylistResp
+          ? _value.newpipePlaylistResp
+          : newpipePlaylistResp // ignore: cast_nullable_to_non_nullable
+              as NewPipePlaylistResp?,
     ));
   }
 }
@@ -575,7 +589,8 @@ class _$PlaylistStateImpl implements _PlaylistState {
       required this.moreFetchStatus,
       required this.isMoreFetchCompleted,
       this.pipedPlaylistResp,
-      this.invidiousPlaylistResp});
+      this.invidiousPlaylistResp,
+      this.newpipePlaylistResp});
 
   @override
   final ApiStatus fetchStatus;
@@ -587,10 +602,12 @@ class _$PlaylistStateImpl implements _PlaylistState {
   final PlaylistResp? pipedPlaylistResp;
   @override
   final InvidiousPlaylistResp? invidiousPlaylistResp;
+  @override
+  final NewPipePlaylistResp? newpipePlaylistResp;
 
   @override
   String toString() {
-    return 'PlaylistState(fetchStatus: $fetchStatus, moreFetchStatus: $moreFetchStatus, isMoreFetchCompleted: $isMoreFetchCompleted, pipedPlaylistResp: $pipedPlaylistResp, invidiousPlaylistResp: $invidiousPlaylistResp)';
+    return 'PlaylistState(fetchStatus: $fetchStatus, moreFetchStatus: $moreFetchStatus, isMoreFetchCompleted: $isMoreFetchCompleted, pipedPlaylistResp: $pipedPlaylistResp, invidiousPlaylistResp: $invidiousPlaylistResp, newpipePlaylistResp: $newpipePlaylistResp)';
   }
 
   @override
@@ -607,12 +624,20 @@ class _$PlaylistStateImpl implements _PlaylistState {
             (identical(other.pipedPlaylistResp, pipedPlaylistResp) ||
                 other.pipedPlaylistResp == pipedPlaylistResp) &&
             (identical(other.invidiousPlaylistResp, invidiousPlaylistResp) ||
-                other.invidiousPlaylistResp == invidiousPlaylistResp));
+                other.invidiousPlaylistResp == invidiousPlaylistResp) &&
+            (identical(other.newpipePlaylistResp, newpipePlaylistResp) ||
+                other.newpipePlaylistResp == newpipePlaylistResp));
   }
 
   @override
-  int get hashCode => Object.hash(runtimeType, fetchStatus, moreFetchStatus,
-      isMoreFetchCompleted, pipedPlaylistResp, invidiousPlaylistResp);
+  int get hashCode => Object.hash(
+      runtimeType,
+      fetchStatus,
+      moreFetchStatus,
+      isMoreFetchCompleted,
+      pipedPlaylistResp,
+      invidiousPlaylistResp,
+      newpipePlaylistResp);
 
   /// Create a copy of PlaylistState
   /// with the given fields replaced by the non-null parameter values.
@@ -629,7 +654,8 @@ abstract class _PlaylistState implements PlaylistState {
           required final ApiStatus moreFetchStatus,
           required final bool isMoreFetchCompleted,
           final PlaylistResp? pipedPlaylistResp,
-          final InvidiousPlaylistResp? invidiousPlaylistResp}) =
+          final InvidiousPlaylistResp? invidiousPlaylistResp,
+          final NewPipePlaylistResp? newpipePlaylistResp}) =
       _$PlaylistStateImpl;
 
   @override
@@ -642,6 +668,8 @@ abstract class _PlaylistState implements PlaylistState {
   PlaylistResp? get pipedPlaylistResp;
   @override
   InvidiousPlaylistResp? get invidiousPlaylistResp;
+  @override
+  NewPipePlaylistResp? get newpipePlaylistResp;
 
   /// Create a copy of PlaylistState
   /// with the given fields replaced by the non-null parameter values.
