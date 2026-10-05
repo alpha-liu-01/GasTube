@@ -33,7 +33,7 @@ String _libcVersion() {
   final units = <int>[];
   var index = 0;
   while (true) {
-    final unit = pointer.elementAt(index).value;
+    final unit = (pointer + index).value;
     if (unit == 0) {
       break;
     }
