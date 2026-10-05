@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build newpipe-spike.jar and unpack a headless Temurin 17 JRE into DEST.
+# Build newpipe-spike.jar and link a small JDK 17 runtime into DEST.
 # DEST is the directory that contains gastube or gastube.exe.
 # The JRE is Eclipse Temurin, GPL-2.0 with the Classpath Exception.
 set -euo pipefail
@@ -118,52 +118,56 @@ case "${dest}" in
 esac
 echo "Packaging Java runtime into ${dest} as ${arch}"
 
+# CI installs a JDK 17 that matches the runner, and that JDK contains jmods.
+# Download a JDK only when this machine cannot link the runtime itself.
 # Temurin has no Windows ARM64 JDK 17. Microsoft Build of OpenJDK 17 does,
 # and it is also GPL-2.0 with the Classpath Exception.
-if [[ "${os_name}" == windows && "${arch}" == aarch64 ]]; then
-  url="https://aka.ms/download-jdk/microsoft-jdk-17-windows-aarch64.zip"
-  runtime_name="Microsoft OpenJDK 17"
-else
-  url="https://api.adoptium.net/v3/binary/latest/17/ga/${os_name}/${arch}/jre/hotspot/normal/eclipse?project=jdk"
-  runtime_name="Temurin 17 JRE"
-fi
-workdir="$(mktemp -d)"
-trap 'rm -rf "${workdir}"' EXIT
-
-echo "Downloading ${runtime_name} for ${os_name}/${arch}"
-curl -fL --retry 3 -o "${workdir}/jre.archive" -D "${workdir}/headers" "${url}"
-filename="$(sed -n 's/.*[Ff]ilename=\([^;]*\).*/\1/p' "${workdir}/headers" | tr -d '\r" ' | tail -n 1)"
-case "${filename}" in
-  *.zip) kind=zip ;;
-  *.tar.gz | *.tgz) kind=tar ;;
-  *)
-    if file "${workdir}/jre.archive" | grep -q 'Zip archive'; then
-      kind=zip
-    else
-      kind=tar
-    fi
-    ;;
-esac
-
-mkdir -p "${workdir}/extract"
-if [[ "${kind}" == zip ]]; then
-  if command -v unzip >/dev/null 2>&1; then
-    unzip -q "${workdir}/jre.archive" -d "${workdir}/extract"
+link_from="${JAVA_HOME}"
+if [[ ! -d "${link_from}/jmods" ]]; then
+  if [[ "${os_name}" == windows && "${arch}" == aarch64 ]]; then
+    url="https://aka.ms/download-jdk/microsoft-jdk-17-windows-aarch64.zip"
+    runtime_name="Microsoft OpenJDK 17"
   else
-    tar -xf "${workdir}/jre.archive" -C "${workdir}/extract"
+    url="https://api.adoptium.net/v3/binary/latest/17/ga/${os_name}/${arch}/jdk/hotspot/normal/eclipse?project=jdk"
+    runtime_name="Temurin 17 JDK"
   fi
-else
-  tar -xzf "${workdir}/jre.archive" -C "${workdir}/extract"
+  workdir="$(mktemp -d)"
+  trap 'rm -rf "${workdir}"' EXIT
+
+  echo "Downloading ${runtime_name} for ${os_name}/${arch}"
+  curl -fL --retry 3 -o "${workdir}/jdk.archive" -D "${workdir}/headers" "${url}"
+  filename="$(sed -n 's/.*[Ff]ilename=\([^;]*\).*/\1/p' "${workdir}/headers" | tr -d '\r" ' | tail -n 1)"
+  case "${filename}" in
+    *.zip) kind=zip ;;
+    *.tar.gz | *.tgz) kind=tar ;;
+    *)
+      if file "${workdir}/jdk.archive" | grep -q 'Zip archive'; then
+        kind=zip
+      else
+        kind=tar
+      fi
+      ;;
+  esac
+
+  mkdir -p "${workdir}/extract"
+  if [[ "${kind}" == zip ]]; then
+    if command -v unzip >/dev/null 2>&1; then
+      unzip -q "${workdir}/jdk.archive" -d "${workdir}/extract"
+    else
+      tar -xf "${workdir}/jdk.archive" -C "${workdir}/extract"
+    fi
+  else
+    tar -xzf "${workdir}/jdk.archive" -C "${workdir}/extract"
+  fi
+
+  link_from="$(find "${workdir}/extract" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+  if [[ -z "${link_from}" || ! -d "${link_from}/jmods" ]]; then
+    echo "JDK archive did not contain jmods." >&2
+    exit 1
+  fi
 fi
 
-top="$(find "${workdir}/extract" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
-if [[ -z "${top}" ]]; then
-  echo "Runtime archive did not contain a runtime directory." >&2
-  exit 1
-fi
-
-rm -rf "${dest}/jre"
-mv "${top}" "${dest}/jre"
+bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/link-runtime.sh" "${link_from}" "${dest}/jre"
 
 java_bin="${dest}/jre/bin/java"
 if [[ -f "${dest}/jre/bin/java.exe" ]]; then

@@ -105,19 +105,23 @@ jar_src=/src/packaging/newpipe-spike/build/libs/newpipe-spike.jar
 bundle_dir=$(dirname "$bundle")
 cp "$jar_src" "${bundle_dir}/newpipe-spike.jar"
 
-jre_work=$(mktemp -d)
-jre_url="https://api.adoptium.net/v3/binary/latest/17/ga/linux/aarch64/jre/hotspot/normal/eclipse?project=jdk"
-curl -fL --retry 3 -o "${jre_work}/jre.tgz" "${jre_url}"
-mkdir -p "${jre_work}/extract"
-tar -xzf "${jre_work}/jre.tgz" -C "${jre_work}/extract"
-jre_top=$(find "${jre_work}/extract" -mindepth 1 -maxdepth 1 -type d | head -n 1)
-if [[ -z "${jre_top}" || ! -x "${jre_top}/bin/java" ]]; then
-  echo "Temurin archive did not contain bin/java" >&2
-  exit 1
+if [[ -d "${JAVA_HOME}/jmods" ]]; then
+  bash /src/packaging/java/link-runtime.sh "${JAVA_HOME}" "${bundle_dir}/jre"
+else
+  echo "JDK 17 at ${JAVA_HOME} has no jmods; downloading a JDK to link the runtime" >&2
+  jre_work=$(mktemp -d)
+  jre_url="https://api.adoptium.net/v3/binary/latest/17/ga/linux/aarch64/jdk/hotspot/normal/eclipse?project=jdk"
+  curl -fL --retry 3 -o "${jre_work}/jdk.tgz" "${jre_url}"
+  mkdir -p "${jre_work}/extract"
+  tar -xzf "${jre_work}/jdk.tgz" -C "${jre_work}/extract"
+  jre_top=$(find "${jre_work}/extract" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+  if [[ -z "${jre_top}" || ! -d "${jre_top}/jmods" ]]; then
+    echo "Temurin JDK archive did not contain jmods" >&2
+    exit 1
+  fi
+  bash /src/packaging/java/link-runtime.sh "${jre_top}" "${bundle_dir}/jre"
+  rm -rf "${jre_work}"
 fi
-rm -rf "${bundle_dir}/jre"
-mv "${jre_top}" "${bundle_dir}/jre"
-rm -rf "${jre_work}"
 python3 - "${bundle_dir}/jre/bin/java" <<'PY'
 import re, subprocess, sys
 path = sys.argv[1]
