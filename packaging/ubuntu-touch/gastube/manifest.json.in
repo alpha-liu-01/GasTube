@@ -3,7 +3,7 @@
     "description": "GasTube for Ubuntu Touch",
     "architecture": "@CLICK_ARCH@",
     "title": "GasTube",
-    "version": "0.9.4.1",
+    "version": "0.9.4.2",
     "framework": "@CLICK_FRAMEWORK@",
     "maintainer": "alpha-liu-01 <alpha-liu-01@users.noreply.github.com>",
     "hooks": {

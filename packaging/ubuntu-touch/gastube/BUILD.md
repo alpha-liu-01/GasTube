@@ -20,7 +20,7 @@ cd packaging/ubuntu-touch/gastube
 clickable build --skip-review --arch arm64 --non-interactive --no-nvidia
 ```
 
-`container-build.sh` refuses to run when the host is not arm64. The release engine library checked into `packaging/ubuntu-touch/engine-partial/libflutter_linux_gtk.so` is required. FFmpeg, libmpv, the jar, and the jlink runtime are built in the container. The playback stamp is `ffmpeg-6.1.1-vp9-hybris libass-0.17.3 mpv-0.35.1`.
+`container-build.sh` refuses to run when the host is not arm64. The release engine library checked into `packaging/ubuntu-touch/engine-partial/libflutter_linux_gtk.so` is required. FFmpeg, libmpv, the jar, and the jlink runtime are built in the container. The playback stamp is `ffmpeg-6.1.1-hybris-flush libass-0.17.3 mpv-0.35.1`.
 
 ## Release on the maintainer machine
 
@@ -30,7 +30,7 @@ From the repository root:
 bash packaging/ubuntu-touch/gastube/remote-build.sh
 ```
 
-The script syncs the tree to `alpha@10.0.0.118`, runs `build-arm64.sh` in the `gastube-flutter-focal-ut:20.04` container, pulls `dist/bundle` back, and runs `check-bundle.sh`. The playback stamp is `ffmpeg-6.1.1-vp9-hybris libass-0.17.3 mpv-0.35.1`. FFmpeg and libmpv are left in place when that stamp is unchanged. The container requires `packaging/ubuntu-touch/engine-partial/libflutter_linux_gtk.so` to already exist.
+The script syncs the tree to `alpha@10.0.0.118`, runs `build-arm64.sh` in the `gastube-flutter-focal-ut:20.04` container, pulls `dist/bundle` back, and runs `check-bundle.sh`. The playback stamp is `ffmpeg-6.1.1-hybris-flush libass-0.17.3 mpv-0.35.1`. FFmpeg and libmpv are left in place when that stamp is unchanged. The container requires `packaging/ubuntu-touch/engine-partial/libflutter_linux_gtk.so` to already exist.
 
 Then:
 
