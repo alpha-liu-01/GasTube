@@ -6,6 +6,7 @@ import 'dart:math' as math;
 import 'package:dartz/dartz.dart';
 import 'package:dio/dio.dart';
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:fluxtube/domain/core/failure/main_failure.dart';
 import 'package:fluxtube/domain/download/download_service.dart';

@@ -78,8 +78,12 @@ if [[ -z "${family}" ]]; then
   exit 1
 fi
 
+jdk_has_jmods() {
+  [[ -n "$1" && -d "$1/jmods" && -x "$1/bin/jlink" ]]
+}
+
 install_temurin_17() {
-  local arch archive dest
+  local arch archive dest candidate
   case "$(uname -m)" in
     x86_64 | amd64) arch=x64 ;;
     aarch64 | arm64) arch=aarch64 ;;
@@ -88,9 +92,14 @@ install_temurin_17() {
       return 1
       ;;
   esac
-  if compgen -G "/usr/lib/jvm/temurin-17-*" >/dev/null || compgen -G "/usr/lib/jvm/java-17-openjdk*" >/dev/null; then
-    return 0
-  fi
+  shopt -s nullglob
+  for candidate in /usr/lib/jvm/temurin-17-* /usr/lib/jvm/java-17-openjdk /usr/lib/jvm/java-17-openjdk-*; do
+    if jdk_has_jmods "${candidate}"; then
+      shopt -u nullglob
+      return 0
+    fi
+  done
+  shopt -u nullglob
   echo "Installing Eclipse Temurin JDK 17"
   archive="$(mktemp)"
   curl -fL --retry 3 -o "${archive}" \
@@ -127,7 +136,7 @@ if [[ "${install_deps}" -eq 1 ]]; then
   install_temurin_17
 else
   missing=0
-  for cmd in clang cmake ninja make gcc curl git unzip; do
+  for cmd in clang cmake ninja make gcc curl git unzip xz; do
     if ! command -v "${cmd}" >/dev/null 2>&1; then
       echo "Missing command: ${cmd}" >&2
       missing=1
@@ -145,23 +154,26 @@ else
     done
   fi
   has_jdk17=0
-  if command -v java >/dev/null 2>&1; then
-    java_line="$(java -version 2>&1 | head -n 1 || true)"
-    if [[ "${java_line}" =~ \"17 ]]; then
-      has_jdk17=1
-    fi
+  if jdk_has_jmods "${JAVA_HOME:-}"; then
+    has_jdk17=1
   fi
   if [[ "${has_jdk17}" -eq 0 ]]; then
     shopt -s nullglob
     for candidate in /usr/lib/jvm/java-17-openjdk-* /usr/lib/jvm/java-17-openjdk /usr/lib/jvm/temurin-17-*; do
-      if [[ -x "${candidate}/bin/java" ]]; then
+      if jdk_has_jmods "${candidate}"; then
         has_jdk17=1
       fi
     done
     shopt -u nullglob
   fi
+  if [[ "${has_jdk17}" -eq 0 && -n "$(command -v java || true)" ]]; then
+    java_home="$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")"
+    if jdk_has_jmods "${java_home}"; then
+      has_jdk17=1
+    fi
+  fi
   if [[ "${has_jdk17}" -eq 0 ]]; then
-    echo "Missing JDK 17" >&2
+    echo "Missing JDK 17 with jmods. A JRE cannot link the bundled runtime." >&2
     missing=1
   fi
   if [[ "${missing}" -eq 1 ]]; then
