@@ -2,13 +2,15 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:dbus/dbus.dart';
+import 'package:fluxtube/core/player/playback_queue.dart';
 import 'package:fluxtube/core/services/media_controls.dart';
 import 'package:fluxtube/core/ubuntu_touch.dart';
 
-/// Session-bus MPRIS player for desktop Linux and Ubuntu Touch.
+/// Session-bus MPRIS player for desktop Linux.
 ///
-/// The sound indicator finds [busName] while this process is alive. After
-/// Lomiri pauses the process, this object cannot answer.
+/// Ubuntu Touch does not request [busName]. Owning it needs an AppArmor
+/// abstraction, which the OpenStore review rejects. The phone's sound
+/// indicator follows the media-hub session instead.
 class MprisPlayer {
   static const busName = 'org.mpris.MediaPlayer2.gastube';
   static const objectPath = '/org/mpris/MediaPlayer2';
@@ -25,12 +27,14 @@ class MprisPlayer {
 
   /// Own the bus name. Safe to call more than once.
   Future<void> claim() {
+    if (UbuntuTouch.enabled) return Future<void>.value();
     return _claiming ??= _claim();
   }
 
   /// Drop the name so the sound indicator stops talking to this process.
   /// The session bus connection stays open for [reclaim].
   Future<void> release() async {
+    if (UbuntuTouch.enabled) return;
     final client = _client;
     if (client == null || !_claimed) return;
     _claimed = false;
@@ -46,6 +50,7 @@ class MprisPlayer {
   ///
   /// Returns false when another process still owns [busName].
   Future<bool> reclaim() async {
+    if (UbuntuTouch.enabled) return true;
     await claim();
     final client = _client;
     if (client == null) return false;
@@ -69,6 +74,8 @@ class MprisPlayer {
           'CanPlay': DBusBoolean(true),
           'CanPause': DBusBoolean(true),
           'CanSeek': DBusBoolean(true),
+          'CanGoNext': DBusBoolean(_canStep(item, next: true)),
+          'CanGoPrevious': DBusBoolean(_canStep(item, next: false)),
         },
       );
       return true;
@@ -80,6 +87,7 @@ class MprisPlayer {
 
   /// Publish the current item. [seeked] tells listeners the position jumped.
   void note(NowPlaying? item, {bool seeked = false}) {
+    if (UbuntuTouch.enabled) return;
     final previous = _item;
     _item = item;
     unawaited(_publish(previous, seeked: seeked));
@@ -129,6 +137,8 @@ class MprisPlayer {
       changed['CanPlay'] = DBusBoolean(item != null);
       changed['CanPause'] = DBusBoolean(item != null);
       changed['CanSeek'] = DBusBoolean(item != null);
+      changed['CanGoNext'] = DBusBoolean(_canStep(item, next: true));
+      changed['CanGoPrevious'] = DBusBoolean(_canStep(item, next: false));
     }
     if (statusChanged || metadataChanged) {
       await object.emitPropertiesChanged(
@@ -143,6 +153,13 @@ class MprisPlayer {
         [DBusInt64(item.position.inMicroseconds)],
       );
     }
+  }
+
+  static bool _canStep(NowPlaying? item, {required bool next}) {
+    final video = next
+        ? PlaybackQueue().nextAfter(item?.id)
+        : PlaybackQueue().previousAfter(item?.id);
+    return video != null && video.id.isNotEmpty && video.id != item?.id;
   }
 
   static String _status(NowPlaying? item) {
@@ -360,8 +377,8 @@ class _MprisObject extends DBusObject {
         'Position': DBusInt64(item?.position.inMicroseconds ?? 0),
         'MinimumRate': const DBusDouble(1),
         'MaximumRate': const DBusDouble(1),
-        'CanGoNext': const DBusBoolean(false),
-        'CanGoPrevious': const DBusBoolean(false),
+        'CanGoNext': DBusBoolean(MprisPlayer._canStep(item, next: true)),
+        'CanGoPrevious': DBusBoolean(MprisPlayer._canStep(item, next: false)),
         'CanPlay': DBusBoolean(controllable),
         'CanPause': DBusBoolean(controllable),
         'CanSeek': DBusBoolean(controllable),
@@ -417,7 +434,11 @@ class _MprisObject extends DBusObject {
           );
         }
       case 'Next':
+        print('gastube: mpris command=Next');
+        await controls.sessionNext();
       case 'Previous':
+        print('gastube: mpris command=Previous');
+        await controls.sessionPrevious();
       case 'OpenUri':
         break;
       default:

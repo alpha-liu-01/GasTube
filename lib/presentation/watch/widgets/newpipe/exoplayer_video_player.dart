@@ -8,7 +8,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluxtube/application/application.dart';
 import 'package:fluxtube/core/fullscreen_aspect.dart';
-import 'package:fluxtube/core/player/global_player_controller.dart';
 import 'package:fluxtube/core/services/media_controls.dart';
 import 'package:fluxtube/core/services/exoplayer_notification_bridge.dart';
 import 'package:fluxtube/core/services/pip_service.dart';
@@ -21,6 +20,7 @@ import 'package:fluxtube/domain/watch/playback/models/stream_quality_info.dart';
 import 'package:fluxtube/core/settings.dart';
 import 'package:fluxtube/domain/watch/playback/newpipe_playback_resolver.dart';
 import 'package:fluxtube/domain/watch/playback/newpipe_stream_helper.dart';
+import 'package:fluxtube/core/player/global_player_controller.dart';
 import 'package:fluxtube/core/player/playback_queue.dart';
 import 'package:fluxtube/infrastructure/newpipe/newpipe_channel.dart';
 import 'package:fluxtube/presentation/watch/widgets/player/player_settings_sheet.dart';
@@ -1054,9 +1054,11 @@ class _NewPipeExoPlayerState extends State<NewPipeExoPlayer> {
               iconSize: 56,
               color: Colors.white,
               onPressed: _togglePlay,
-              icon: Icon(_isPlaying
-                  ? CupertinoIcons.pause_fill
-                  : CupertinoIcons.play_fill),
+              icon: Icon(
+                _isPlaying
+                    ? CupertinoIcons.pause_fill
+                    : CupertinoIcons.play_fill,
+              ),
             ),
             const Spacer(),
             Padding(

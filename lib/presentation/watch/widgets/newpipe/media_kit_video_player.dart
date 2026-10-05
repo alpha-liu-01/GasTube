@@ -5,6 +5,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:fluxtube/application/application.dart';
 import 'package:fluxtube/core/player/global_player_controller.dart';
+import 'package:fluxtube/core/player/playback_queue.dart';
+import 'package:fluxtube/core/services/media_hub_player.dart';
 import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:fluxtube/domain/saved/models/local_store.dart';
 import 'package:fluxtube/domain/sponsorblock/models/sponsor_segment.dart';
@@ -16,6 +18,7 @@ import 'package:fluxtube/core/settings.dart';
 import 'package:fluxtube/domain/watch/playback/newpipe_playback_resolver.dart';
 import 'package:fluxtube/domain/watch/playback/newpipe_stream_helper.dart';
 import 'package:fluxtube/domain/watch/playback/video_codec.dart';
+import 'package:fluxtube/presentation/watch/queue_playback.dart';
 import 'package:fluxtube/presentation/watch/widgets/player/player_controls_overlay.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -77,6 +80,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
   bool _isInitialized = false;
   bool _isInitializing = false; // Guard against concurrent initializations
   bool _isRestoringFromPip = false;
+  Duration? _indicatorStart;
   bool _isChangingQuality = false;
   late BoxFit _currentFitMode;
 
@@ -104,10 +108,13 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
   late final SavedBloc _savedBloc;
   late final WatchBloc _watchBloc;
   late final NewPipePlaybackResolver _resolver;
+  late final void Function(String videoId) _indicatorReturn;
 
   @override
   void initState() {
     super.initState();
+    _indicatorReturn = _openIndicatorVideo;
+    MediaHubPlayer.instance.bindIndicatorReturn(_indicatorReturn);
 
     _savedBloc = BlocProvider.of<SavedBloc>(context);
     _watchBloc = BlocProvider.of<WatchBloc>(context);
@@ -120,6 +127,15 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
         _initializeAsync();
       }
     });
+  }
+
+  void _openIndicatorVideo(String videoId) {
+    if (!mounted) return;
+    for (final video in PlaybackQueue().queue) {
+      if (video.id != videoId) continue;
+      openQueuedVideo(context, video);
+      return;
+    }
   }
 
   /// Async initialization - matches pattern used by other player widgets
@@ -528,9 +544,12 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
       _globalPlayer.setCurrentVideoId(widget.videoId, videoUrl: openedUrl);
 
       // Setup media source
+      _indicatorStart ??=
+          MediaHubPlayer.instance.takeReturnPosition(widget.videoId);
       await _setupMediaSource(
         _currentConfig!,
-        startPosition: Duration(seconds: widget.playbackPosition),
+        startPosition:
+            _indicatorStart ?? Duration(seconds: widget.playbackPosition),
       );
 
       // Check mounted after async operation
@@ -1238,6 +1257,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
 
   @override
   void dispose() {
+    MediaHubPlayer.instance.unbindIndicatorReturn(_indicatorReturn);
     _sponsorBlockSubscription?.cancel();
     _historySubscription?.cancel();
     _tracksSubscription?.cancel();
