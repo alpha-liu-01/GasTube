@@ -2,7 +2,6 @@
     "policy_groups": [
         "networking",
         "audio",
-        "camera",
         "sensors",
         "keep-display-on",
         "content_exchange",
