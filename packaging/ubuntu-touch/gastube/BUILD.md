@@ -6,9 +6,23 @@ A release package contains `lib/libapp.so`, which holds the Dart AOT snapshot (`
 
 A Flutter debug build is JIT. It ships `kernel_blob.bin` and needs a `libflutter_linux_gtk.so` built with `--runtime-mode debug`. The engine in this repository is a release engine. A debug app and this engine cannot be installed together. `clickable build --debug` only changes the outer CMake build. It does not recompile an existing release bundle as debug. On the phone, use the debug page in Settings inside the release package. `debugPrint` output goes to that page.
 
-Build the arm64 Flutter bundle in the Ubuntu 20.04 container on the Mac. Package the Click on this machine. The x64 host does not cross-compile with `flutter build linux --target-platform linux-arm64`.
+The arm64 Flutter bundle is compiled inside an Ubuntu 20.04 container. The host that starts that container is arm64. An x64 machine does not cross-compile it with `flutter build linux --target-platform linux-arm64`.
 
-## Release
+## Release from GitHub Actions
+
+The workflow [Ubuntu Touch Click](../../../.github/workflows/ubuntu-touch-click.yml) is the build that does not use a private machine. Open Actions, choose Ubuntu Touch Click, and run it. The runner is `ubuntu-24.04-arm`. Compilation stays in the Ubuntu 20.04 image `gastube-flutter-focal-ut:20.04`, so the Click remains within glibc 2.31. The finished file is the `gastube-ubuntu-touch-arm64` artifact.
+
+The same two steps, on any arm64 machine with Docker and Clickable:
+
+```bash
+bash packaging/ubuntu-touch/gastube/container-build.sh
+cd packaging/ubuntu-touch/gastube
+clickable build --skip-review --arch arm64 --non-interactive --no-nvidia
+```
+
+`container-build.sh` refuses to run when the host is not arm64. The release engine library checked into `packaging/ubuntu-touch/engine-partial/libflutter_linux_gtk.so` is required. FFmpeg, libmpv, the jar, and the jlink runtime are built in the container. The playback stamp is `ffmpeg-6.1.1-vp9-hybris libass-0.17.3 mpv-0.35.1`.
+
+## Release on the maintainer machine
 
 From the repository root:
 
