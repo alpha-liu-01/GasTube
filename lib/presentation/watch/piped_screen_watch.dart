@@ -236,6 +236,7 @@ class _PipedScreenWatchState extends State<PipedScreenWatch>
       child: BlocBuilder<SettingsBloc, SettingsState>(
         buildWhen: (previous, current) =>
             previous.defaultQuality != current.defaultQuality ||
+            previous.defaultVideoCodec != current.defaultVideoCodec ||
             previous.isHlsPlayer != current.isHlsPlayer ||
             previous.isPipDisabled != current.isPipDisabled ||
             previous.isHideRelated != current.isHideRelated ||
@@ -382,6 +383,8 @@ class _PipedScreenWatchState extends State<PipedScreenWatch>
                                         watchInfo: state.watchResp,
                                         defaultQuality:
                                             settingsState.defaultQuality,
+                                        defaultVideoCodec: settingsState
+                                            .defaultVideoCodec,
                                         // Only use playback position if it's for the current video
                                         playbackPosition:
                                             savedState.videoInfo?.id ==

@@ -1,0 +1,15 @@
+{
+    "policy_groups": [
+        "networking",
+        "audio",
+        "camera",
+        "sensors",
+        "keep-display-on",
+        "content_exchange",
+        "content_exchange_source"
+    ],
+    "abstractions": [
+        "dbus-session"
+    ],
+    "policy_version": "@APPARMOR_POLICY@"
+}

@@ -1,6 +1,10 @@
 # Published to the AUR by KSXGitHub/github-actions-deploy-aur.
 # The release tag is v${pkgver}+${pkgrel}. Its asset name matches
 # packaging/linux/build-release.sh.
+# That x64 archive already contains the app, a jlink JDK 17 runtime, and a
+# small GPL ffmpeg that only remuxes downloads into MP4. Playback uses the
+# distro mpv package, so this package does not depend on jdk or ffmpeg.
+# !strip keeps makepkg away from the bundled runtime.
 pkgname=gastube
 pkgver=0.9.3
 pkgrel=16

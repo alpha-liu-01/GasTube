@@ -18,6 +18,7 @@ class DownloadEvent with _$DownloadEvent {
     required List<NewPipeVideoStream> videoStreams,
     required List<NewPipeVideoStream> videoOnlyStreams,
     required List<NewPipeAudioStream> audioStreams,
+    @Default(defaultVideoCodecH264) String preferredCodec,
   }) = _SetDownloadOptionsFromStreams;
 
   /// Start a new download

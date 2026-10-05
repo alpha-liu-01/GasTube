@@ -31,14 +31,18 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m6(title) => "下载失败：${title}";
 
+  static String m7(name) => "文件管理器已打开，请选择 ${name} 的保存位置。";
+
+  static String m8(name) => "已导出到应用内：${name}";
+
   static String m1(count) =>
       "${Intl.plural(count, one: '回复', other: '${count}条回复')}";
 
-  static String m7(count) => "${count} 分钟";
+  static String m9(count) => "${count} 分钟";
 
-  static String m8(count) => "${count} 分钟";
+  static String m10(count) => "${count} 分钟";
 
-  static String m9(count) => "${count} 个视频";
+  static String m11(count) => "${count} 个视频";
 
   static String m2(count) =>
       "${Intl.plural(count, zero: '无观看', one: '1次观看', other: '${count}次观看')}";
@@ -81,6 +85,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "castUnavailable": MessageLookupByLibrary.simpleMessage("此设备无法投屏"),
     "channelSubscribers": m0,
     "channels": MessageLookupByLibrary.simpleMessage("频道"),
+    "chooseFileInsideApp": MessageLookupByLibrary.simpleMessage("选择应用内的文件"),
     "clearAll": MessageLookupByLibrary.simpleMessage("全部清除"),
     "clearAllHistory": MessageLookupByLibrary.simpleMessage("清除全部历史记录"),
     "clearAllHistoryConfirm": MessageLookupByLibrary.simpleMessage(
@@ -102,6 +107,10 @@ class MessageLookup extends MessageLookupByLibrary {
     "debugConsole": MessageLookupByLibrary.simpleMessage("调试控制台"),
     "defaultProfile": MessageLookupByLibrary.simpleMessage("默认"),
     "defaultQuality": MessageLookupByLibrary.simpleMessage("默认质量"),
+    "defaultVideoCodec": MessageLookupByLibrary.simpleMessage("默认视频编码"),
+    "defaultVideoCodecDescription": MessageLookupByLibrary.simpleMessage(
+      "同一条视频同时有 H.264 和 VP9 时，优先使用哪一种。",
+    ),
     "delete": MessageLookupByLibrary.simpleMessage("删除"),
     "deleteDownload": MessageLookupByLibrary.simpleMessage("删除下载"),
     "deleteDownloadConfirm": MessageLookupByLibrary.simpleMessage("确定要删除此下载吗？"),
@@ -128,7 +137,9 @@ class MessageLookup extends MessageLookupByLibrary {
     "enableHlsPlayerDescription": MessageLookupByLibrary.simpleMessage(
       "启用 HLS 播放器以解锁所有质量选项。如果出现错误，请禁用。",
     ),
+    "exportChooseFolder": m7,
     "exportData": MessageLookupByLibrary.simpleMessage("导出数据"),
+    "exportInsideApp": m8,
     "exportSubscriptions": MessageLookupByLibrary.simpleMessage("导出订阅"),
     "exportSuccess": MessageLookupByLibrary.simpleMessage("导出成功"),
     "failed": MessageLookupByLibrary.simpleMessage("失败"),
@@ -140,6 +151,10 @@ class MessageLookup extends MessageLookupByLibrary {
     "filterPlaylists": MessageLookupByLibrary.simpleMessage("播放列表"),
     "filterVideos": MessageLookupByLibrary.simpleMessage("视频"),
     "france": MessageLookupByLibrary.simpleMessage("法国"),
+    "fullscreenAspectRotate": MessageLookupByLibrary.simpleMessage("全屏按视频方向旋转"),
+    "fullscreenAspectRotateDescription": MessageLookupByLibrary.simpleMessage(
+      "全屏按钮按视频宽高选择横屏或竖屏。退出全屏回到进入前的方向。",
+    ),
     "hideComments": MessageLookupByLibrary.simpleMessage("隐藏评论"),
     "hideCommentsButtonFromWatchScreen": MessageLookupByLibrary.simpleMessage(
       "隐藏视频播放屏幕的评论按钮。",
@@ -193,6 +208,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "noCommentsFound": MessageLookupByLibrary.simpleMessage("未找到评论"),
     "noDownloads": MessageLookupByLibrary.simpleMessage("没有下载"),
     "noDownloadsHint": MessageLookupByLibrary.simpleMessage("下载的视频会显示在这里"),
+    "noFileInsideApp": MessageLookupByLibrary.simpleMessage("应用内还没有可以导入的文件。"),
     "noHistory": MessageLookupByLibrary.simpleMessage("没有观看历史"),
     "noLogs": MessageLookupByLibrary.simpleMessage("还没有日志"),
     "noPlaylists": MessageLookupByLibrary.simpleMessage("没有播放列表"),
@@ -275,6 +291,9 @@ class MessageLookup extends MessageLookupByLibrary {
     "saveToDeviceFailed": MessageLookupByLibrary.simpleMessage("保存到设备失败"),
     "saveToPlaylist": MessageLookupByLibrary.simpleMessage("保存到播放列表"),
     "saved": MessageLookupByLibrary.simpleMessage("已保存"),
+    "savedInsideApp": MessageLookupByLibrary.simpleMessage(
+      "已保存在应用内，文件还没有离开 GasTube。",
+    ),
     "savedToDevice": MessageLookupByLibrary.simpleMessage("已保存到设备"),
     "savedVideosTitle": MessageLookupByLibrary.simpleMessage("已保存的视频"),
     "savingToDevice": MessageLookupByLibrary.simpleMessage("正在保存到设备..."),
@@ -318,8 +337,8 @@ class MessageLookup extends MessageLookupByLibrary {
     "sleepTimerEndOfVideo": MessageLookupByLibrary.simpleMessage("视频结束时"),
     "sleepTimerEnded": MessageLookupByLibrary.simpleMessage("睡眠定时器已结束"),
     "sleepTimerEnterMinutes": MessageLookupByLibrary.simpleMessage("输入分钟数"),
-    "sleepTimerMinutes": m7,
-    "sleepTimerMinutesShort": m8,
+    "sleepTimerMinutes": m9,
+    "sleepTimerMinutesShort": m10,
     "sleepTimerOff": MessageLookupByLibrary.simpleMessage("关闭"),
     "sleepTimerSet": MessageLookupByLibrary.simpleMessage("设置"),
     "sort": MessageLookupByLibrary.simpleMessage("排序"),
@@ -371,7 +390,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "version": MessageLookupByLibrary.simpleMessage("版本"),
     "video": MessageLookupByLibrary.simpleMessage("视频"),
     "videoAudio": MessageLookupByLibrary.simpleMessage("视频+音频"),
-    "videoCountLabel": m9,
+    "videoCountLabel": m11,
     "videoFit": MessageLookupByLibrary.simpleMessage("画面适配"),
     "videoFitContain": MessageLookupByLibrary.simpleMessage("包含"),
     "videoFitCover": MessageLookupByLibrary.simpleMessage("覆盖"),

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=GasTube Hello
+Exec=hello
+Icon=hello.png
+Terminal=false
+Type=Application
+X-Ubuntu-Touch=true

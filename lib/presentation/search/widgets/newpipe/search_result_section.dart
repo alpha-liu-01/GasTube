@@ -7,6 +7,7 @@ import 'package:fluxtube/core/colors.dart';
 import 'package:fluxtube/core/constants.dart';
 import 'package:fluxtube/core/enums.dart';
 import 'package:fluxtube/core/window_layout.dart';
+import 'package:fluxtube/core/youtube_media_id.dart';
 import 'package:fluxtube/domain/search/models/newpipe/newpipe_search_resp.dart';
 import 'package:fluxtube/domain/subscribes/models/subscribe.dart';
 import 'package:fluxtube/domain/watch/models/basic_info.dart';
@@ -236,20 +237,22 @@ class _NewPipeSearchResultSectionState
     }
 
     if (result.type == 'PLAYLIST') {
-      final playlistId = result.url?.split('=').last ?? '';
+      final playlistId = youtubePlaylistId(result.url);
       return PlaylistWidget(
-        key: ValueKey('playlist_$playlistId'),
-        playlistId: playlistId,
+        key: ValueKey('playlist_${result.url}'),
+        playlistId: playlistId ?? '',
         title: result.name,
         thumbnail: result.thumbnailUrl,
         videoCount: result.streamCount,
         uploaderName: result.uploaderName,
         uploaderAvatar: result.uploaderAvatarUrl,
-        onTap: () {
-          context.goNamed('playlist', pathParameters: {
-            'playlistId': playlistId,
-          });
-        },
+        onTap: playlistId == null
+            ? null
+            : () {
+                context.goNamed('playlist', pathParameters: {
+                  'playlistId': playlistId,
+                });
+              },
       );
     }
 

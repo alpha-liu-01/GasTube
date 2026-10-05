@@ -232,6 +232,14 @@
   "@defaultQuality": {
     "description": "Default video quality label"
   },
+  "defaultVideoCodec": "默认视频编码",
+  "@defaultVideoCodec": {
+    "description": "Default video codec label"
+  },
+  "defaultVideoCodecDescription": "同一条视频同时有 H.264 和 VP9 时，优先使用哪一种。",
+  "@defaultVideoCodecDescription": {
+    "description": "Explains the default video codec setting"
+  },
   "retry": "重试",
   "@retry": {
     "description": "Retry label"
@@ -768,5 +776,43 @@
   "sleepTimerEnded": "睡眠定时器已结束",
   "@sleepTimerEnded": {
     "description": "Sleep timer fired"
+  },
+  "savedInsideApp": "已保存在应用内，文件还没有离开 GasTube。",
+  "@savedInsideApp": {
+    "description": "Ubuntu Touch save confirmation while Content Hub is not connected"
+  },
+  "exportInsideApp": "已导出到应用内：{name}",
+  "@exportInsideApp": {
+    "description": "Ubuntu Touch export confirmation while Content Hub is not connected",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chooseFileInsideApp": "选择应用内的文件",
+  "@chooseFileInsideApp": {
+    "description": "Title for picking an export that is already inside the app"
+  },
+  "noFileInsideApp": "应用内还没有可以导入的文件。",
+  "@noFileInsideApp": {
+    "description": "Shown when Ubuntu Touch import has no file in Exports"
+  },
+  "fullscreenAspectRotate": "全屏按视频方向旋转",
+  "@fullscreenAspectRotate": {
+    "description": "Setting for the player fullscreen button to follow video aspect"
+  },
+  "fullscreenAspectRotateDescription": "全屏按钮按视频宽高选择横屏或竖屏。退出全屏回到进入前的方向。",
+  "@fullscreenAspectRotateDescription": {
+    "description": "Explains fullscreen aspect rotation"
+  },
+  "exportChooseFolder": "文件管理器已打开，请选择 {name} 的保存位置。",
+  "@exportChooseFolder": {
+    "description": "Ubuntu Touch export handed to the file manager",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
   }
 }

@@ -8,7 +8,10 @@ import 'package:fluxtube/core/player/global_player_controller.dart';
 import 'package:fluxtube/domain/saved/models/local_store.dart';
 import 'package:fluxtube/domain/sponsorblock/models/sponsor_segment.dart';
 import 'package:fluxtube/domain/watch/models/invidious/video/invidious_watch_resp.dart';
+import 'package:fluxtube/core/settings.dart';
+import 'package:fluxtube/domain/watch/models/invidious/video/format_stream.dart';
 import 'package:fluxtube/domain/watch/playback/models/generic_quality_info.dart';
+import 'package:fluxtube/domain/watch/playback/video_codec.dart';
 import 'package:fluxtube/domain/watch/playback/models/generic_subtitle.dart';
 import 'package:fluxtube/presentation/watch/widgets/player/generic_player_controls_overlay.dart';
 import 'package:media_kit/media_kit.dart';
@@ -22,6 +25,7 @@ class InvidiousMediaKitPlayer extends StatefulWidget {
     required this.videoId,
     required this.playbackPosition,
     this.defaultQuality = "720p",
+    this.defaultVideoCodec = defaultVideoCodecH264,
     this.isSaved = false,
     this.isHlsPlayer = false,
     required this.subtitles,
@@ -35,6 +39,7 @@ class InvidiousMediaKitPlayer extends StatefulWidget {
   final InvidiousWatchResp watchInfo;
   final String videoId;
   final String defaultQuality;
+  final String defaultVideoCodec;
   final int playbackPosition;
   final bool isSaved;
   final bool isHlsPlayer;
@@ -159,6 +164,7 @@ class _InvidiousMediaKitPlayerState extends State<InvidiousMediaKitPlayer> {
               resolution: GenericQualityInfo.parseResolution(v.qualityLabel!),
               fps: v.fps,
               format: v.container,
+              codec: v.encoding,
               url: v.url,
             ))
         .toList();
@@ -202,6 +208,7 @@ class _InvidiousMediaKitPlayerState extends State<InvidiousMediaKitPlayer> {
                 resolution: GenericQualityInfo.parseResolution(v.qualityLabel!),
                 fps: v.fps,
                 format: v.container,
+                codec: v.encoding,
                 url: v.url,
               ))
           .toList();
@@ -260,13 +267,8 @@ class _InvidiousMediaKitPlayerState extends State<InvidiousMediaKitPlayer> {
         isDash = true;
       } else {
         // Find the selected quality stream
-        final selectedStream = formatStreams.firstWhere(
-          (v) => v.qualityLabel == quality,
-          orElse: () => formatStreams.isNotEmpty
-              ? formatStreams.first
-              : formatStreams.first,
-        );
-        videoUrl = selectedStream.url;
+        final selectedStream = _streamForQuality(formatStreams, quality);
+        videoUrl = selectedStream?.url;
 
         // Fallback to DASH if no direct stream available
         if (videoUrl == null && widget.watchInfo.dashUrl != null) {
@@ -348,6 +350,23 @@ class _InvidiousMediaKitPlayerState extends State<InvidiousMediaKitPlayer> {
     }
   }
 
+  FormatStream? _streamForQuality(List<FormatStream> streams, String quality) {
+    final matches = streams.where((v) => v.qualityLabel == quality).toList();
+    final candidates = matches.isNotEmpty ? matches : streams;
+    if (candidates.isEmpty) return null;
+    final sorted = List<FormatStream>.from(candidates);
+    sorted.sort((a, b) {
+      return videoCodecRank(
+        videoCodecFamily(codec: a.encoding, format: a.container),
+        widget.defaultVideoCodec,
+      ).compareTo(videoCodecRank(
+        videoCodecFamily(codec: b.encoding, format: b.container),
+        widget.defaultVideoCodec,
+      ));
+    });
+    return sorted.first;
+  }
+
   /// Wait for buffering to complete after seek
   Future<void> _waitForBufferingComplete(
       {Duration timeout = const Duration(seconds: 5)}) async {
@@ -375,6 +394,7 @@ class _InvidiousMediaKitPlayerState extends State<InvidiousMediaKitPlayer> {
     return GenericQualityInfo.findBestMatchingQuality(
           _availableQualities!,
           targetQuality,
+          preferredCodec: widget.defaultVideoCodec,
         )?.label ??
         targetQuality;
   }

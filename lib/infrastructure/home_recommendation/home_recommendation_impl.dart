@@ -17,6 +17,10 @@ class HomeRecommendationImpl implements HomeRecommendationService {
 
   HomeRecommendationImpl(this.userPreferencesService, this.searchService);
 
+  /// Per profile: queries already extracted, videos not yet shown, and the
+  /// next-page token. Load-more must not run the first page of a query again.
+  final Map<String, _ProfileFeed> _feeds = {};
+
   @override
   Future<Either<MainFailure, List<NewPipeSearchItem>>> getPersonalizedFeed({
     required String profileName,
@@ -24,65 +28,201 @@ class HomeRecommendationImpl implements HomeRecommendationService {
     int resultsPerQuery = 5,
     int queryLimit = 10,
     int page = 1,
+    bool onlyNew = false,
   }) async {
     try {
       final stopwatch = Stopwatch()..start();
+      if (!onlyNew) {
+        _feeds.remove(profileName);
+      }
+      final feed = _feeds.putIfAbsent(profileName, () => _ProfileFeed());
 
-      // Get recommended queries based on user history
-      final queriesResult = await userPreferencesService.getRecommendedQueries(
-        profileName: profileName,
-        limit: queryLimit,
-      );
-
-      final queries = queriesResult.fold(
-        (failure) {
-          log('Failed to get recommended queries, using defaults');
-          return DefaultTopic.defaultTopics
-              .take(queryLimit)
-              .map((t) => t.keyword)
-              .toList();
-        },
-        (queries) => queries.isEmpty
-            ? DefaultTopic.defaultTopics
-                .take(queryLimit)
-                .map((t) => t.keyword)
-                .toList()
-            : queries,
-      );
-
-      log('[Recommendation] Fetching personalized feed with ${queries.length} queries in parallel');
-
-      // OPTIMIZATION: Fetch ALL queries in parallel
-      final searchResults = await Future.wait(
-        queries.map((query) => _searchForQuery(query, serviceType, resultsPerQuery)),
-        eagerError: false,
-      );
-
-      // Combine and deduplicate results
-      final allResults = <NewPipeSearchItem>[];
-      final seenVideoIds = <String>{};
-
-      for (final items in searchResults) {
-        for (final item in items) {
-          final videoId = _extractVideoId(item);
-          if (!seenVideoIds.contains(videoId)) {
-            seenVideoIds.add(videoId);
-            allResults.add(item);
-          }
+      List<List<NewPipeSearchItem>> groups;
+      if (!onlyNew || feed.queries.isEmpty) {
+        final queries = await _recommendedQueries(profileName, queryLimit);
+        final added = await _addQueries(feed, queries, serviceType, queryLimit);
+        groups = _takenGroups(feed, added, resultsPerQuery);
+      } else {
+        final queries = await _recommendedQueries(
+          profileName,
+          feed.queries.length + queryLimit,
+        );
+        final added = await _addQueries(feed, queries, serviceType, queryLimit);
+        groups = _takenGroups(feed, added, resultsPerQuery);
+        if (groups.isEmpty) {
+          groups = await _drawBuffered(
+            feed,
+            serviceType,
+            queryLimit,
+            resultsPerQuery,
+          );
         }
       }
 
+      if (groups.isEmpty) {
+        log('[Recommendation] No further feed items for $profileName');
+        return const Right(<NewPipeSearchItem>[]);
+      }
+
+      final allResults = <NewPipeSearchItem>[];
+      for (final items in groups) {
+        allResults.addAll(items);
+      }
       stopwatch.stop();
       log('[Recommendation] Fetched ${allResults.length} videos in ${stopwatch.elapsedMilliseconds}ms');
-
-      // Smart shuffle: group by source query, then interleave
-      _smartShuffle(allResults, searchResults);
-
+      _smartShuffle(allResults, groups);
       return Right(allResults);
     } catch (e) {
       log('Error in getPersonalizedFeed: $e');
       return const Left(MainFailure.clientFailure());
     }
+  }
+
+  Future<List<String>> _recommendedQueries(String profileName, int limit) async {
+    final queriesResult = await userPreferencesService.getRecommendedQueries(
+      profileName: profileName,
+      limit: limit,
+    );
+    return queriesResult.fold(
+      (failure) {
+        log('Failed to get recommended queries, using defaults');
+        return DefaultTopic.defaultTopics
+            .take(limit)
+            .map((topic) => topic.keyword)
+            .toList();
+      },
+      (queries) => queries.isEmpty
+          ? DefaultTopic.defaultTopics
+              .take(limit)
+              .map((topic) => topic.keyword)
+              .toList()
+          : queries,
+    );
+  }
+
+  Future<List<_FeedQuery>> _addQueries(
+    _ProfileFeed feed,
+    List<String> queries,
+    String serviceType,
+    int queryLimit,
+  ) async {
+    final fresh = <String>[];
+    for (final query in queries) {
+      if (fresh.length >= queryLimit) break;
+      if (feed.keys.contains(query.toLowerCase())) continue;
+      fresh.add(query);
+    }
+    if (fresh.isEmpty) return const [];
+    log('[Recommendation] Fetching ${fresh.length} new queries');
+    final added = await Future.wait(
+      fresh.map((query) => _addQuery(feed, query, serviceType)),
+    );
+    return added.whereType<_FeedQuery>().toList();
+  }
+
+  Future<_FeedQuery?> _addQuery(
+    _ProfileFeed feed,
+    String query,
+    String serviceType,
+  ) async {
+    final key = query.toLowerCase();
+    if (!feed.keys.add(key)) return null;
+    final slot = _FeedQuery(query);
+    feed.queries.add(slot);
+    await _fetchPage(slot, serviceType);
+    return slot;
+  }
+
+  List<List<NewPipeSearchItem>> _takenGroups(
+    _ProfileFeed feed,
+    List<_FeedQuery> queries,
+    int resultsPerQuery,
+  ) {
+    final groups = <List<NewPipeSearchItem>>[];
+    for (final query in queries) {
+      final taken = _take(feed, query, resultsPerQuery);
+      if (taken.isNotEmpty) groups.add(taken);
+    }
+    return groups;
+  }
+
+  /// Serves videos already extracted, then one next page for a few queries.
+  /// Does not repeat a query's first page.
+  Future<List<List<NewPipeSearchItem>>> _drawBuffered(
+    _ProfileFeed feed,
+    String serviceType,
+    int queryLimit,
+    int resultsPerQuery,
+  ) async {
+    final groups = <List<NewPipeSearchItem>>[];
+    if (feed.queries.isEmpty) return groups;
+    final total = feed.queries.length;
+    var index = feed.cursor % total;
+    var visited = 0;
+    var fetches = 0;
+    while (visited < total && groups.length < queryLimit) {
+      final query = feed.queries[index];
+      var taken = _take(feed, query, resultsPerQuery);
+      if (taken.isEmpty && query.nextPage != null && fetches < queryLimit) {
+        await _fetchPage(query, serviceType, nextPage: query.nextPage);
+        fetches++;
+        taken = _take(feed, query, resultsPerQuery);
+      }
+      if (taken.isNotEmpty) groups.add(taken);
+      index = (index + 1) % total;
+      visited++;
+    }
+    feed.cursor = index;
+    return groups;
+  }
+
+  List<NewPipeSearchItem> _take(
+    _ProfileFeed feed,
+    _FeedQuery query,
+    int resultsPerQuery,
+  ) {
+    final taken = <NewPipeSearchItem>[];
+    while (query.pending.isNotEmpty && taken.length < resultsPerQuery) {
+      final item = query.pending.removeAt(0);
+      if (feed.shown.add(_extractVideoId(item))) taken.add(item);
+    }
+    return taken;
+  }
+
+  Future<void> _fetchPage(
+    _FeedQuery query,
+    String serviceType, {
+    String? nextPage,
+  }) async {
+    if (serviceType != YouTubeServices.newpipe.name) {
+      query.nextPage = null;
+      return;
+    }
+    final result = nextPage == null
+        ? await searchService.getNewPipeSearchResult(
+            query: query.text,
+            filter: '',
+          )
+        : await searchService.getMoreNewPipeSearchResult(
+            query: query.text,
+            filter: '',
+            nextPage: nextPage,
+          );
+    result.fold(
+      (failure) {
+        log('Search failed for query: ${query.text}');
+        query.nextPage = null;
+      },
+      (searchResp) {
+        final items = searchResp.items
+                ?.where((item) => item.type == 'STREAM')
+                .toList() ??
+            const <NewPipeSearchItem>[];
+        query.pending.addAll(items);
+        final page = searchResp.nextPage;
+        query.nextPage = (page == null || page.isEmpty) ? null : page;
+      },
+    );
   }
 
   /// Search for a single query - used for parallel execution
@@ -210,4 +350,19 @@ class HomeRecommendationImpl implements HomeRecommendationService {
       return const Left(MainFailure.clientFailure());
     }
   }
+}
+
+class _ProfileFeed {
+  final List<_FeedQuery> queries = [];
+  final Set<String> keys = {};
+  final Set<String> shown = {};
+  int cursor = 0;
+}
+
+class _FeedQuery {
+  _FeedQuery(this.text);
+
+  final String text;
+  final List<NewPipeSearchItem> pending = [];
+  String? nextPage;
 }

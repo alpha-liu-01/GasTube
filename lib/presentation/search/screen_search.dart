@@ -6,6 +6,7 @@ import 'package:fluxtube/application/application.dart';
 import 'package:fluxtube/core/colors.dart';
 import 'package:fluxtube/core/constants.dart';
 import 'package:fluxtube/core/enums.dart';
+import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:fluxtube/domain/search/models/search_history.dart';
 import 'package:fluxtube/generated/l10n.dart';
 import 'package:fluxtube/presentation/search/widgets/newpipe/search_result_section.dart';
@@ -32,6 +33,11 @@ class _ScreenSearchState extends State<ScreenSearch> {
     super.initState();
     _loadSearchHistory();
     _searchFocusNode.addListener(_onFocusChange);
+    if (UbuntuTouch.enabled) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _searchFocusNode.requestFocus();
+      });
+    }
   }
 
   @override

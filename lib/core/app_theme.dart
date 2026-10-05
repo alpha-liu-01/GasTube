@@ -3,6 +3,91 @@ import 'package:flutter/material.dart';
 import 'package:fluxtube/core/colors.dart';
 
 abstract class AppTheme {
+  /// Linux Material sets [TextStyle.fontFamily] to Roboto and a fallback list
+  /// that starts with Ubuntu. Roboto is not shipped in the Click, so Latin is
+  /// drawn by the first fallback the directory font manager can open. The
+  /// arm64 engine is built without fontconfig: a missing glyph is not matched
+  /// to a system font by coverage, and `matchFamily` only succeeds for a
+  /// family name the scan actually stored. Ubuntu stays first so English
+  /// resolves there. Later families are used only for glyphs Ubuntu lacks.
+  /// Droid Sans Fallback is last, and bundled, so a container without the
+  /// system CJK fonts can still draw Chinese. It also contains Latin, so
+  /// putting it ahead of Ubuntu draws English with it.
+  static const List<String> cjkFontFamilyFallback = <String>[
+    'Ubuntu',
+    'Adwaita Sans',
+    'Cantarell',
+    'DejaVu Sans',
+    'Liberation Sans',
+    'Arial',
+    'WenQuanYi Micro Hei',
+    'WenQuanYi Zen Hei',
+    'Noto Sans CJK SC',
+    'Noto Sans CJK TC',
+    'Noto Sans CJK HK',
+    'Noto Sans CJK JP',
+    'Noto Sans CJK KR',
+    'Source Han Sans SC',
+    'Source Han Sans TC',
+    'Noto Sans SC',
+    'Noto Sans TC',
+    'Droid Sans Fallback',
+  ];
+
+  static TextStyle _withCjk(TextStyle style) =>
+      style.copyWith(fontFamilyFallback: cjkFontFamilyFallback);
+
+  /// Linux Material styles already set [TextStyle.fontFamilyFallback] to
+  /// Ubuntu, DejaVu Sans, and Arial. [TextStyle.merge] keeps that list
+  /// because it is non-null, so a theme-level fallback never reaches them.
+  /// Styles we replace with a [TextStyle] that leaves the fallback null
+  /// (bodyLarge and the italic bodySmall) keep the CJK list. That is why
+  /// only those two showed Chinese.
+  static TextTheme _cjkTheme(TextTheme theme) {
+    TextStyle? apply(TextStyle? style) =>
+        style == null ? null : _withCjk(style);
+    return theme.copyWith(
+      displayLarge: apply(theme.displayLarge),
+      displayMedium: apply(theme.displayMedium),
+      displaySmall: apply(theme.displaySmall),
+      headlineLarge: apply(theme.headlineLarge),
+      headlineMedium: apply(theme.headlineMedium),
+      headlineSmall: apply(theme.headlineSmall),
+      titleLarge: apply(theme.titleLarge),
+      titleMedium: apply(theme.titleMedium),
+      titleSmall: apply(theme.titleSmall),
+      bodyLarge: apply(theme.bodyLarge),
+      bodyMedium: apply(theme.bodyMedium),
+      bodySmall: apply(theme.bodySmall),
+      labelLarge: apply(theme.labelLarge),
+      labelMedium: apply(theme.labelMedium),
+      labelSmall: apply(theme.labelSmall),
+    );
+  }
+
+  /// Cupertino styles set `inherit: false`, so they do not pick up the
+  /// Material fallback list. Search uses [CupertinoSearchTextField].
+  static Widget withCjkText(BuildContext context, Widget child) {
+    final CupertinoThemeData cupertino = CupertinoTheme.of(context);
+    final CupertinoTextThemeData textTheme = cupertino.textTheme;
+    return CupertinoTheme(
+      data: cupertino.copyWith(
+        textTheme: textTheme.copyWith(
+          textStyle: _withCjk(textTheme.textStyle),
+          actionTextStyle: _withCjk(textTheme.actionTextStyle),
+          actionSmallTextStyle: _withCjk(textTheme.actionSmallTextStyle),
+          tabLabelTextStyle: _withCjk(textTheme.tabLabelTextStyle),
+          navTitleTextStyle: _withCjk(textTheme.navTitleTextStyle),
+          navLargeTitleTextStyle: _withCjk(textTheme.navLargeTitleTextStyle),
+          navActionTextStyle: _withCjk(textTheme.navActionTextStyle),
+          pickerTextStyle: _withCjk(textTheme.pickerTextStyle),
+          dateTimePickerTextStyle: _withCjk(textTheme.dateTimePickerTextStyle),
+        ),
+      ),
+      child: child,
+    );
+  }
+
   // Impeller's OpenGL ES backend (Linux, and ANGLE on Windows) crashes
   // painting a video Texture into a route snapshot.
   static const PageTransitionsTheme _pageTransitionsTheme =
@@ -22,6 +107,7 @@ abstract class AppTheme {
 
   static ThemeData get lightTheme => ThemeData(
         useMaterial3: true,
+        fontFamilyFallback: cjkFontFamilyFallback,
         pageTransitionsTheme: _pageTransitionsTheme,
         tabBarTheme: TabBarThemeData(indicatorColor: kGreyColor),
         primaryColorLight: kWhiteColor,
@@ -29,7 +115,7 @@ abstract class AppTheme {
         colorScheme: ColorScheme.fromSeed(seedColor: kBlackColor),
         primaryIconTheme: const IconThemeData().copyWith(color: kBlackColor),
         scaffoldBackgroundColor: kWhiteColor,
-        textTheme: ThemeData.light().textTheme.copyWith(
+        textTheme: _cjkTheme(ThemeData.light().textTheme.copyWith(
               bodyLarge: const TextStyle(
                 fontSize: 25,
                 color: kBlackColor,
@@ -39,7 +125,7 @@ abstract class AppTheme {
                 fontSize: 15,
                 color: kBlackColor,
               ),
-            ),
+            )),
         appBarTheme: const AppBarTheme(
             backgroundColor: kWhiteColor, foregroundColor: kBlackColor),
         iconTheme: const IconThemeData().copyWith(color: kGreyColor),
@@ -47,15 +133,16 @@ abstract class AppTheme {
 
   static ThemeData get darkTheme => ThemeData(
       useMaterial3: true,
+      fontFamilyFallback: cjkFontFamilyFallback,
       pageTransitionsTheme: _pageTransitionsTheme,
       primaryColorLight: kWhiteColor,
       primaryColorDark: kBlackColor,
       tabBarTheme: TabBarThemeData(indicatorColor: kWhiteColor.withValues(alpha: 0.5)),
       primaryIconTheme: const IconThemeData().copyWith(color: kWhiteColor),
       colorScheme: const ColorScheme.dark(),
-      scaffoldBackgroundColor: kDarkColor,
+      scaffoldBackgroundColor: AppColors.surfaceDark,
       dividerTheme: const DividerThemeData().copyWith(color: kGreyOpacityColor),
-      textTheme: ThemeData.dark().textTheme.copyWith(
+      textTheme: _cjkTheme(ThemeData.dark().textTheme.copyWith(
             bodyLarge: const TextStyle(
               fontSize: 25,
               color: kWhiteColor,
@@ -65,7 +152,7 @@ abstract class AppTheme {
               fontSize: 15,
               color: kWhiteColor,
             ),
-          ),
+          )),
       appBarTheme: AppBarTheme(
         backgroundColor: kBlackColor,
         foregroundColor: kWhiteColor,
@@ -82,6 +169,7 @@ abstract class AppTheme {
 
   static ThemeData get oledTheme => ThemeData(
       useMaterial3: true,
+      fontFamilyFallback: cjkFontFamilyFallback,
       pageTransitionsTheme: _pageTransitionsTheme,
       brightness: Brightness.dark,
       primaryColorLight: kWhiteColor,
@@ -96,11 +184,11 @@ abstract class AppTheme {
       ),
       scaffoldBackgroundColor: const Color(0xFF000000),
       dividerTheme: const DividerThemeData().copyWith(color: Colors.white12),
-      textTheme: ThemeData.dark().textTheme.copyWith(
+      textTheme: _cjkTheme(ThemeData.dark().textTheme.copyWith(
             bodyLarge: const TextStyle(fontSize: 25, color: kWhiteColor),
             bodySmall: const TextStyle(
                 fontStyle: FontStyle.italic, fontSize: 15, color: kWhiteColor),
-          ),
+          )),
       appBarTheme: const AppBarTheme(
         backgroundColor: Color(0xFF000000),
         foregroundColor: kWhiteColor,
@@ -126,6 +214,7 @@ abstract class AppTheme {
 
   static ThemeData dynamicTheme(ColorScheme colorScheme) => ThemeData(
         useMaterial3: true,
+        fontFamilyFallback: cjkFontFamilyFallback,
         pageTransitionsTheme: _pageTransitionsTheme,
         colorScheme: colorScheme,
         tabBarTheme: TabBarThemeData(
@@ -137,7 +226,7 @@ abstract class AppTheme {
           iconTheme: IconThemeData(color: colorScheme.onSurface),
           actionsIconTheme: IconThemeData(color: colorScheme.onSurface),
         ),
-        textTheme: ThemeData(
+        textTheme: _cjkTheme(ThemeData(
           brightness: colorScheme.brightness,
           useMaterial3: true,
         ).textTheme.copyWith(
@@ -147,7 +236,7 @@ abstract class AppTheme {
                   fontStyle: FontStyle.italic,
                   fontSize: 15,
                   color: colorScheme.onSurface),
-            ),
+            )),
         iconTheme: IconThemeData(
             color: colorScheme.onSurface.withValues(alpha: 0.7)),
         dividerTheme: DividerThemeData(

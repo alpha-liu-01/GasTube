@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluxtube/application/subscribe/subscribe_bloc.dart';
 import 'package:fluxtube/core/colors.dart';
 import 'package:fluxtube/core/window_layout.dart';
+import 'package:fluxtube/core/youtube_media_id.dart';
 import 'package:fluxtube/domain/channel/models/newpipe/newpipe_channel_resp.dart';
 import 'package:fluxtube/domain/watch/models/newpipe/newpipe_related.dart';
 import 'package:fluxtube/generated/l10n.dart';
@@ -330,20 +331,22 @@ class _NewPipeChannelTabContentState extends State<NewPipeChannelTabContent> {
       itemCount: content.length,
       itemBuilder: (context, index, aspectRatioThumbnail) {
         final item = content[index];
-        final playlistId = item.url?.split('=').last ?? '';
+        final playlistId = youtubePlaylistId(item.url);
         return PlaylistWidget(
-          playlistId: playlistId,
+          playlistId: playlistId ?? '',
           title: item.name,
           thumbnail: item.thumbnailUrl,
           videoCount: item.streamCount ?? 0,
           uploaderName: item.playlistUploaderName ?? item.uploaderName,
           uploaderAvatar: item.uploaderAvatarUrl,
           aspectRatioThumbnail: aspectRatioThumbnail,
-          onTap: () {
-            context.pushNamed('playlist', pathParameters: {
-              'playlistId': playlistId,
-            });
-          },
+          onTap: playlistId == null
+              ? null
+              : () {
+                  context.pushNamed('playlist', pathParameters: {
+                    'playlistId': playlistId,
+                  });
+                },
         );
       },
     );

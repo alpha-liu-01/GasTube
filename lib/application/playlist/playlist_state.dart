@@ -8,6 +8,7 @@ class PlaylistState with _$PlaylistState {
     required bool isMoreFetchCompleted,
     PlaylistResp? pipedPlaylistResp,
     InvidiousPlaylistResp? invidiousPlaylistResp,
+    NewPipePlaylistResp? newpipePlaylistResp,
   }) = _PlaylistState;
 
   factory PlaylistState.initialize() => PlaylistState(
@@ -16,5 +17,6 @@ class PlaylistState with _$PlaylistState {
         isMoreFetchCompleted: false,
         pipedPlaylistResp: null,
         invidiousPlaylistResp: null,
+        newpipePlaylistResp: null,
       );
 }

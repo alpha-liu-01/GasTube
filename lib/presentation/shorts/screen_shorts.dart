@@ -7,6 +7,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluxtube/application/application.dart';
 import 'package:fluxtube/core/colors.dart';
+import 'package:fluxtube/core/services/ubuntu_touch_display.dart';
+import 'package:fluxtube/core/ubuntu_touch.dart';
+import 'package:fluxtube/core/ubuntu_touch_content_hub.dart';
 import 'package:fluxtube/core/enums.dart';
 import 'package:fluxtube/core/player/global_player_controller.dart';
 import 'package:fluxtube/core/operations/math_operations.dart';
@@ -540,6 +543,10 @@ class _ScreenShortsState extends State<ScreenShorts> {
 
   void _handleShare(ShortItem short) {
     final url = 'https://www.youtube.com/shorts/${short.id}';
+    if (UbuntuTouch.enabled) {
+      shareText(url);
+      return;
+    }
     SharePlus.instance.share(ShareParams(text: url));
   }
 
@@ -1392,6 +1399,7 @@ class _ShortVideoController extends ChangeNotifier {
     _hasError = false;
     notifyListeners();
 
+    final preferredCodec = context.read<SettingsBloc>().state.defaultVideoCodec;
     try {
       // Fetch video info using NewPipe
       _watchResp = await NewPipeChannel.getStreamInfo(videoId);
@@ -1406,8 +1414,10 @@ class _ShortVideoController extends ChangeNotifier {
       _viewCount = _watchResp!.viewCount;
 
       // Get available qualities
-      _availableQualities =
-          NewPipeStreamHelper.getAvailableQualities(_watchResp!);
+      _availableQualities = NewPipeStreamHelper.getAvailableQualities(
+        _watchResp!,
+        preferredCodec: preferredCodec,
+      );
 
       // Get playable stream URL using resolver
       final resolver = NewPipePlaybackResolver();
@@ -1415,6 +1425,7 @@ class _ShortVideoController extends ChangeNotifier {
         watchResp: _watchResp!,
         preferredQuality: '720p',
         preferHighQuality: false,
+        preferredCodec: preferredCodec,
       );
 
       _currentQuality = _currentConfig!.qualityLabel;
@@ -1432,6 +1443,7 @@ class _ShortVideoController extends ChangeNotifier {
       // Listen to player state
       _player!.stream.playing.listen((playing) {
         _isPlaying = playing;
+        UbuntuTouchDisplay.instance.setPlaying(playing, source: 'shorts');
         notifyListeners();
       });
 
@@ -1612,6 +1624,7 @@ class _ShortVideoController extends ChangeNotifier {
 
   Future<void> preload(String videoId, BuildContext context) async {
     if (_isInitialized) return;
+    final preferredCodec = context.read<SettingsBloc>().state.defaultVideoCodec;
     try {
       final watchResp = await NewPipeChannel.getStreamInfo(videoId);
       _title = watchResp.title;
@@ -1622,8 +1635,10 @@ class _ShortVideoController extends ChangeNotifier {
       _likeCount = watchResp.likeCount;
       _viewCount = watchResp.viewCount;
       _watchResp = watchResp;
-      _availableQualities =
-          NewPipeStreamHelper.getAvailableQualities(watchResp);
+      _availableQualities = NewPipeStreamHelper.getAvailableQualities(
+        watchResp,
+        preferredCodec: preferredCodec,
+      );
     } catch (e) {
       debugPrint('Error preloading short: $e');
     }
@@ -1784,6 +1799,7 @@ class _ShortVideoController extends ChangeNotifier {
     _hasError = false;
     _isInitialized = false;
     _completedSubscription?.cancel();
+    UbuntuTouchDisplay.instance.setPlaying(false, source: 'shorts');
     _player?.dispose();
     _player = null;
     _videoController = null;
@@ -1819,6 +1835,7 @@ class _ShortVideoController extends ChangeNotifier {
   @override
   void dispose() {
     _completedSubscription?.cancel();
+    UbuntuTouchDisplay.instance.setPlaying(false, source: 'shorts');
     _player?.dispose();
     _player = null;
     _videoController = null;

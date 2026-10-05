@@ -9,7 +9,9 @@ import 'package:fluxtube/domain/saved/models/local_store.dart';
 import 'package:fluxtube/domain/sponsorblock/models/sponsor_segment.dart';
 import 'package:fluxtube/domain/watch/models/piped/video/video_stream.dart';
 import 'package:fluxtube/domain/watch/models/piped/video/watch_resp.dart';
+import 'package:fluxtube/core/settings.dart';
 import 'package:fluxtube/domain/watch/playback/models/generic_quality_info.dart';
+import 'package:fluxtube/domain/watch/playback/video_codec.dart';
 import 'package:fluxtube/domain/watch/playback/models/generic_subtitle.dart';
 import 'package:fluxtube/domain/watch/playback/models/generic_audio_track.dart';
 import 'package:fluxtube/domain/watch/playback/piped_stream_helper.dart';
@@ -25,6 +27,7 @@ class PipedMediaKitPlayer extends StatefulWidget {
     required this.videoId,
     required this.playbackPosition,
     this.defaultQuality = "720p",
+    this.defaultVideoCodec = defaultVideoCodecH264,
     this.isSaved = false,
     this.isHlsPlayer = false,
     required this.subtitles,
@@ -38,6 +41,7 @@ class PipedMediaKitPlayer extends StatefulWidget {
   final WatchResp watchInfo;
   final String videoId;
   final String defaultQuality;
+  final String defaultVideoCodec;
   final int playbackPosition;
   final bool isSaved;
   final bool isHlsPlayer;
@@ -170,6 +174,7 @@ class _PipedMediaKitPlayerState extends State<PipedMediaKitPlayer> {
               resolution: GenericQualityInfo.parseResolution(v.quality!),
               fps: v.fps,
               format: v.format,
+              codec: v.codec,
               url: v.url,
             ))
         .toList();
@@ -230,6 +235,7 @@ class _PipedMediaKitPlayerState extends State<PipedMediaKitPlayer> {
                 resolution: GenericQualityInfo.parseResolution(v.quality!),
                 fps: v.fps,
                 format: v.format,
+                codec: v.codec,
                 url: v.url,
               ))
           .toList();
@@ -295,12 +301,7 @@ class _PipedMediaKitPlayerState extends State<PipedMediaKitPlayer> {
         isHls = true;
       } else {
         // Find the selected quality stream
-        final selectedStream = _availableVideoTracks.firstWhere(
-          (v) => v.quality == quality,
-          orElse: () => _availableVideoTracks.isNotEmpty
-              ? _availableVideoTracks.first
-              : VideoStream(),
-        );
+        final selectedStream = _streamForQuality(quality);
         videoUrl = selectedStream.url;
 
         // Fallback to HLS if no direct stream available
@@ -400,6 +401,24 @@ class _PipedMediaKitPlayerState extends State<PipedMediaKitPlayer> {
     debugPrint('[Player] Buffering complete');
   }
 
+  VideoStream _streamForQuality(String quality) {
+    final matches =
+        _availableVideoTracks.where((v) => v.quality == quality).toList();
+    final candidates =
+        matches.isNotEmpty ? matches : List<VideoStream>.from(_availableVideoTracks);
+    if (candidates.isEmpty) return VideoStream();
+    candidates.sort((a, b) {
+      return videoCodecRank(
+        videoCodecFamily(codec: a.codec, format: a.format),
+        widget.defaultVideoCodec,
+      ).compareTo(videoCodecRank(
+        videoCodecFamily(codec: b.codec, format: b.format),
+        widget.defaultVideoCodec,
+      ));
+    });
+    return candidates.first;
+  }
+
   String _findClosestQuality(String targetQuality) {
     if (_availableQualities == null || _availableQualities!.isEmpty) {
       return targetQuality;
@@ -408,6 +427,7 @@ class _PipedMediaKitPlayerState extends State<PipedMediaKitPlayer> {
     return GenericQualityInfo.findBestMatchingQuality(
           _availableQualities!,
           targetQuality,
+          preferredCodec: widget.defaultVideoCodec,
         )?.label ??
         targetQuality;
   }

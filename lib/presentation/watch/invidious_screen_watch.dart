@@ -242,6 +242,7 @@ class _InvidiousScreenWatchState extends State<InvidiousScreenWatch>
       child: BlocBuilder<SettingsBloc, SettingsState>(
         buildWhen: (previous, current) =>
             previous.defaultQuality != current.defaultQuality ||
+            previous.defaultVideoCodec != current.defaultVideoCodec ||
             previous.isHlsPlayer != current.isHlsPlayer ||
             previous.isPipDisabled != current.isPipDisabled ||
             previous.isHideRelated != current.isHideRelated ||
@@ -388,6 +389,8 @@ class _InvidiousScreenWatchState extends State<InvidiousScreenWatch>
                                           watchInfo: state.invidiousWatchResp,
                                           defaultQuality:
                                               settingsState.defaultQuality,
+                                          defaultVideoCodec: settingsState
+                                              .defaultVideoCodec,
                                           // Only use playback position if it's for the current video
                                           playbackPosition:
                                               savedState.videoInfo?.id ==

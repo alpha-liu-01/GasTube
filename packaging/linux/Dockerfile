@@ -40,6 +40,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         make \
+        gcc \
         openjdk-17-jdk-headless \
     && rm -rf /var/lib/apt/lists/*
 

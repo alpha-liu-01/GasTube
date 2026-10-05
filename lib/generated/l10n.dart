@@ -1077,6 +1077,26 @@ class S {
     );
   }
 
+  /// `Default video codec`
+  String get defaultVideoCodec {
+    return Intl.message(
+      'Default video codec',
+      name: 'defaultVideoCodec',
+      desc: 'Default video codec label',
+      args: [],
+    );
+  }
+
+  /// `Prefer H.264 or VP9 when a video offers both.`
+  String get defaultVideoCodecDescription {
+    return Intl.message(
+      'Prefer H.264 or VP9 when a video offers both.',
+      name: 'defaultVideoCodecDescription',
+      desc: 'Explains the default video codec setting',
+      args: [],
+    );
+  }
+
   /// `Retry`
   String get retry {
     return Intl.message('Retry', name: 'retry', desc: 'Retry label', args: []);
@@ -2651,6 +2671,77 @@ class S {
       name: 'sleepTimerEnded',
       desc: 'Sleep timer fired',
       args: [],
+    );
+  }
+
+  /// `Saved inside the app. The file has not left GasTube.`
+  String get savedInsideApp {
+    return Intl.message(
+      'Saved inside the app. The file has not left GasTube.',
+      name: 'savedInsideApp',
+      desc: 'Ubuntu Touch save confirmation while Content Hub is not connected',
+      args: [],
+    );
+  }
+
+  /// `Exported inside the app: {name}`
+  String exportInsideApp(String name) {
+    return Intl.message(
+      'Exported inside the app: $name',
+      name: 'exportInsideApp',
+      desc:
+          'Ubuntu Touch export confirmation while Content Hub is not connected',
+      args: [name],
+    );
+  }
+
+  /// `Choose a file inside the app`
+  String get chooseFileInsideApp {
+    return Intl.message(
+      'Choose a file inside the app',
+      name: 'chooseFileInsideApp',
+      desc: 'Title for picking an export that is already inside the app',
+      args: [],
+    );
+  }
+
+  /// `There is no file inside the app to import.`
+  String get noFileInsideApp {
+    return Intl.message(
+      'There is no file inside the app to import.',
+      name: 'noFileInsideApp',
+      desc: 'Shown when Ubuntu Touch import has no file in Exports',
+      args: [],
+    );
+  }
+
+  /// `Rotate fullscreen with the video`
+  String get fullscreenAspectRotate {
+    return Intl.message(
+      'Rotate fullscreen with the video',
+      name: 'fullscreenAspectRotate',
+      desc: 'Setting for the player fullscreen button to follow video aspect',
+      args: [],
+    );
+  }
+
+  /// `The fullscreen button uses the video's width and height. Leaving fullscreen returns to the previous direction.`
+  String get fullscreenAspectRotateDescription {
+    return Intl.message(
+      'The fullscreen button uses the video\'s width and height. Leaving fullscreen returns to the previous direction.',
+      name: 'fullscreenAspectRotateDescription',
+      desc: 'Explains fullscreen aspect rotation',
+      args: [],
+    );
+  }
+
+  /// `The file manager is open. Choose where to save {name}.`
+  String exportChooseFolder(String name) {
+    return Intl.message(
+      'The file manager is open. Choose where to save $name.',
+      name: 'exportChooseFolder',
+      desc: 'Ubuntu Touch export handed to the file manager',
+      args: [name],
     );
   }
 }

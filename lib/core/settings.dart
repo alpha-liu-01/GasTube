@@ -1,6 +1,18 @@
 const selectedDefaultLanguage = 'default-language';
 const selectedDefaultQuality = 'default-quality';
 const selectedDefaultRegion = 'default-region';
+
+/// Preferred video codec when a video offers both H.264 and VP9.
+const defaultVideoCodecKey = 'default-video-codec';
+const defaultVideoCodecH264 = 'h264';
+const defaultVideoCodecVp9 = 'vp9';
+
+String normalizeDefaultVideoCodec(String? value) {
+  return value == defaultVideoCodecVp9
+      ? defaultVideoCodecVp9
+      : defaultVideoCodecH264;
+}
+
 const selectedTheme = 'theme';
 const historyVisibility = 'history-visibility';
 const dislikeVisibility = 'dislike-visibility';
@@ -53,6 +65,9 @@ const autoPipEnabledKey = 'auto-pip-enabled';
 
 // Desktop window fullscreen. Hides the title bar on Linux phones (Phosh).
 const windowFullscreenKey = 'window-fullscreen';
+
+// Player fullscreen follows the video aspect. Default off, per install.
+const fullscreenAspectRotateKey = 'fullscreen-aspect-rotate';
 
 // New-upload notifications for subscribed channels
 const notifyNewVideosKey = 'notify-new-videos';

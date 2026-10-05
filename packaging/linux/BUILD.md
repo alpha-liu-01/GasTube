@@ -20,7 +20,7 @@ The archive is `dist/gastube-<version>-linux-x64.tar.gz` or `dist/gastube-<versi
 
 Flutter is not installed from the distro. On x64 the script downloads the official 3.47.1 Linux tarball. On aarch64 there is no such tarball, so it clones the `3.47.1` tag into `~/.cache/fluxtube/flutter/flutter`. The release tree is `build/linux/x64/release/bundle` or `build/linux/arm64/release/bundle`. It does not cross-compile.
 
-The sidecar needs JDK 17. Gradle 8.11.1 cannot run on a newer default JVM. Fedora and Arch install `java-17-openjdk-devel` or `jdk17-openjdk`. Debian 13 has no `openjdk-17-jdk-headless` package, so after the apt install the script downloads Eclipse Temurin 17 into `/usr/lib/jvm/temurin-17-jdk`. The same download runs on Fedora or Arch if their JDK 17 package did not land. The copy inside the package is a Temurin 17 JRE for this CPU, plus the BtbN GPL ffmpeg from autobuild `2026-09-22-13-18` (`linux64` or `linuxarm64`).
+The sidecar needs JDK 17. Gradle 8.11.1 cannot run on a newer default JVM. Fedora and Arch install `java-17-openjdk-devel` or `jdk17-openjdk`. Debian 13 has no `openjdk-17-jdk-headless` package, so after the apt install the script downloads Eclipse Temurin 17 into `/usr/lib/jvm/temurin-17-jdk`. The same download runs on Fedora or Arch if their JDK 17 package did not land. The copy inside the package is a jlink runtime made from that JDK 17, plus a small GPL ffmpeg 6.1.1 that only remuxes downloads into MP4.
 
 The Linux `volume_controller` plugin in that package is the vendored 3.6.0 tree. It looks for an ALSA playback element named `Master`, then `PCM`, `Speaker`, `Headphone`, `Digital`, and `Playback`, then any element that has a playback volume. If the card has none, volume calls return an error instead of crashing, and mpv keeps its own volume.
 
@@ -30,7 +30,7 @@ The Linux `volume_controller` plugin in that package is the vendored 3.6.0 tree.
 sudo apt-get update
 sudo apt-get install -y --no-install-recommends \
   clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libmpv-dev \
-  curl git unzip xz-utils zip make openjdk-17-jdk-headless ca-certificates \
+  curl git unzip xz-utils zip make gcc openjdk-17-jdk-headless ca-certificates \
   dpkg-dev
 ```
 
@@ -39,7 +39,7 @@ sudo apt-get install -y --no-install-recommends \
 ```bash
 sudo dnf install -y \
   clang cmake ninja-build pkgconf gtk3-devel xz-devel mpv-devel \
-  curl git unzip xz zip make java-17-openjdk-devel \
+  curl git unzip xz zip make gcc java-17-openjdk-devel \
   rpm-build
 ```
 
@@ -48,6 +48,6 @@ sudo dnf install -y \
 ```bash
 sudo pacman -S --needed --noconfirm \
   clang cmake ninja pkgconf gtk3 xz mpv \
-  curl git unzip zip make jdk17-openjdk \
+  curl git unzip zip make gcc jdk17-openjdk \
   base-devel
 ```

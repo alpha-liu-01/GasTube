@@ -31,14 +31,19 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static String m6(title) => "Download failed: ${title}";
 
+  static String m7(name) =>
+      "The file manager is open. Choose where to save ${name}.";
+
+  static String m8(name) => "Exported inside the app: ${name}";
+
   static String m1(count) =>
       "${Intl.plural(count, one: 'Reply', other: 'Replies')}";
 
-  static String m7(count) => "${count} minutes";
+  static String m9(count) => "${count} minutes";
 
-  static String m8(count) => "${count} min";
+  static String m10(count) => "${count} min";
 
-  static String m9(count) => "${count} videos";
+  static String m11(count) => "${count} videos";
 
   static String m2(count) =>
       "${Intl.plural(count, zero: 'No views', one: 'view', other: 'views')}";
@@ -95,6 +100,9 @@ class MessageLookup extends MessageLookupByLibrary {
     ),
     "channelSubscribers": m0,
     "channels": MessageLookupByLibrary.simpleMessage("Channels"),
+    "chooseFileInsideApp": MessageLookupByLibrary.simpleMessage(
+      "Choose a file inside the app",
+    ),
     "clearAll": MessageLookupByLibrary.simpleMessage("Clear all"),
     "clearAllHistory": MessageLookupByLibrary.simpleMessage(
       "Clear all history",
@@ -122,6 +130,12 @@ class MessageLookup extends MessageLookupByLibrary {
     "debugConsole": MessageLookupByLibrary.simpleMessage("Debug Console"),
     "defaultProfile": MessageLookupByLibrary.simpleMessage("Default"),
     "defaultQuality": MessageLookupByLibrary.simpleMessage("Default Quality"),
+    "defaultVideoCodec": MessageLookupByLibrary.simpleMessage(
+      "Default video codec",
+    ),
+    "defaultVideoCodecDescription": MessageLookupByLibrary.simpleMessage(
+      "Prefer H.264 or VP9 when a video offers both.",
+    ),
     "delete": MessageLookupByLibrary.simpleMessage("Delete"),
     "deleteDownload": MessageLookupByLibrary.simpleMessage("Delete Download"),
     "deleteDownloadConfirm": MessageLookupByLibrary.simpleMessage(
@@ -164,7 +178,9 @@ class MessageLookup extends MessageLookupByLibrary {
     "enableHlsPlayerDescription": MessageLookupByLibrary.simpleMessage(
       "Enable HLS player to unlock all quality options. Disable if errors occur.",
     ),
+    "exportChooseFolder": m7,
     "exportData": MessageLookupByLibrary.simpleMessage("Export Data"),
+    "exportInsideApp": m8,
     "exportSubscriptions": MessageLookupByLibrary.simpleMessage(
       "Export Subscriptions",
     ),
@@ -180,6 +196,12 @@ class MessageLookup extends MessageLookupByLibrary {
     "filterPlaylists": MessageLookupByLibrary.simpleMessage("Playlists"),
     "filterVideos": MessageLookupByLibrary.simpleMessage("Videos"),
     "france": MessageLookupByLibrary.simpleMessage("France"),
+    "fullscreenAspectRotate": MessageLookupByLibrary.simpleMessage(
+      "Rotate fullscreen with the video",
+    ),
+    "fullscreenAspectRotateDescription": MessageLookupByLibrary.simpleMessage(
+      "The fullscreen button uses the video\'s width and height. Leaving fullscreen returns to the previous direction.",
+    ),
     "hideComments": MessageLookupByLibrary.simpleMessage("Hide Comments"),
     "hideCommentsButtonFromWatchScreen": MessageLookupByLibrary.simpleMessage(
       "Hide comments button from watch screen.",
@@ -244,6 +266,9 @@ class MessageLookup extends MessageLookupByLibrary {
     "noDownloads": MessageLookupByLibrary.simpleMessage("No Downloads"),
     "noDownloadsHint": MessageLookupByLibrary.simpleMessage(
       "Downloaded videos will appear here",
+    ),
+    "noFileInsideApp": MessageLookupByLibrary.simpleMessage(
+      "There is no file inside the app to import.",
     ),
     "noHistory": MessageLookupByLibrary.simpleMessage("No watch history"),
     "noLogs": MessageLookupByLibrary.simpleMessage("No logs yet"),
@@ -355,6 +380,9 @@ class MessageLookup extends MessageLookupByLibrary {
     ),
     "saveToPlaylist": MessageLookupByLibrary.simpleMessage("Save to playlist"),
     "saved": MessageLookupByLibrary.simpleMessage("Saved"),
+    "savedInsideApp": MessageLookupByLibrary.simpleMessage(
+      "Saved inside the app. The file has not left GasTube.",
+    ),
     "savedToDevice": MessageLookupByLibrary.simpleMessage("Saved to device"),
     "savedVideosTitle": MessageLookupByLibrary.simpleMessage("Saved Videos"),
     "savingToDevice": MessageLookupByLibrary.simpleMessage(
@@ -418,8 +446,8 @@ class MessageLookup extends MessageLookupByLibrary {
     "sleepTimerEnterMinutes": MessageLookupByLibrary.simpleMessage(
       "Enter minutes",
     ),
-    "sleepTimerMinutes": m7,
-    "sleepTimerMinutesShort": m8,
+    "sleepTimerMinutes": m9,
+    "sleepTimerMinutesShort": m10,
     "sleepTimerOff": MessageLookupByLibrary.simpleMessage("Off"),
     "sleepTimerSet": MessageLookupByLibrary.simpleMessage("Set"),
     "sort": MessageLookupByLibrary.simpleMessage("Sort"),
@@ -487,7 +515,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "version": MessageLookupByLibrary.simpleMessage("Version"),
     "video": MessageLookupByLibrary.simpleMessage("Video"),
     "videoAudio": MessageLookupByLibrary.simpleMessage("Video+Audio"),
-    "videoCountLabel": m9,
+    "videoCountLabel": m11,
     "videoFit": MessageLookupByLibrary.simpleMessage("Video Fit"),
     "videoFitContain": MessageLookupByLibrary.simpleMessage("Contain"),
     "videoFitCover": MessageLookupByLibrary.simpleMessage("Cover"),
@@ -502,6 +530,10 @@ class MessageLookup extends MessageLookupByLibrary {
     "views": MessageLookupByLibrary.simpleMessage("views"),
     "watchSomeVideos": MessageLookupByLibrary.simpleMessage(
       "Videos you watch will appear here",
+    ),
+    "windowFullscreen": MessageLookupByLibrary.simpleMessage("Fullscreen"),
+    "windowFullscreenDescription": MessageLookupByLibrary.simpleMessage(
+      "Hide the title bar and use the whole screen",
     ),
     "youtubeService": MessageLookupByLibrary.simpleMessage("YouTube Service"),
   };

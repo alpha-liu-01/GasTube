@@ -10,6 +10,8 @@ import 'package:fluxtube/core/animations/animations.dart';
 import 'package:fluxtube/core/colors.dart';
 import 'package:fluxtube/core/constants.dart';
 import 'package:fluxtube/core/enums.dart';
+import 'package:fluxtube/core/ubuntu_touch.dart';
+import 'package:fluxtube/core/ubuntu_touch_content_hub.dart';
 import 'package:fluxtube/domain/download/models/download_item.dart';
 import 'package:fluxtube/generated/l10n.dart';
 import 'package:fluxtube/presentation/main_navigation/main_navigation.dart';
@@ -103,7 +105,9 @@ class _ScreenDownloadsState extends State<ScreenDownloads>
               if (state.saveToDeviceStatus == ApiStatus.loaded) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text(locals.savedToDevice),
+                    content: Text(
+                      locals.savedToDevice,
+                    ),
                     behavior: SnackBarBehavior.floating,
                     backgroundColor: AppColors.success,
                   ),
@@ -287,6 +291,23 @@ class _ScreenDownloadsState extends State<ScreenDownloads>
     if (item.status == DownloadStatus.completed && item.outputFilePath != null) {
       final file = File(item.outputFilePath!);
       if (await file.exists()) {
+        if (UbuntuTouch.enabled) {
+          final opened = await openInSystemPlayer(
+            path: item.outputFilePath!,
+            audioOnly: item.downloadType == DownloadType.audioOnly,
+          );
+          if (!opened.ok && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  '${S.of(context).failedToOpenFile}: ${opened.message}',
+                ),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+          return;
+        }
         final opened = await _openDownload(item.outputFilePath!);
         if (!opened.ok && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -801,7 +822,7 @@ class _DownloadItemCard extends StatelessWidget {
         }
 
         if (item.status == DownloadStatus.completed) {
-          if (Platform.isAndroid || Platform.isIOS) {
+          if (Platform.isAndroid || Platform.isIOS || UbuntuTouch.enabled) {
             items.add(PopupMenuItem(
               value: 'save_to_device',
               child: Row(

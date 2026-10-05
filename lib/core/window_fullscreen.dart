@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:fluxtube/core/settings.dart';
+import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:fluxtube/infrastructure/database/database.dart';
 
 /// Whole-window fullscreen, separate from the video player's own fullscreen.
@@ -17,7 +18,8 @@ class WindowFullscreen {
   static bool get enabled => _enabled;
 
   static bool get isSupported =>
-      Platform.isLinux || Platform.isWindows || Platform.isMacOS;
+      !UbuntuTouch.enabled &&
+      (Platform.isLinux || Platform.isWindows || Platform.isMacOS);
 
   static Future<void> loadAndApply() async {
     if (!isSupported) return;

@@ -53,6 +53,7 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 # System-level dependencies.
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTK REQUIRED IMPORTED_TARGET gtk+-3.0)
+pkg_check_modules(PULSE REQUIRED IMPORTED_TARGET libpulse)
 
 add_definitions(-DAPPLICATION_ID="${APPLICATION_ID}")
 
@@ -63,6 +64,8 @@ add_definitions(-DAPPLICATION_ID="${APPLICATION_ID}")
 add_executable(${BINARY_NAME}
   "main.cc"
   "my_application.cc"
+  "pulse_unplug.cc"
+  "pulse_route.cc"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
 )
 
@@ -73,6 +76,7 @@ apply_standard_settings(${BINARY_NAME})
 # Add dependency libraries. Add any application-specific dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter)
 target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::GTK)
+target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::PULSE)
 
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)
@@ -101,7 +105,38 @@ endif()
 if(DEFINED ENV{GASTUBE_SQLITE_SRC})
   set(FETCHCONTENT_SOURCE_DIR_SQLITE3 "$ENV{GASTUBE_SQLITE_SRC}")
 endif()
+# The Ubuntu Touch container exports GASTUBE_UBUNTU_TOUCH. Desktop builds do
+# not, so they keep GtkApplication, the header bar, and libmpv.
+if(DEFINED ENV{GASTUBE_UBUNTU_TOUCH})
+  target_compile_definitions(${BINARY_NAME} PRIVATE "GASTUBE_UBUNTU_TOUCH=1")
+  target_sources(${BINARY_NAME} PRIVATE
+    "ubuntu_touch_main.cc"
+    "ubuntu_touch_scale.cc"
+    "ubuntu_touch_present.cc"
+    "ubuntu_touch_media_probe.cc"
+  )
+  # libflutter looks up GTK symbols globally. Exporting the scale wrappers
+  # lets them replace the Wayland scale of 1 for the Flutter view only.
+  target_link_options(${BINARY_NAME} PRIVATE "-Wl,--export-dynamic")
+  target_link_libraries(${BINARY_NAME} PRIVATE ${CMAKE_DL_LIBS} epoxy wayland-client pthread)
+  # Phase 3 links the libmpv built in this container. Desktop builds do not
+  # set GASTUBE_UBUNTU_TOUCH, so they keep the system libmpv.
+  set(MEDIA_KIT_LIBS_AVAILABLE ON CACHE BOOL
+      "Ubuntu Touch click ships its own libmpv" FORCE)
+  pkg_check_modules(GIO REQUIRED IMPORTED_TARGET gio-2.0)
+  add_executable(gastube-mpris-relay "mpris_relay.cc" "pulse_route.cc")
+  apply_standard_settings(gastube-mpris-relay)
+  target_link_libraries(gastube-mpris-relay PRIVATE PkgConfig::GIO PkgConfig::PULSE ${CMAKE_DL_LIBS})
+  set_target_properties(gastube-mpris-relay PROPERTIES
+    INSTALL_RPATH "\$ORIGIN/lib"
+    BUILD_RPATH "\$ORIGIN/lib")
+endif()
 include(flutter/generated_plugins.cmake)
+if(DEFINED ENV{GASTUBE_UBUNTU_TOUCH} AND TARGET media_kit_video_plugin)
+  set_target_properties(media_kit_video_plugin PROPERTIES
+    BUILD_RPATH "\$ORIGIN"
+    INSTALL_RPATH "\$ORIGIN")
+endif()
 
 
 # === Installation ===
@@ -122,6 +157,10 @@ set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}/lib")
 
 install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)
+if(DEFINED ENV{GASTUBE_UBUNTU_TOUCH})
+  install(TARGETS gastube-mpris-relay RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
+    COMPONENT Runtime)
+endif()
 
 install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   COMPONENT Runtime)

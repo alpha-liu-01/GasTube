@@ -6,6 +6,7 @@ import 'dart:math' as math;
 import 'package:dartz/dartz.dart';
 import 'package:dio/dio.dart';
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:fluxtube/domain/core/failure/main_failure.dart';
 import 'package:fluxtube/domain/download/download_service.dart';
@@ -15,7 +16,10 @@ import 'package:fluxtube/domain/watch/models/newpipe/newpipe_stream.dart';
 import 'package:fluxtube/domain/watch/models/newpipe/newpipe_watch_resp.dart';
 import 'package:fluxtube/domain/watch/playback/newpipe_stream_helper.dart';
 import 'package:fluxtube/core/api_client.dart';
+import 'package:fluxtube/core/settings.dart';
 import 'package:fluxtube/core/storage_paths.dart';
+import 'package:fluxtube/core/ubuntu_touch.dart';
+import 'package:fluxtube/core/ubuntu_touch_content_hub.dart';
 import 'package:path/path.dart' as p;
 import 'package:fluxtube/infrastructure/database/database.dart';
 import 'package:injectable/injectable.dart';
@@ -36,41 +40,9 @@ class DownloadImpl implements DownloadService {
   final Map<int, CancelToken> _cancelTokens = {};
   final Map<int, bool> _pausedDownloads = {};
 
-  // CPN alphabet for generating Content Playback Nonce
-  static const String _cpnAlphabet =
-      'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
-
   // Multi-threaded download settings
   static const int _downloadThreads = 3;
   static const int _chunkSize = 512 * 1024; // 512KB chunks
-
-  /// Generate a Content Playback Nonce (CPN)
-  /// This is a 16-character random string that YouTube uses to track playback sessions
-  String _generateCpn() {
-    final random = math.Random.secure();
-    return List.generate(16, (_) => _cpnAlphabet[random.nextInt(_cpnAlphabet.length)]).join();
-  }
-
-  /// Add required parameters to YouTube URL for faster downloads
-  String _enhanceDownloadUrl(String url) {
-    if (!url.contains('googlevideo.com')) return url;
-
-    String enhancedUrl = url;
-
-    // Add ratebypass parameter if not present
-    if (!enhancedUrl.contains('ratebypass')) {
-      enhancedUrl = enhancedUrl.contains('?')
-          ? '$enhancedUrl&ratebypass=yes'
-          : '$enhancedUrl?ratebypass=yes';
-    }
-
-    // Add CPN (Content Playback Nonce) if not present - critical for speed
-    if (!enhancedUrl.contains('cpn=')) {
-      enhancedUrl = '$enhancedUrl&cpn=${_generateCpn()}';
-    }
-
-    return enhancedUrl;
-  }
 
   // Convert Drift DownloadItem to domain
   domain.DownloadItem _toDomain(DownloadItem item) {
@@ -169,6 +141,7 @@ class DownloadImpl implements DownloadService {
     List<NewPipeVideoStream>? videoStreams,
     List<NewPipeVideoStream>? videoOnlyStreams,
     List<NewPipeAudioStream>? audioStreams,
+    String preferredCodec = defaultVideoCodecH264,
   }) {
     log('[Download] Processing streams for $videoId:');
     log('[Download] videoOnlyStreams: ${videoOnlyStreams?.length ?? 0}');
@@ -189,7 +162,10 @@ class DownloadImpl implements DownloadService {
     );
 
     // Use NewPipeStreamHelper to get available qualities - same logic as the player
-    final availableQualities = NewPipeStreamHelper.getAvailableQualities(mockWatchResp);
+    final availableQualities = NewPipeStreamHelper.getAvailableQualities(
+      mockWatchResp,
+      preferredCodec: preferredCodec,
+    );
 
     log('[Download] NewPipeStreamHelper found ${availableQualities.length} qualities: ${availableQualities.map((q) => q.label).join(", ")}');
 
@@ -273,6 +249,13 @@ class DownloadImpl implements DownloadService {
       _pausedDownloads[item.id!] = false;
 
       final downloadDir = await _getDownloadDirectory();
+      _logUbuntuTouchDownload(
+        'download start type=${item.downloadType.name} '
+        'video=${item.videoQuality} audio=${item.audioQuality} '
+        'videoBytes=${item.videoTotalBytes ?? 0} '
+        'audioBytes=${item.audioTotalBytes ?? 0} '
+        'dir=${downloadDir.path}',
+      );
 
       if (item.downloadType == domain.DownloadType.audioOnly) {
         // Audio only download
@@ -289,6 +272,7 @@ class DownloadImpl implements DownloadService {
       if (_pausedDownloads[item.id] == true) {
         item.status = domain.DownloadStatus.paused;
         await _db.updateDownload(_toCompanion(item));
+        _logUbuntuTouchDownload('download paused file=${item.outputFilePath}');
         return Right(item);
       }
 
@@ -307,6 +291,7 @@ class DownloadImpl implements DownloadService {
 
       onComplete(item);
       _cleanup(item.id!);
+      _logUbuntuTouchDownload('download done file=${item.outputFilePath}');
 
       return Right(item);
     } catch (e) {
@@ -314,6 +299,9 @@ class DownloadImpl implements DownloadService {
         return Right(item);
       }
 
+      _logUbuntuTouchDownload(
+        'download failed file=${item.outputFilePath} error=$e',
+      );
       item.status = domain.DownloadStatus.failed;
       item.errorMessage = e.toString();
       item.retryCount++;
@@ -347,6 +335,7 @@ class DownloadImpl implements DownloadService {
       url: item.videoUrl!,
       savePath: filePath,
       cancelToken: cancelToken,
+      expectedSize: item.videoTotalBytes,
       onProgress: (received, total) {
         if (_pausedDownloads[item.id] == true) {
           cancelToken.cancel('Paused');
@@ -381,6 +370,7 @@ class DownloadImpl implements DownloadService {
       url: item.audioUrl!,
       savePath: filePath,
       cancelToken: cancelToken,
+      expectedSize: item.audioTotalBytes,
       onProgress: (received, total) {
         if (_pausedDownloads[item.id] == true) {
           cancelToken.cancel('Paused');
@@ -415,6 +405,7 @@ class DownloadImpl implements DownloadService {
         url: item.videoUrl!,
         savePath: videoPath,
         cancelToken: cancelToken,
+        expectedSize: item.videoTotalBytes,
         onProgress: (received, total) {
           if (_pausedDownloads[item.id] == true) {
             cancelToken.cancel('Paused');
@@ -423,7 +414,7 @@ class DownloadImpl implements DownloadService {
           final newProgress = total > 0 ? received / total : 0.0;
           _updateVideoProgress(item, newProgress);
           item.videoDownloadedBytes = received;
-          if (total > 0) item.videoTotalBytes = total;
+          if (total > (item.videoTotalBytes ?? 0)) item.videoTotalBytes = total;
           // Update combined totals
           item.downloadedBytes = item.videoDownloadedBytes + item.audioDownloadedBytes;
           item.totalBytes = (item.videoTotalBytes ?? 0) + (item.audioTotalBytes ?? 0);
@@ -449,6 +440,7 @@ class DownloadImpl implements DownloadService {
         url: item.audioUrl!,
         savePath: audioPath,
         cancelToken: cancelToken,
+        expectedSize: item.audioTotalBytes,
         onProgress: (received, total) {
           if (_pausedDownloads[item.id] == true) {
             cancelToken.cancel('Paused');
@@ -457,7 +449,7 @@ class DownloadImpl implements DownloadService {
           final newProgress = total > 0 ? received / total : 0.0;
           _updateAudioProgress(item, newProgress);
           item.audioDownloadedBytes = received;
-          if (total > 0) item.audioTotalBytes = total;
+          if (total > (item.audioTotalBytes ?? 0)) item.audioTotalBytes = total;
           // Update combined totals
           item.downloadedBytes = item.videoDownloadedBytes + item.audioDownloadedBytes;
           item.totalBytes = (item.videoTotalBytes ?? 0) + (item.audioTotalBytes ?? 0);
@@ -554,6 +546,7 @@ class DownloadImpl implements DownloadService {
         return false;
       } else {
         final ffmpeg = _resolveFfmpeg();
+        _logUbuntuTouchDownload('ffmpeg bin=$ffmpeg');
         try {
           final result = await Process.run(
             ffmpeg,
@@ -570,15 +563,25 @@ class DownloadImpl implements DownloadService {
 
           if (result.exitCode == 0) {
             log('[Download] FFmpeg muxing successful');
+            _logUbuntuTouchDownload('ffmpeg exit=0 file=$outputPath');
             return true;
           }
 
+          final err = result.stderr.toString().trim();
+          final tail = err.length > 400 ? err.substring(err.length - 400) : err;
           log('[Download] FFmpeg muxing failed (exit code: ${result.exitCode})');
-          _muxFailure = 'ffmpeg exited ${result.exitCode}';
+          debugPrint(
+            '[Download] FFmpeg muxing failed exit=${result.exitCode} $tail',
+          );
+          _muxFailure = tail.isEmpty
+              ? 'ffmpeg exited ${result.exitCode}'
+              : 'ffmpeg exited ${result.exitCode}\n$tail';
+          _logUbuntuTouchDownload('ffmpeg exit=${result.exitCode} $tail');
           return false;
-        } on ProcessException {
+        } on ProcessException catch (error) {
           log('[Download] ffmpeg was not found ($ffmpeg)');
           _muxFailure = 'ffmpeg was not found ($ffmpeg)';
+          _logUbuntuTouchDownload('ffmpeg failed bin=$ffmpeg error=$error');
           return false;
         }
       }
@@ -602,65 +605,83 @@ class DownloadImpl implements DownloadService {
     required String savePath,
     required CancelToken cancelToken,
     required Function(int received, int total) onProgress,
+    int? expectedSize,
     int resumeFromByte = 0,
     int maxRetries = 3,
   }) async {
-    // Enhance URL with CPN and ratebypass parameters
-    final downloadUrl = _enhanceDownloadUrl(url);
-    log('[Download] Enhanced URL with CPN: ${downloadUrl.contains('cpn=') ? 'yes' : 'no'}');
+    // The extractor URL is already signed. Playback uses it unchanged.
+    // Appending ratebypass or cpn makes a separate high-resolution stream
+    // return a short body that is not a media file.
+    final downloadUrl = url;
+    final knownSize = expectedSize != null && expectedSize > 0 ? expectedSize : -1;
 
-    // Get content length for chunked download
-    int totalSize = -1;
-    try {
-      final headResponse = await _dio.head(
-        downloadUrl,
-        options: Options(
-          headers: _getDownloadHeaders(),
-          followRedirects: true,
-        ),
-      );
-      final contentLength = headResponse.headers.value('content-length');
-      if (contentLength != null) {
-        totalSize = int.tryParse(contentLength) ?? -1;
-      }
-      // Check if server supports range requests
-      final acceptRanges = headResponse.headers.value('accept-ranges');
-      final supportsRanges = acceptRanges == 'bytes' || totalSize > 0;
-
-      if (supportsRanges && totalSize > _chunkSize * 2) {
-        // Use multi-threaded chunked download for large files
-        log('[Download] Using multi-threaded download ($totalSize bytes, $_downloadThreads threads)');
-        await _downloadFileChunked(
-          url: downloadUrl,
-          savePath: savePath,
-          cancelToken: cancelToken,
-          onProgress: onProgress,
-          totalSize: totalSize,
-          resumeFromByte: resumeFromByte,
+    int totalSize = knownSize;
+    if (totalSize <= 0) {
+      try {
+        final headResponse = await _dio.head(
+          downloadUrl,
+          options: Options(
+            headers: _getDownloadHeaders(),
+            followRedirects: true,
+          ),
         );
-        return;
+        final contentLength = headResponse.headers.value('content-length');
+        if (contentLength != null) {
+          totalSize = int.tryParse(contentLength) ?? -1;
+        }
+      } catch (e) {
+        log('[Download] HEAD request failed, falling back to single-threaded: $e');
       }
-    } catch (e) {
-      log('[Download] HEAD request failed, falling back to single-threaded: $e');
     }
 
-    // Fall back to single-threaded download
-    await _downloadFileSingleThreaded(
-      url: downloadUrl,
-      savePath: savePath,
-      cancelToken: cancelToken,
-      onProgress: onProgress,
-      totalSize: totalSize,
-      resumeFromByte: resumeFromByte,
-      maxRetries: maxRetries,
+    if (knownSize > 0) {
+      await _downloadFileSingleThreaded(
+        url: downloadUrl,
+        savePath: savePath,
+        cancelToken: cancelToken,
+        onProgress: onProgress,
+        totalSize: knownSize,
+        resumeFromByte: resumeFromByte,
+        maxRetries: maxRetries,
+        rangeToEnd: true,
+      );
+    } else if (totalSize > _chunkSize * 2) {
+      log('[Download] Using multi-threaded download ($totalSize bytes, $_downloadThreads threads)');
+      await _downloadFileChunked(
+        url: downloadUrl,
+        savePath: savePath,
+        cancelToken: cancelToken,
+        onProgress: onProgress,
+        totalSize: totalSize,
+        resumeFromByte: resumeFromByte,
+      );
+    } else {
+      await _downloadFileSingleThreaded(
+        url: downloadUrl,
+        savePath: savePath,
+        cancelToken: cancelToken,
+        onProgress: onProgress,
+        totalSize: totalSize,
+        resumeFromByte: resumeFromByte,
+        maxRetries: maxRetries,
+      );
+    }
+
+    final length = await _getExistingFileSize(savePath);
+    _logUbuntuTouchDownload(
+      'download part bytes=$length expected=$knownSize file=$savePath',
     );
+    if (knownSize > 256 * 1024 && length < knownSize ~/ 2) {
+      throw Exception('downloaded $length bytes, stream is $knownSize bytes');
+    }
   }
 
   Map<String, dynamic> _getDownloadHeaders() {
     return {
-      'User-Agent': 'com.google.android.youtube/19.02.39 (Linux; U; Android 14) gzip',
+      'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Referer': 'https://www.youtube.com/',
       'Accept': '*/*',
-      'Accept-Encoding': '*',
       'Connection': 'keep-alive',
     };
   }
@@ -807,6 +828,7 @@ class DownloadImpl implements DownloadService {
     required int totalSize,
     int resumeFromByte = 0,
     int maxRetries = 3,
+    bool rangeToEnd = false,
   }) async {
     int retryCount = 0;
     int currentResumeFrom = resumeFromByte;
@@ -815,9 +837,12 @@ class DownloadImpl implements DownloadService {
       try {
         final headers = _getDownloadHeaders();
 
-        // Add Range header for resume support
+        // A bare GET of a separate high-resolution stream can return a
+        // short body. Ask for the range the extractor already measured.
         if (currentResumeFrom > 0) {
           headers['Range'] = 'bytes=$currentResumeFrom-';
+        } else if (rangeToEnd && totalSize > 0) {
+          headers['Range'] = 'bytes=0-${totalSize - 1}';
         }
 
         await _dio.download(
@@ -997,6 +1022,11 @@ class DownloadImpl implements DownloadService {
     _speedSamplesMap.remove(downloadId);
   }
 
+  void _logUbuntuTouchDownload(String message) {
+    if (!UbuntuTouch.enabled) return;
+    print('gastube: $message');
+  }
+
   Future<Directory> _getDownloadDirectory() async {
     final appDir = await persistentAppDirectory();
     final downloadDir = Directory(p.join(appDir.path, 'Downloads'));
@@ -1131,6 +1161,7 @@ class DownloadImpl implements DownloadService {
       url: item.videoUrl!,
       savePath: filePath,
       cancelToken: cancelToken,
+      expectedSize: item.videoTotalBytes,
       resumeFromByte: resumeFromByte,
       onProgress: (received, total) {
         if (_pausedDownloads[item.id] == true) {
@@ -1167,6 +1198,7 @@ class DownloadImpl implements DownloadService {
       url: item.audioUrl!,
       savePath: filePath,
       cancelToken: cancelToken,
+      expectedSize: item.audioTotalBytes,
       resumeFromByte: resumeFromByte,
       onProgress: (received, total) {
         if (_pausedDownloads[item.id] == true) {
@@ -1204,6 +1236,7 @@ class DownloadImpl implements DownloadService {
         url: item.videoUrl!,
         savePath: videoPath,
         cancelToken: cancelToken,
+        expectedSize: item.videoTotalBytes,
         resumeFromByte: videoResumeBytes,
         onProgress: (received, total) {
           if (_pausedDownloads[item.id] == true) {
@@ -1239,6 +1272,7 @@ class DownloadImpl implements DownloadService {
         url: item.audioUrl!,
         savePath: audioPath,
         cancelToken: cancelToken,
+        expectedSize: item.audioTotalBytes,
         resumeFromByte: audioResumeBytes,
         onProgress: (received, total) {
           if (_pausedDownloads[item.id] == true) {
@@ -1451,6 +1485,15 @@ class DownloadImpl implements DownloadService {
           publicDir = Directory('/storage/emulated/0/Movies');
           subFolder = 'FluxTube';
         }
+      } else if (UbuntuTouch.enabled) {
+        final handed = await exportDownload(
+          path: sourceFile.path,
+          audioOnly: item.downloadType == domain.DownloadType.audioOnly,
+        );
+        if (!handed.ok) {
+          return Left(MainFailure.unknown(message: handed.message));
+        }
+        return const Right(unit);
       } else {
         // On other platforms, use the downloads directory
         publicDir = await getDownloadsDirectory();
@@ -1461,8 +1504,9 @@ class DownloadImpl implements DownloadService {
         return const Left(MainFailure.unknown(message: 'Could not access public storage'));
       }
 
-      // Create the FluxTube subfolder
-      final targetDir = Directory('${publicDir.path}/$subFolder');
+      final targetDir = subFolder.isEmpty
+          ? publicDir
+          : Directory('${publicDir.path}/$subFolder');
       if (!await targetDir.exists()) {
         await targetDir.create(recursive: true);
       }
@@ -1490,6 +1534,7 @@ class DownloadImpl implements DownloadService {
       await sourceFile.copy(finalPath);
 
       log('[Download] Saved to device: $finalPath');
+      _logUbuntuTouchDownload('save exports file=$finalPath');
 
       return const Right(unit);
     } catch (e) {

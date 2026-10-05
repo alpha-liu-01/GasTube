@@ -14,6 +14,7 @@ import org.schabi.newpipe.extractor.comments.CommentsInfo
 import org.schabi.newpipe.extractor.kiosk.KioskInfo
 import org.schabi.newpipe.extractor.localization.ContentCountry
 import org.schabi.newpipe.extractor.localization.Localization
+import org.schabi.newpipe.extractor.playlist.PlaylistInfo
 import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem
 import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.services.youtube.YoutubeJavaScriptPlayerManager
@@ -85,6 +86,8 @@ object ExtractorServer {
             "getComments" -> comments(required(args, "id"))
             "getMoreComments" -> moreComments(required(args, "id"), required(args, "nextPage"))
             "getCommentReplies" -> moreComments(required(args, "id"), required(args, "repliesPage"))
+            "getPlaylist" -> playlist(required(args, "id"))
+            "getMorePlaylist" -> morePlaylist(required(args, "id"), required(args, "nextPage"))
             else -> throw ArgException("Unknown method $method")
         }
     }
@@ -277,12 +280,53 @@ object ExtractorServer {
         )
     }
 
+    private fun playlistUrl(idOrUrl: String): String {
+        return if (idOrUrl.startsWith("http")) {
+            idOrUrl
+        } else {
+            "https://www.youtube.com/playlist?list=$idOrUrl"
+        }
+    }
+
+    private fun playlist(idOrUrl: String): String {
+        val info = PlaylistInfo.getInfo(ServiceList.YouTube, playlistUrl(idOrUrl))
+        val bestThumbnail = info.thumbnails.maxByOrNull { it.width * it.height }?.url
+            ?: info.thumbnails.lastOrNull()?.url
+        return gson.toJson(
+            mapOf(
+                "id" to info.id,
+                "name" to info.name,
+                "thumbnailUrl" to bestThumbnail,
+                "uploaderName" to info.uploaderName,
+                "uploaderUrl" to info.uploaderUrl,
+                "uploaderAvatarUrl" to bestImage(info.uploaderAvatars),
+                "streamCount" to info.streamCount,
+                "videos" to info.relatedItems.map { mapInfoItem(it) },
+                "nextPage" to serializePage(info.nextPage),
+            ),
+        )
+    }
+
+    private fun morePlaylist(idOrUrl: String, nextPageJson: String): String {
+        val more = PlaylistInfo.getMoreItems(
+            ServiceList.YouTube,
+            playlistUrl(idOrUrl),
+            deserializePage(nextPageJson),
+        )
+        return gson.toJson(
+            mapOf(
+                "videos" to more.items.map { mapInfoItem(it) },
+                "nextPage" to serializePage(more.nextPage),
+            ),
+        )
+    }
+
     private fun mapComment(comment: org.schabi.newpipe.extractor.comments.CommentsInfoItem) = mapOf(
         "id" to comment.commentId,
         "text" to comment.commentText?.content,
         "authorName" to comment.uploaderName,
         "authorUrl" to comment.uploaderUrl,
-        "authorAvatarUrl" to comment.uploaderAvatars.firstOrNull()?.url,
+        "authorAvatarUrl" to bestImage(comment.uploaderAvatars),
         "authorVerified" to comment.isUploaderVerified,
         "likeCount" to comment.likeCount,
         "replyCount" to comment.replyCount,

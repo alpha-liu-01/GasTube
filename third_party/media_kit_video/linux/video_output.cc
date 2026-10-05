@@ -91,6 +91,8 @@ static void video_output_init(VideoOutput* self) {
   g_mutex_init(&self->mutex);
 }
 
+static void request_flutter_gl_context(VideoOutput* self);
+
 VideoOutput* video_output_new(FlTextureRegistrar* texture_registrar,
                               FlView* view,
                               gint64 handle,
@@ -122,14 +124,27 @@ VideoOutput* video_output_new(FlTextureRegistrar* texture_registrar,
       gdk_gl_context_realize(self->gdk_gl_context, &error);
       if (error == NULL) {
         gdk_gl_context_make_current(self->gdk_gl_context);
+        const char* gl_vendor = (const char*)glGetString(GL_VENDOR);
         g_print(
             "media_kit: GL context GDK: vendor=%s renderer=%s version=%s\n",
-            (const char*)glGetString(GL_VENDOR),
-            (const char*)glGetString(GL_RENDERER),
+            gl_vendor, (const char*)glGetString(GL_RENDERER),
             (const char*)glGetString(GL_VERSION));
+        // An empty vendor means this context cannot feed mpv. Keep the GL
+        // texture and create the render context later on Flutter's context.
+        // The software pixel path copies a full RGB frame on the UI thread.
+        const bool gdk_gl_usable = gl_vendor != nullptr && gl_vendor[0] != '\0';
+        if (!gdk_gl_usable) {
+          g_print(
+              "media_kit: VideoOutput: GDK GL context is empty, using Flutter "
+              "GL context\n");
+        }
         self->texture_gl = texture_gl_new(self);
         if (fl_texture_registrar_register_texture(
                 texture_registrar, FL_TEXTURE(self->texture_gl))) {
+          if (!gdk_gl_usable) {
+            hardware_acceleration_supported = TRUE;
+            request_flutter_gl_context(self);
+          } else {
           mpv_opengl_init_params gl_init_params{
               [](auto, auto name) {
                 GdkDisplay* display = gdk_display_get_default();
@@ -173,6 +188,14 @@ VideoOutput* video_output_new(FlTextureRegistrar* texture_registrar,
                 self);
             hardware_acceleration_supported = TRUE;
             g_print("media_kit: VideoOutput: Using H/W rendering.\n");
+          } else {
+            g_print(
+                "media_kit: VideoOutput: GDK mpv context failed, using "
+                "Flutter GL context\n");
+            self->render_context = NULL;
+            hardware_acceleration_supported = TRUE;
+            request_flutter_gl_context(self);
+          }
           }
         }
       }
@@ -363,6 +386,38 @@ void video_output_set_texture_update_callback(
   }
 }
 
+static void request_flutter_gl_context(VideoOutput* self) {
+  if (self->destroyed || self->texture_gl == NULL || self->flutter_gl_bound) {
+    return;
+  }
+  struct Kick {
+    VideoOutput* output;
+    int tries;
+  };
+  Kick* kick = g_new0(Kick, 1);
+  kick->output = VIDEO_OUTPUT(g_object_ref(self));
+  g_timeout_add(
+      50,
+      [](gpointer data) -> gboolean {
+        Kick* kick = static_cast<Kick*>(data);
+        VideoOutput* output = kick->output;
+        if (output->destroyed || output->texture_gl == NULL ||
+            output->flutter_gl_bound || kick->tries >= 20) {
+          g_object_unref(output);
+          g_free(kick);
+          return G_SOURCE_REMOVE;
+        }
+        fl_texture_registrar_mark_texture_frame_available(
+            output->texture_registrar, FL_TEXTURE(output->texture_gl));
+        if (kick->tries == 0) {
+          g_print("media_kit: VideoOutput: requested Flutter GL context\n");
+        }
+        kick->tries += 1;
+        return G_SOURCE_CONTINUE;
+      },
+      kick);
+}
+
 void video_output_set_size(VideoOutput* self, gint64 width, gint64 height) {
   // Ideally, a mutex should be used here & |video_output_get_width| +
   // |video_output_get_height|. However, that is throwing everything into a
@@ -373,6 +428,7 @@ void video_output_set_size(VideoOutput* self, gint64 width, gint64 height) {
   if (self->texture_gl) {
     self->width = width;
     self->height = height;
+    request_flutter_gl_context(self);
   }
   // S/W
   if (self->texture_sw) {

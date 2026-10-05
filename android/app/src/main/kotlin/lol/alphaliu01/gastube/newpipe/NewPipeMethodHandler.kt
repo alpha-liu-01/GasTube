@@ -64,6 +64,7 @@ class NewPipeMethodHandler : MethodChannel.MethodCallHandler {
             "getMoreComments" -> handleGetMoreComments(call, result)
             "getCommentReplies" -> handleGetCommentReplies(call, result)
             "getPlaylist" -> handleGetPlaylist(call, result)
+            "getMorePlaylist" -> handleGetMorePlaylist(call, result)
             "getRelatedStreams" -> handleGetRelatedStreams(call, result)
             else -> result.notImplemented()
         }
@@ -468,7 +469,7 @@ class NewPipeMethodHandler : MethodChannel.MethodCallHandler {
                             "text" to comment.commentText?.content,
                             "authorName" to comment.uploaderName,
                             "authorUrl" to comment.uploaderUrl,
-                            "authorAvatarUrl" to comment.uploaderAvatars.firstOrNull()?.url,
+                            "authorAvatarUrl" to bestAvatar(comment.uploaderAvatars),
                             "authorVerified" to comment.isUploaderVerified,
                             "likeCount" to comment.likeCount,
                             "replyCount" to comment.replyCount,
@@ -521,7 +522,7 @@ class NewPipeMethodHandler : MethodChannel.MethodCallHandler {
                             "text" to comment.commentText?.content,
                             "authorName" to comment.uploaderName,
                             "authorUrl" to comment.uploaderUrl,
-                            "authorAvatarUrl" to comment.uploaderAvatars.firstOrNull()?.url,
+                            "authorAvatarUrl" to bestAvatar(comment.uploaderAvatars),
                             "authorVerified" to comment.isUploaderVerified,
                             "likeCount" to comment.likeCount,
                             "replyCount" to comment.replyCount,
@@ -572,7 +573,7 @@ class NewPipeMethodHandler : MethodChannel.MethodCallHandler {
                             "text" to comment.commentText?.content,
                             "authorName" to comment.uploaderName,
                             "authorUrl" to comment.uploaderUrl,
-                            "authorAvatarUrl" to comment.uploaderAvatars.firstOrNull()?.url,
+                            "authorAvatarUrl" to bestAvatar(comment.uploaderAvatars),
                             "authorVerified" to comment.isUploaderVerified,
                             "likeCount" to comment.likeCount,
                             "replyCount" to comment.replyCount,
@@ -627,12 +628,48 @@ class NewPipeMethodHandler : MethodChannel.MethodCallHandler {
                     "uploaderAvatarUrl" to bestUploaderAvatar,
                     "streamCount" to playlistInfo.streamCount,
                     "videos" to playlistInfo.relatedItems.map { mapInfoItem(it) },
-                    "nextPage" to playlistInfo.nextPage?.url
+                    "nextPage" to serializePage(playlistInfo.nextPage)
                 )
 
                 sendSuccess(result, gson.toJson(response))
             } catch (e: Exception) {
                 sendError(result, "EXTRACTION_ERROR", e.message ?: "Failed to get playlist", null)
+            }
+        }
+    }
+
+    /**
+     * Next page of a playlist. [nextPage] is the serialized Page from getPlaylist.
+     */
+    private fun handleGetMorePlaylist(call: MethodCall, result: MethodChannel.Result) {
+        val playlistId = call.argument<String>("id") ?: run {
+            result.error("INVALID_ARGUMENT", "Playlist ID is required", null)
+            return
+        }
+        val nextPageJson = call.argument<String>("nextPage") ?: run {
+            result.error("INVALID_ARGUMENT", "Next page is required", null)
+            return
+        }
+
+        scope.launch {
+            try {
+                val url = if (playlistId.startsWith("http")) {
+                    playlistId
+                } else {
+                    "https://www.youtube.com/playlist?list=$playlistId"
+                }
+                val more = PlaylistInfo.getMoreItems(
+                    ServiceList.YouTube,
+                    url,
+                    deserializePage(nextPageJson),
+                )
+                val response = mapOf(
+                    "videos" to more.items.map { mapInfoItem(it) },
+                    "nextPage" to serializePage(more.nextPage),
+                )
+                sendSuccess(result, gson.toJson(response))
+            } catch (e: Exception) {
+                sendError(result, "EXTRACTION_ERROR", e.message ?: "Failed to get more playlist videos", null)
             }
         }
     }
@@ -862,6 +899,20 @@ class NewPipeMethodHandler : MethodChannel.MethodCallHandler {
             "playlistUploaderName" to (item as? org.schabi.newpipe.extractor.playlist.PlaylistInfoItem)?.uploaderName,
             "playlistUploaderUrl" to (item as? org.schabi.newpipe.extractor.playlist.PlaylistInfoItem)?.uploaderUrl
         )
+    }
+
+    private fun bestAvatar(images: List<org.schabi.newpipe.extractor.Image>?): String? {
+        if (images.isNullOrEmpty()) return null
+        return images.maxWithOrNull(
+            compareBy<org.schabi.newpipe.extractor.Image> {
+                when (it.estimatedResolutionLevel) {
+                    org.schabi.newpipe.extractor.Image.ResolutionLevel.HIGH -> 3
+                    org.schabi.newpipe.extractor.Image.ResolutionLevel.MEDIUM -> 2
+                    org.schabi.newpipe.extractor.Image.ResolutionLevel.LOW -> 1
+                    else -> 0
+                }
+            }.thenByDescending { it.width.toLong() * it.height.toLong() }
+        )?.url?.takeIf { it.isNotBlank() }
     }
 
     /**

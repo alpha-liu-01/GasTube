@@ -2,6 +2,7 @@ import 'package:dartz/dartz.dart';
 import 'package:fluxtube/domain/core/failure/main_failure.dart';
 import 'package:fluxtube/domain/download/models/download_item.dart';
 import 'package:fluxtube/domain/download/models/download_quality.dart';
+import 'package:fluxtube/core/settings.dart';
 import 'package:fluxtube/domain/watch/models/newpipe/newpipe_stream.dart';
 
 /// Abstract service for download operations
@@ -22,6 +23,7 @@ abstract class DownloadService {
     List<NewPipeVideoStream>? videoStreams,
     List<NewPipeVideoStream>? videoOnlyStreams,
     List<NewPipeAudioStream>? audioStreams,
+    String preferredCodec = defaultVideoCodecH264,
   });
 
   /// Start a download

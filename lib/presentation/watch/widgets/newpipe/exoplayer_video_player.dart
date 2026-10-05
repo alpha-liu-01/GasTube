@@ -7,8 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluxtube/application/application.dart';
+import 'package:fluxtube/core/fullscreen_aspect.dart';
 import 'package:fluxtube/core/player/global_player_controller.dart';
-import 'package:fluxtube/core/services/audio_handler_service.dart';
+import 'package:fluxtube/core/services/media_controls.dart';
 import 'package:fluxtube/core/services/exoplayer_notification_bridge.dart';
 import 'package:fluxtube/core/services/pip_service.dart';
 import 'package:fluxtube/domain/saved/models/local_store.dart';
@@ -17,6 +18,7 @@ import 'package:fluxtube/domain/watch/models/newpipe/newpipe_subtitle.dart';
 import 'package:fluxtube/domain/watch/models/newpipe/newpipe_watch_resp.dart';
 import 'package:fluxtube/domain/watch/playback/models/playback_configuration.dart';
 import 'package:fluxtube/domain/watch/playback/models/stream_quality_info.dart';
+import 'package:fluxtube/core/settings.dart';
 import 'package:fluxtube/domain/watch/playback/newpipe_playback_resolver.dart';
 import 'package:fluxtube/domain/watch/playback/newpipe_stream_helper.dart';
 import 'package:fluxtube/core/player/playback_queue.dart';
@@ -38,6 +40,7 @@ class NewPipeExoPlayer extends StatefulWidget {
     required this.videoId,
     required this.playbackPosition,
     this.defaultQuality = '720p',
+    this.defaultVideoCodec = defaultVideoCodecH264,
     this.videoFitMode = 'contain',
     this.skipInterval = 10,
     this.preferAdaptivePlayback = true,
@@ -54,6 +57,7 @@ class NewPipeExoPlayer extends StatefulWidget {
   final String videoId;
   final int playbackPosition;
   final String defaultQuality;
+  final String defaultVideoCodec;
   final String videoFitMode;
   final int skipInterval;
   final bool preferAdaptivePlayback;
@@ -115,7 +119,10 @@ class _NewPipeExoPlayerState extends State<NewPipeExoPlayer> {
   @override
   void initState() {
     super.initState();
-    _qualities = NewPipeStreamHelper.getAvailableQualities(widget.watchInfo);
+    _qualities = NewPipeStreamHelper.getAvailableQualities(
+      widget.watchInfo,
+      preferredCodec: widget.defaultVideoCodec,
+    );
     _audioTracks = NewPipeStreamHelper.getAvailableAudioTracks(
       widget.watchInfo.audioStreams ?? [],
     );
@@ -176,8 +183,12 @@ class _NewPipeExoPlayerState extends State<NewPipeExoPlayer> {
     }
     if (widget.isFullscreen) {
       unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
-      unawaited(
-          SystemChrome.setPreferredOrientations(DeviceOrientation.values));
+      if (FullscreenAspect.sessionActive) {
+        unawaited(FullscreenAspect.restore());
+      } else {
+        unawaited(
+            SystemChrome.setPreferredOrientations(DeviceOrientation.values));
+      }
     }
     super.dispose();
   }
@@ -223,6 +234,7 @@ class _NewPipeExoPlayerState extends State<NewPipeExoPlayer> {
     return NewPipeStreamHelper.findBestMatchingQuality(
           _qualities,
           widget.defaultQuality,
+          preferredCodec: widget.defaultVideoCodec,
         )?.label ??
         'Auto';
   }
@@ -234,6 +246,7 @@ class _NewPipeExoPlayerState extends State<NewPipeExoPlayer> {
       preferredQuality: preferAdaptive ? _initialQuality() : quality,
       preferHighQuality: true,
       preferAdaptive: preferAdaptive,
+      preferredCodec: widget.defaultVideoCodec,
     );
 
     if (resolved.sourceType == MediaSourceType.merging &&
@@ -262,7 +275,8 @@ class _NewPipeExoPlayerState extends State<NewPipeExoPlayer> {
             _errorMessage = null;
             _isBuffering = true;
           });
-          await _channel?.invokeMethod('load', _sourceParams(keepPosition: false));
+          await _channel?.invokeMethod(
+              'load', _sourceParams(keepPosition: false));
         }
       }
     } catch (_) {
@@ -540,10 +554,10 @@ class _NewPipeExoPlayerState extends State<NewPipeExoPlayer> {
   }
 
   Future<void> _initNotification() async {
-    final handler = await ensureAudioServiceInitialized();
-    if (handler == null || !mounted) return;
+    if (!mounted) return;
+    final controls = MediaControls.instance;
 
-    handler.configureExternalControls(
+    controls.bindCommands(
       play: () async {
         if (!mounted) return;
         setState(() => _isPlaying = true);
@@ -571,7 +585,8 @@ class _NewPipeExoPlayerState extends State<NewPipeExoPlayer> {
       },
     );
 
-    await handler.setExternalMediaItem(
+    await controls.setNowPlaying(
+      external: true,
       id: widget.videoId,
       title: widget.watchInfo.title ?? 'Video',
       artist: widget.watchInfo.uploaderName ?? 'Unknown',
@@ -594,8 +609,7 @@ class _NewPipeExoPlayerState extends State<NewPipeExoPlayer> {
     }
     _lastNotificationStateUpdate = now;
 
-    final handler = await ensureAudioServiceInitialized();
-    await handler?.updateExternalPlaybackState(
+    await MediaControls.instance.updateProgress(
       playing: _isPlaying,
       position: Duration(milliseconds: _positionMs),
       duration: Duration(milliseconds: _durationMs),
@@ -710,6 +724,7 @@ class _NewPipeExoPlayerState extends State<NewPipeExoPlayer> {
             defaultQuality: _currentQuality == 'Auto'
                 ? widget.defaultQuality
                 : _currentQuality,
+            defaultVideoCodec: widget.defaultVideoCodec,
             videoFitMode: _fitMode,
             skipInterval: widget.skipInterval,
             preferAdaptivePlayback: _currentQuality == 'Auto',
@@ -1446,12 +1461,39 @@ class _NewPipeExoFullscreenRouteState
   @override
   void initState() {
     super.initState();
-    unawaited(
-        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky));
-    unawaited(SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]));
+    unawaited(_applyFullscreenChrome());
+  }
+
+  Future<void> _applyFullscreenChrome() async {
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    await FullscreenAspect.ensureLoaded();
+    if (!FullscreenAspect.enabled) {
+      await SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+      return;
+    }
+    final size = _videoSize();
+    await FullscreenAspect.choose(size.$1, size.$2);
+  }
+
+  (int?, int?) _videoSize() {
+    final player = widget.player;
+    if (player is! NewPipeExoPlayer) return (null, null);
+    int? squareWidth;
+    int? squareHeight;
+    for (final stream in player.watchInfo.videoStreams ?? const []) {
+      final width = stream.width;
+      final height = stream.height;
+      if (width == null || height == null || width <= 0 || height <= 0) {
+        continue;
+      }
+      if (width != height) return (width, height);
+      squareWidth ??= width;
+      squareHeight ??= height;
+    }
+    return (squareWidth, squareHeight);
   }
 
   @override

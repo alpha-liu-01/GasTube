@@ -6,8 +6,10 @@ import 'package:fluxtube/core/api_client.dart';
 import 'package:fluxtube/domain/core/api_end_points.dart';
 import 'package:fluxtube/domain/core/failure/main_failure.dart';
 import 'package:fluxtube/domain/playlist/models/invidious/invidious_playlist_resp.dart';
+import 'package:fluxtube/domain/playlist/models/newpipe/newpipe_playlist_resp.dart';
 import 'package:fluxtube/domain/playlist/models/piped/playlist_resp.dart';
 import 'package:fluxtube/domain/playlist/playlist_service.dart';
+import 'package:fluxtube/infrastructure/newpipe/newpipe_channel.dart';
 import 'package:injectable/injectable.dart';
 
 @LazySingleton(as: PlaylistService)
@@ -70,6 +72,36 @@ class PlaylistImpl implements PlaylistService {
       }
     } catch (e) {
       log('Err on getInvidiousPlaylistData: $e');
+      return const Left(MainFailure.clientFailure());
+    }
+  }
+
+  @override
+  Future<Either<MainFailure, NewPipePlaylistResp>> getNewPipePlaylistData({
+    required String playlistId,
+  }) async {
+    try {
+      final data = await NewPipeChannel.getPlaylist(playlistId);
+      return Right(data);
+    } catch (e) {
+      log('Err on getNewPipePlaylistData: $e');
+      return const Left(MainFailure.clientFailure());
+    }
+  }
+
+  @override
+  Future<Either<MainFailure, NewPipePlaylistResp>> getMoreNewPipePlaylistVideos({
+    required String playlistId,
+    required String nextPage,
+  }) async {
+    try {
+      final data = await NewPipeChannel.getMorePlaylist(
+        playlistId: playlistId,
+        nextPage: nextPage,
+      );
+      return Right(data);
+    } catch (e) {
+      log('Err on getMoreNewPipePlaylistVideos: $e');
       return const Left(MainFailure.clientFailure());
     }
   }

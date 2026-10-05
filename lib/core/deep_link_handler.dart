@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:go_router/go_router.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 
@@ -10,16 +12,28 @@ class DeepLinkHandler {
   factory DeepLinkHandler() => _instance;
   DeepLinkHandler._internal();
 
-  late AppLinks _appLinks;
+  AppLinks? _appLinks;
+  static const MethodChannel _ubuntuTouchUrls =
+      MethodChannel('lol.alphaliu01.gastube/url');
   StreamSubscription<Uri>? _linkSubscription;
   StreamSubscription<List<SharedMediaFile>>? _shareSubscription;
   BuildContext? _context;
+  final List<String> _pendingSharedText = [];
 
   void init(BuildContext context) {
     _context = context;
-    _appLinks = AppLinks();
-    _setupDeepLinkListener();
-    _handleInitialLink();
+    if (UbuntuTouch.enabled) {
+      unawaited(_listenUbuntuTouchUrls());
+    } else {
+      _appLinks = AppLinks();
+      _setupDeepLinkListener();
+      _handleInitialLink();
+    }
+    final pending = List<String>.from(_pendingSharedText);
+    _pendingSharedText.clear();
+    for (final text in pending) {
+      _handleSharedText(text);
+    }
     // receive_sharing_intent only has Android and iOS implementations.
     if (Platform.isAndroid || Platform.isIOS) {
       _setupShareIntentListener();
@@ -28,9 +42,44 @@ class DeepLinkHandler {
   }
 
   void _setupDeepLinkListener() {
-    _linkSubscription = _appLinks.uriLinkStream.listen((Uri uri) {
+    _linkSubscription = _appLinks!.uriLinkStream.listen((Uri uri) {
       _handleDeepLink(uri);
     });
+  }
+
+  Future<void> _listenUbuntuTouchUrls() async {
+    _ubuntuTouchUrls.setMethodCallHandler((call) async {
+      if (call.method == 'url' && call.arguments is String) {
+        _openUbuntuTouchUrl(call.arguments as String);
+      }
+      return null;
+    });
+    try {
+      final drained =
+          await _ubuntuTouchUrls.invokeMethod<List<dynamic>>('drain');
+      if (drained != null) {
+        for (final item in drained) {
+          if (item is String) _openUbuntuTouchUrl(item);
+        }
+      }
+    } catch (e) {
+      print('gastube: url drain failed $e');
+    }
+    for (final url in UbuntuTouchUrls.argv) {
+      _openUbuntuTouchUrl(url);
+    }
+    UbuntuTouchUrls.argv.clear();
+  }
+
+  void _openUbuntuTouchUrl(String url) {
+    print('gastube: url open $url');
+    if (_context == null || !_context!.mounted) {
+      _pendingSharedText.add(url);
+      return;
+    }
+    final parsed = Uri.tryParse(url);
+    if (parsed == null) return;
+    _handleDeepLink(parsed);
   }
 
   void _setupShareIntentListener() {
@@ -46,7 +95,7 @@ class DeepLinkHandler {
 
   Future<void> _handleInitialLink() async {
     try {
-      final Uri? initialLink = await _appLinks.getInitialLink();
+      final Uri? initialLink = await _appLinks!.getInitialLink();
       if (initialLink != null) {
         _handleDeepLink(initialLink);
       }
@@ -77,8 +126,17 @@ class DeepLinkHandler {
     }
   }
 
+  void acceptSharedText(String text) {
+    if (_context == null || !_context!.mounted) {
+      _pendingSharedText.add(text);
+      print('gastube: content share queued text=$text');
+      return;
+    }
+    _handleSharedText(text);
+  }
+
   void _handleSharedText(String text) {
-    debugPrint('Shared text received: $text');
+    print('gastube: content share text=$text');
     final result = parseYouTubeUrl(text);
     if (result != null) {
       _navigateToContent(result);
@@ -118,6 +176,17 @@ class DeepLinkHandler {
   }
 
   static YouTubeLinkResult? parseYouTubeUrl(String url) {
+    if (url.startsWith('vnd.youtube:') || url.startsWith('youtube:')) {
+      final scheme = RegExp(
+        r'(?:watch\?v=|shorts/|//)([a-zA-Z0-9_-]{11})',
+      ).firstMatch(url);
+      final bare = RegExp(r':([a-zA-Z0-9_-]{11})(?:[/?#]|$)').firstMatch(url);
+      final id = scheme?.group(1) ?? bare?.group(1);
+      if (id != null) {
+        return YouTubeLinkResult(type: YouTubeLinkType.video, id: id);
+      }
+    }
+
     // Handle youtu.be short links
     final youtubeShortRegex = RegExp(r'youtu\.be/([a-zA-Z0-9_-]{11})');
     final shortMatch = youtubeShortRegex.firstMatch(url);
@@ -204,6 +273,9 @@ class DeepLinkHandler {
   void dispose() {
     _linkSubscription?.cancel();
     _shareSubscription?.cancel();
+    if (UbuntuTouch.enabled) {
+      _ubuntuTouchUrls.setMethodCallHandler(null);
+    }
   }
 }
 

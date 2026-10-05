@@ -1,6 +1,8 @@
+import 'package:fluxtube/core/settings.dart';
 import 'package:fluxtube/domain/watch/models/newpipe/newpipe_stream.dart';
 import 'package:fluxtube/domain/watch/models/newpipe/newpipe_watch_resp.dart';
 import 'package:fluxtube/domain/watch/playback/models/stream_quality_info.dart';
+import 'package:fluxtube/domain/watch/playback/video_codec.dart';
 
 /// Stream selection and sorting utilities (mimics NewPipe's ListHelper.java)
 class NewPipeStreamHelper {
@@ -20,7 +22,9 @@ class NewPipeStreamHelper {
 
   /// Get all available qualities from watch response
   static List<StreamQualityInfo> getAvailableQualities(
-      NewPipeWatchResp watchResp) {
+    NewPipeWatchResp watchResp, {
+    String preferredCodec = defaultVideoCodecH264,
+  }) {
     final qualities = <StreamQualityInfo>[];
     final seenLabels = <String>{};
 
@@ -28,8 +32,10 @@ class NewPipeStreamHelper {
     // These are higher quality and should be preferred
     final bestAudio = getBestAudioStream(watchResp.audioStreams ?? []);
 
-    for (var videoStream
-        in sortVideoStreams(watchResp.videoOnlyStreams ?? [])) {
+    for (var videoStream in sortVideoStreams(
+      watchResp.videoOnlyStreams ?? [],
+      preferredCodec: preferredCodec,
+    )) {
       if (videoStream.url == null || videoStream.url!.isEmpty) continue;
 
       final resolution = _parseResolution(videoStream.resolution);
@@ -54,7 +60,10 @@ class NewPipeStreamHelper {
     }
 
     // Process muxed streams (videoStreams - have audio, ≤360p)
-    for (var videoStream in sortVideoStreams(watchResp.videoStreams ?? [])) {
+    for (var videoStream in sortVideoStreams(
+      watchResp.videoStreams ?? [],
+      preferredCodec: preferredCodec,
+    )) {
       if (videoStream.url == null || videoStream.url!.isEmpty) continue;
 
       final resolution = _parseResolution(videoStream.resolution);
@@ -111,16 +120,21 @@ class NewPipeStreamHelper {
   /// string is not an exact match.
   static StreamQualityInfo? findBestMatchingQuality(
     List<StreamQualityInfo> qualities,
-    String preferredQuality,
-  ) {
+    String preferredQuality, {
+    String preferredCodec = defaultVideoCodecH264,
+  }) {
     if (qualities.isEmpty) return null;
 
     final normalizedPreference = preferredQuality.toLowerCase().trim();
     final exact = qualities
         .where((quality) =>
             quality.label.toLowerCase().trim() == normalizedPreference)
-        .firstOrNull;
-    if (exact != null) return exact;
+        .toList();
+    if (exact.isNotEmpty) {
+      exact.sort((a, b) => _codecPenalty(a, preferredCodec)
+          .compareTo(_codecPenalty(b, preferredCodec)));
+      return exact.first;
+    }
 
     final targetResolution = _parseResolution(preferredQuality);
     if (targetResolution == null || targetResolution <= 0) {
@@ -142,6 +156,10 @@ class NewPipeStreamHelper {
       // If equally close, choose the lower resolution to avoid unexpected heat.
       final lowerResolutionCompare = a.resolution.compareTo(b.resolution);
       if (lowerResolutionCompare != 0) return lowerResolutionCompare;
+
+      final codecCompare = _codecPenalty(a, preferredCodec)
+          .compareTo(_codecPenalty(b, preferredCodec));
+      if (codecCompare != 0) return codecCompare;
 
       return _formatPenalty(a.format).compareTo(_formatPenalty(b.format));
     });
@@ -168,10 +186,21 @@ class NewPipeStreamHelper {
     return index == -1 ? _preferredVideoFormats.length : index;
   }
 
+  static int _codecPenalty(StreamQualityInfo quality, String preferredCodec) {
+    return videoCodecRank(
+      videoCodecFamily(
+        codec: quality.videoStream?.codec,
+        format: quality.videoStream?.format ?? quality.format,
+      ),
+      preferredCodec,
+    );
+  }
+
   /// Sort video streams by quality (NewPipe's algorithm)
   static List<NewPipeVideoStream> sortVideoStreams(
     List<NewPipeVideoStream> streams, {
     List<String> preferredFormats = _preferredVideoFormats,
+    String preferredCodec = defaultVideoCodecH264,
   }) {
     final sorted = List<NewPipeVideoStream>.from(streams);
 
@@ -191,6 +220,16 @@ class NewPipeStreamHelper {
         return aIsHighFps ? 1 : -1;
       }
       if (aFps != bFps) return bFps.compareTo(aFps);
+
+      final aCodec = videoCodecRank(
+        videoCodecFamily(codec: a.codec, format: a.format),
+        preferredCodec,
+      );
+      final bCodec = videoCodecRank(
+        videoCodecFamily(codec: b.codec, format: b.format),
+        preferredCodec,
+      );
+      if (aCodec != bCodec) return aCodec.compareTo(bCodec);
 
       // 3. Format preference
       final aFormatIndex =
@@ -328,23 +367,36 @@ class NewPipeStreamHelper {
   /// Get video stream from quality info
   static NewPipeVideoStream? getVideoStreamForQuality(
     NewPipeWatchResp watchResp,
-    String qualityLabel,
-  ) {
+    String qualityLabel, {
+    String preferredCodec = defaultVideoCodecH264,
+  }) {
     // Check if quality requires merging (>360p)
     if (requiresMerging(qualityLabel)) {
       // Look in video-only streams
-      final sorted = sortVideoStreams(watchResp.videoOnlyStreams ?? []);
+      final sorted = sortVideoStreams(
+        watchResp.videoOnlyStreams ?? [],
+        preferredCodec: preferredCodec,
+      );
       return getBestVideoStream(sorted, qualityLabel, allowVideoOnly: true);
     } else {
       // Look in muxed streams
-      final sorted = sortVideoStreams(watchResp.videoStreams ?? []);
+      final sorted = sortVideoStreams(
+        watchResp.videoStreams ?? [],
+        preferredCodec: preferredCodec,
+      );
       return getBestVideoStream(sorted, qualityLabel, allowVideoOnly: false);
     }
   }
 
   /// Get maximum available quality
-  static String? getMaxAvailableQuality(NewPipeWatchResp watchResp) {
-    final qualities = getAvailableQualities(watchResp);
+  static String? getMaxAvailableQuality(
+    NewPipeWatchResp watchResp, {
+    String preferredCodec = defaultVideoCodecH264,
+  }) {
+    final qualities = getAvailableQualities(
+      watchResp,
+      preferredCodec: preferredCodec,
+    );
     if (qualities.isEmpty) return null;
     return qualities.first.label;
   }

@@ -6,6 +6,7 @@
 #endif
 
 #include "flutter/generated_plugin_registrant.h"
+#include "pulse_unplug.h"
 
 struct _MyApplication {
   GtkApplication parent_instance;
@@ -47,7 +48,27 @@ static void my_application_activate(GApplication* application) {
     gtk_window_set_title(window, "GasTube");
   }
 
-  gtk_window_set_default_size(window, 1280, 720);
+  // 1280x720 is in logical pixels. A scale-2 panel such as the RK3399's
+  // 2048x1536 screen is only 1024x768 here, so the old default opened wider
+  // than the display. Stay inside the monitor and leave room for the panel.
+  int width = 1280;
+  int height = 720;
+  GdkDisplay* display = gtk_widget_get_display(GTK_WIDGET(window));
+  GdkMonitor* monitor = gdk_display_get_primary_monitor(display);
+  if (monitor == nullptr && gdk_display_get_n_monitors(display) > 0) {
+    monitor = gdk_display_get_monitor(display, 0);
+  }
+  if (monitor != nullptr) {
+    GdkRectangle geom = {};
+    gdk_monitor_get_geometry(monitor, &geom);
+    if (geom.width > 100 && width > geom.width - 32) {
+      width = geom.width - 32;
+    }
+    if (geom.height > 100 && height > geom.height - 80) {
+      height = geom.height - 80;
+    }
+  }
+  gtk_window_set_default_size(window, width, height);
   gtk_widget_show(GTK_WIDGET(window));
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
@@ -58,6 +79,7 @@ static void my_application_activate(GApplication* application) {
   gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(view));
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
+  gastube_pulse_unplug_attach(view);
 
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }

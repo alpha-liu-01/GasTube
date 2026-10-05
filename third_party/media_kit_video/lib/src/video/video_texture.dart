@@ -473,11 +473,22 @@ class VideoState extends State<Video> with WidgetsBindingObserver {
 
 typedef VideoControlsBuilder = Widget Function(VideoState state);
 
+/// When this returns true, [defaultEnterNativeFullscreen] keeps the current
+/// direction instead of forcing landscape.
+Future<bool> Function()? fullscreenAspectEnter;
+
+/// When this returns true, [defaultExitNativeFullscreen] restores the
+/// direction captured on entry.
+Future<bool> Function()? fullscreenAspectExit;
+
 // --------------------------------------------------
 
 /// Makes the native window enter fullscreen.
 Future<void> defaultEnterNativeFullscreen() async {
   try {
+    if (await fullscreenAspectEnter?.call() == true) {
+      return;
+    }
     if (Platform.isAndroid || Platform.isIOS) {
       await Future.wait(
         [
@@ -508,6 +519,9 @@ Future<void> defaultEnterNativeFullscreen() async {
 /// Makes the native window exit fullscreen.
 Future<void> defaultExitNativeFullscreen() async {
   try {
+    if (await fullscreenAspectExit?.call() == true) {
+      return;
+    }
     if (Platform.isAndroid || Platform.isIOS) {
       await Future.wait(
         [

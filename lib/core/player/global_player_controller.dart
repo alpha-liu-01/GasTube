@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer';
 
 import 'package:flutter/material.dart';
@@ -5,8 +6,40 @@ import 'package:flutter/scheduler.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:fluxtube/core/services/pip_service.dart';
-import 'package:fluxtube/core/services/audio_handler_service.dart';
+import 'package:fluxtube/core/ubuntu_touch.dart';
+import 'package:fluxtube/core/services/media_controls.dart';
+import 'package:fluxtube/core/services/media_hub_player.dart';
+import 'package:fluxtube/core/services/ubuntu_touch_display.dart';
 import 'package:fluxtube/core/services/exoplayer_notification_bridge.dart';
+
+Future<void> selectUbuntuTouchDecoder(Player player, {String? codec}) async {
+  if (!UbuntuTouch.enabled) return;
+  final value = (codec ?? '').toLowerCase();
+  final h264 = value.startsWith('avc1') ||
+      value.startsWith('avc3') ||
+      value.contains('h264') ||
+      value == 'mpeg_4' ||
+      value == 'mp4';
+  final vp9 = value.startsWith('vp9') || value.contains('vp09') || value == 'webm';
+  final String vd;
+  final String fallback;
+  if (vp9) {
+    vd = 'vp9_hybris,-';
+    fallback = 'no';
+  } else if (h264) {
+    vd = 'h264_hybris,-';
+    fallback = 'no';
+  } else {
+    vd = 'h264_hybris';
+    fallback = 'yes';
+  }
+  await (player.platform as dynamic).setProperty('hwdec', 'no');
+  await (player.platform as dynamic).setProperty('vd', vd);
+  await (player.platform as dynamic)
+      .setProperty('vd-lavc-software-fallback', fallback);
+  final readBack = await (player.platform as dynamic).getProperty('vd');
+  print('gastube: vd-set=$vd vd-read=$readBack fallback=$fallback codec=$codec');
+}
 
 /// Global player controller singleton that persists across navigation
 /// This prevents the player from being recreated/disposed when navigating
@@ -23,6 +56,7 @@ class GlobalPlayerController extends ChangeNotifier {
   }
 
   Player? _player;
+  StreamSubscription<bool>? _displayPlaying;
   VideoController? _videoController;
   String? _currentVideoId;
   bool _isPipMode = false;
@@ -38,6 +72,11 @@ class GlobalPlayerController extends ChangeNotifier {
 
   // Stream source info to avoid re-resolving
   String? _currentVideoUrl;
+
+  /// One URL media-hub can play after this process is paused. A separate
+  /// audio stream wins over the video URL. Empty means there is nothing to hand off.
+  String? _backgroundAudioUrl;
+  Map<String, String> _backgroundAudioHeaders = const {};
 
   // Audio track and subtitle selection (persists across widget rebuilds)
   String? _currentAudioTrackId;
@@ -66,7 +105,12 @@ class GlobalPlayerController extends ChangeNotifier {
   }
 
   VideoController _createVideoController(Player player) {
-    return VideoController(player);
+    return VideoController(
+      player,
+      configuration: VideoControllerConfiguration(
+        hwdec: UbuntuTouch.enabled ? 'no' : null,
+      ),
+    );
   }
 
   /// Initialize player eagerly to avoid first-play issues
@@ -79,8 +123,18 @@ class GlobalPlayerController extends ChangeNotifier {
     );
     _videoController = _createVideoController(_player!);
     _isInitialized = true;
+    _watchDisplayInhibit();
     _tuneNetworkPlayback();
     log('[GlobalPlayer] Player and VideoController initialized eagerly');
+  }
+
+  void _watchDisplayInhibit() {
+    if (!UbuntuTouch.enabled) return;
+    final player = _player;
+    if (player == null || _displayPlaying != null) return;
+    _displayPlaying = player.stream.playing.listen((playing) {
+      UbuntuTouchDisplay.instance.setPlaying(playing);
+    });
   }
 
   Future<void> _tuneNetworkPlayback() async {
@@ -88,6 +142,14 @@ class GlobalPlayerController extends ChangeNotifier {
       await (_player!.platform as dynamic).setProperty('hr-seek', 'no');
     } catch (e) {
       log('[GlobalPlayer] Could not tune native seek mode: $e');
+    }
+    if (!UbuntuTouch.enabled) return;
+    try {
+      await (_player!.platform as dynamic).setProperty('ao', 'pulse');
+      await selectUbuntuTouchDecoder(_player!);
+      log('[GlobalPlayer] Audio output is PulseAudio, H.264 uses h264_hybris');
+    } catch (e) {
+      log('[GlobalPlayer] Could not select PulseAudio: $e');
     }
   }
 
@@ -104,17 +166,47 @@ class GlobalPlayerController extends ChangeNotifier {
     if (_player == null) {
       _initializePlayer();
     }
-    return _player!;
+    final player = _player;
+    if (player == null) {
+      throw StateError('Playback is not included in this Ubuntu Touch build');
+    }
+    return player;
   }
 
   VideoController get videoController {
     if (_videoController == null) {
       _initializePlayer();
     }
-    return _videoController!;
+    final controller = _videoController;
+    if (controller == null) {
+      throw StateError('Playback is not included in this Ubuntu Touch build');
+    }
+    return controller;
   }
 
   String? get currentVideoId => _nativeVideoId ?? _currentVideoId;
+
+  String? get backgroundAudioUrl {
+    final url = _backgroundAudioUrl;
+    if (url == null || url.isEmpty) return null;
+    return url;
+  }
+
+  Map<String, String> get backgroundAudioHeaders => _backgroundAudioHeaders;
+
+  /// Remember the single URL to give media-hub. Pass the audio-only URL when
+  /// picture and sound are separate. Pass the opened URL when one stream
+  /// already contains the sound.
+  void noteBackgroundAudio({
+    String? url,
+    Map<String, String> headers = const {},
+  }) {
+    _backgroundAudioUrl = url;
+    _backgroundAudioHeaders = Map<String, String>.from(headers);
+    if (UbuntuTouch.enabled && url != null && url.isNotEmpty) {
+      unawaited(MediaHubPlayer.instance.prepare());
+    }
+  }
   bool get isPipMode => _isPipMode;
   bool get isSystemPipMode => _isSystemPipMode;
   Duration get lastPosition =>
@@ -458,6 +550,7 @@ class GlobalPlayerController extends ChangeNotifier {
     try {
       // Create player if needed
       _player ??= Player();
+      _watchDisplayInhibit();
       _videoController ??= _createVideoController(player);
 
       final headers = httpHeaders ??
@@ -581,6 +674,7 @@ class GlobalPlayerController extends ChangeNotifier {
     final stoppingVideoId = currentVideoId;
     _currentVideoId = null;
     _currentVideoUrl = null;
+    _backgroundAudioUrl = null;
     _isPipMode = false;
     _lastPosition = Duration.zero;
     _wasPlaying = false;
@@ -627,11 +721,15 @@ class GlobalPlayerController extends ChangeNotifier {
 
   /// Full dispose - only call when completely done with player
   void disposePlayer() {
+    _displayPlaying?.cancel();
+    _displayPlaying = null;
+    UbuntuTouchDisplay.instance.setPlaying(false);
     _player?.dispose();
     _player = null;
     _videoController = null;
     _currentVideoId = null;
     _currentVideoUrl = null;
+    _backgroundAudioUrl = null;
     _isPipMode = false;
     _lastPosition = Duration.zero;
     _wasPlaying = false;
@@ -660,37 +758,32 @@ class GlobalPlayerController extends ChangeNotifier {
       ? _nativeBuffering
       : (_player?.state.buffering ?? false);
 
-  /// Update media notification with current video info
-  /// Call this when starting a new video to show notification controls
+  /// Publish what is playing. The player is not asked to play or pause here.
   Future<void> updateMediaNotification({
     required String title,
     required String artist,
     String? thumbnailUrl,
     Duration? duration,
   }) async {
-    // Ensure audio service is initialized before updating notification
-    final audioHandler = await ensureAudioServiceInitialized();
-    log('[GlobalPlayer] updateMediaNotification called - audioHandler: ${audioHandler != null}, videoId: $_currentVideoId');
-    if (audioHandler != null && _currentVideoId != null) {
-      await audioHandler.setMediaItem(
-        id: _currentVideoId!,
-        title: title,
-        artist: artist,
-        artUri: thumbnailUrl,
-        duration: duration,
-      );
-      log('[GlobalPlayer] Updated media notification: $title by $artist');
-    } else {
-      log('[GlobalPlayer] Cannot update notification - audioHandler: ${audioHandler != null}, videoId: $_currentVideoId');
+    final videoId = _currentVideoId;
+    log('[GlobalPlayer] updateMediaNotification called - videoId: $videoId');
+    if (videoId == null) {
+      log('[GlobalPlayer] Cannot update notification - videoId is empty');
+      return;
     }
+    await MediaControls.instance.setNowPlaying(
+      id: videoId,
+      title: title,
+      artist: artist,
+      artUri: thumbnailUrl,
+      duration: duration,
+    );
+    log('[GlobalPlayer] Updated media notification: $title by $artist');
   }
 
-  /// Clear media notification
+  /// Clear the published item.
   Future<void> clearMediaNotification() async {
-    final audioHandler = getAudioHandler();
-    if (audioHandler != null) {
-      await audioHandler.clearMedia();
-      log('[GlobalPlayer] Cleared media notification');
-    }
+    await MediaControls.instance.clear();
+    log('[GlobalPlayer] Cleared media notification');
   }
 }

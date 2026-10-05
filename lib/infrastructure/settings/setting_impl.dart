@@ -5,6 +5,9 @@ import 'dart:io';
 import 'package:dartz/dartz.dart';
 import 'package:dio/dio.dart';
 import 'package:fluxtube/core/api_client.dart';
+import 'package:fluxtube/core/storage_paths.dart';
+import 'package:fluxtube/core/ubuntu_touch.dart';
+import 'package:fluxtube/core/ubuntu_touch_content_hub.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:fluxtube/core/enums.dart';
@@ -63,6 +66,7 @@ class SettingImpl implements SettingsService {
     final settingsDefaults = [
       {"name": selectedDefaultLanguage, "default": "en"},
       {"name": selectedDefaultQuality, "default": "720p"},
+      {"name": defaultVideoCodecKey, "default": defaultVideoCodecH264},
       {"name": selectedDefaultRegion, "default": "IN"},
       {"name": selectedTheme, "default": "system"},
       {"name": historyVisibility, "default": "true"},
@@ -436,6 +440,17 @@ class SettingImpl implements SettingsService {
   }
 
   @override
+  Future<Either<MainFailure, String>> setDefaultVideoCodec(
+      {required String codec}) async {
+    final normalized = normalizeDefaultVideoCodec(codec);
+    return _setSetting(
+      settingName: defaultVideoCodecKey,
+      value: normalized,
+      toStringValue: (v) => v,
+    );
+  }
+
+  @override
   Future<Either<MainFailure, int>> setSkipInterval(
       {required int seconds}) async {
     return _setSetting(
@@ -635,7 +650,12 @@ class SettingImpl implements SettingsService {
         'profile': profileName,
       };
 
-      final dir = await getDownloadsDirectory();
+      final Directory? dir;
+      if (UbuntuTouch.enabled) {
+        dir = await ubuntuTouchExportsDirectory();
+      } else {
+        dir = await getDownloadsDirectory();
+      }
       if (dir == null) {
         return const Left(MainFailure.serverFailure());
       }
@@ -646,6 +666,13 @@ class SettingImpl implements SettingsService {
         'fluxtube_subscriptions${profileSuffix}_$timestamp.json',
       ));
       await file.writeAsString(jsonEncode(exportData));
+      if (UbuntuTouch.enabled) {
+        print('gastube: export json file=${file.path}');
+        final handed = await exportDocument(file.path);
+        if (!handed.ok) {
+          return const Left(MainFailure.serverFailure());
+        }
+      }
 
       return Right(file.path);
     } catch (e) {

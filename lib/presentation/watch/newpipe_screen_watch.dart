@@ -284,6 +284,7 @@ class _NewPipeScreenWatchState extends State<NewPipeScreenWatch>
       child: BlocBuilder<SettingsBloc, SettingsState>(
         buildWhen: (previous, current) =>
             previous.defaultQuality != current.defaultQuality ||
+            previous.defaultVideoCodec != current.defaultVideoCodec ||
             previous.isHlsPlayer != current.isHlsPlayer ||
             previous.isPipDisabled != current.isPipDisabled ||
             previous.isHideRelated != current.isHideRelated ||
@@ -490,6 +491,7 @@ class _NewPipeScreenWatchState extends State<NewPipeScreenWatch>
                         ? (savedState.videoInfo?.playbackPosition ?? 0)
                         : 0,
                     defaultQuality: settingsState.defaultQuality,
+                    defaultVideoCodec: settingsState.defaultVideoCodec,
                     videoFitMode: settingsState.videoFitMode,
                     skipInterval: settingsState.skipInterval,
                     sponsorSegments: settingsState.isSponsorBlockEnabled
@@ -510,6 +512,7 @@ class _NewPipeScreenWatchState extends State<NewPipeScreenWatch>
                         ? (savedState.videoInfo?.playbackPosition ?? 0)
                         : 0,
                     defaultQuality: settingsState.defaultQuality,
+                    defaultVideoCodec: settingsState.defaultVideoCodec,
                     videoFitMode: settingsState.videoFitMode,
                     skipInterval: settingsState.skipInterval,
                     subtitleSize: settingsState.subtitleSize,

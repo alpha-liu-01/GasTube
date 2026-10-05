@@ -28,6 +28,8 @@ class SettingsEvent with _$SettingsEvent {
       SetSearchFilter;
   factory SettingsEvent.setVideoFitMode({required String fitMode}) =
       SetVideoFitMode;
+  factory SettingsEvent.setDefaultVideoCodec({required String codec}) =
+      SetDefaultVideoCodec;
   factory SettingsEvent.setSkipInterval({required int seconds}) =
       SetSkipInterval;
   factory SettingsEvent.toggleSponsorBlock() = ToggleSponsorBlock;

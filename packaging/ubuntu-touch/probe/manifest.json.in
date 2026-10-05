@@ -1,0 +1,15 @@
+{
+    "name": "probe.alphaliu01",
+    "description": "GTK3 window probe for the GasTube Ubuntu Touch port",
+    "architecture": "@CLICK_ARCH@",
+    "title": "GasTube Probe",
+    "version": "0.1.0",
+    "framework": "@CLICK_FRAMEWORK@",
+    "maintainer": "alpha-liu-01 <alpha-liu-01@users.noreply.github.com>",
+    "hooks": {
+        "probe": {
+            "apparmor": "probe.apparmor",
+            "desktop": "probe.desktop"
+        }
+    }
+}

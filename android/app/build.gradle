@@ -135,8 +135,9 @@ dependencies {
     // Core library desugaring for NewPipe Extractor (Java 8+ APIs on older Android)
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs_nio:2.1.3'
 
-    // NewPipe Extractor - YouTube data extraction library (lowercase required for JitPack)
-    implementation 'com.github.teamnewpipe:newpipeextractor:v0.26.5'
+    // NewPipe Extractor. v0.26.5 leaves comment avatars empty; e1853be2b0
+    // falls back to author.avatarThumbnailUrl. Two commits ahead of that tag.
+    implementation 'com.github.teamnewpipe:newpipeextractor:e1853be2b0'
 
     // OkHttp - Required by NewPipe Extractor for HTTP requests
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
