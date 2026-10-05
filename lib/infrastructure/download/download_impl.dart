@@ -566,10 +566,15 @@ class DownloadImpl implements DownloadService {
             return true;
           }
 
-          log('[Download] FFmpeg muxing failed (exit code: ${result.exitCode})');
-          _muxFailure = 'ffmpeg exited ${result.exitCode}';
           final err = result.stderr.toString().trim();
           final tail = err.length > 400 ? err.substring(err.length - 400) : err;
+          log('[Download] FFmpeg muxing failed (exit code: ${result.exitCode})');
+          debugPrint(
+            '[Download] FFmpeg muxing failed exit=${result.exitCode} $tail',
+          );
+          _muxFailure = tail.isEmpty
+              ? 'ffmpeg exited ${result.exitCode}'
+              : 'ffmpeg exited ${result.exitCode}\n$tail';
           _logUbuntuTouchDownload('ffmpeg exit=${result.exitCode} $tail');
           return false;
         } on ProcessException catch (error) {

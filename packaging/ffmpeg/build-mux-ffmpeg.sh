@@ -65,7 +65,10 @@ else
       tar -xf "${cache}/${mingw_asset}" -C "${cache}"
     fi
   fi
-  export PATH="${mingw_root}/bin:${PATH}"
+  # Git Bash writes /c/... paths into the Makefile. llvm-mingw's own make
+  # looks for that path literally and stops. /usr/bin/make understands it,
+  # and it stays ahead of llvm-mingw so gcc still comes from the toolchain.
+  export PATH="/usr/bin:${mingw_root}/bin:${PATH}"
   if cc_matches gcc; then
     CC=gcc
   else
