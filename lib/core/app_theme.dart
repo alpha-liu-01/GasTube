@@ -3,13 +3,23 @@ import 'package:flutter/material.dart';
 import 'package:fluxtube/core/colors.dart';
 
 abstract class AppTheme {
-  /// The official linux-arm64 engine is built without fontconfig. Its
-  /// directory font manager returns no typeface from character fallback, so
-  /// DejaVu and Roboto paint CJK as empty boxes. Naming a family that
-  /// contains the glyphs makes `matchFamily` succeed. x64 still uses
-  /// fontconfig and does not need this list. Droid Sans Fallback is bundled
-  /// so a container without these system fonts can still draw Chinese.
+  /// Linux Material sets [TextStyle.fontFamily] to Roboto and a fallback list
+  /// that starts with Ubuntu. Roboto is not shipped in the Click, so Latin is
+  /// drawn by the first fallback the directory font manager can open. The
+  /// arm64 engine is built without fontconfig: a missing glyph is not matched
+  /// to a system font by coverage, and `matchFamily` only succeeds for a
+  /// family name the scan actually stored. Ubuntu stays first so English
+  /// resolves there. Later families are used only for glyphs Ubuntu lacks.
+  /// Droid Sans Fallback is last, and bundled, so a container without the
+  /// system CJK fonts can still draw Chinese. It also contains Latin, so
+  /// putting it ahead of Ubuntu draws English with it.
   static const List<String> cjkFontFamilyFallback = <String>[
+    'Ubuntu',
+    'Adwaita Sans',
+    'Cantarell',
+    'DejaVu Sans',
+    'Liberation Sans',
+    'Arial',
     'WenQuanYi Micro Hei',
     'WenQuanYi Zen Hei',
     'Noto Sans CJK SC',
