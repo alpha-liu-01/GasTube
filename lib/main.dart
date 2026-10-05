@@ -26,6 +26,7 @@ import 'package:fluxtube/presentation/routes/bloc_observer.dart';
 import 'package:fluxtube/presentation/watch/widgets/global_pip_overlay.dart';
 import 'package:fluxtube/core/services/audio_handler_service.dart';
 import 'package:fluxtube/core/services/media_hub_player.dart';
+import 'package:fluxtube/core/services/ubuntu_touch_display.dart';
 import 'package:fluxtube/core/services/mpris_player.dart';
 import 'package:fluxtube/core/services/pulse_unplug.dart';
 import 'package:fluxtube/core/services/log_collector.dart';
@@ -175,8 +176,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       if (state == AppLifecycleState.inactive ||
           state == AppLifecycleState.hidden ||
           state == AppLifecycleState.paused) {
+        UbuntuTouchDisplay.instance.setForeground(false);
         unawaited(MediaHubPlayer.instance.handoff());
       } else if (state == AppLifecycleState.resumed) {
+        UbuntuTouchDisplay.instance.setForeground(true);
         unawaited(MediaHubPlayer.instance.takeBack());
       }
     }

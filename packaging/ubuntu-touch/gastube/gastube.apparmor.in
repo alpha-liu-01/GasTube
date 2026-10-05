@@ -4,6 +4,7 @@
         "audio",
         "camera",
         "sensors",
+        "keep-display-on",
         "content_exchange",
         "content_exchange_source"
     ],

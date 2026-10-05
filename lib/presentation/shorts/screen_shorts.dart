@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluxtube/application/application.dart';
 import 'package:fluxtube/core/colors.dart';
+import 'package:fluxtube/core/services/ubuntu_touch_display.dart';
 import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:fluxtube/core/ubuntu_touch_content_hub.dart';
 import 'package:fluxtube/core/enums.dart';
@@ -1442,6 +1443,7 @@ class _ShortVideoController extends ChangeNotifier {
       // Listen to player state
       _player!.stream.playing.listen((playing) {
         _isPlaying = playing;
+        UbuntuTouchDisplay.instance.setPlaying(playing, source: 'shorts');
         notifyListeners();
       });
 
@@ -1797,6 +1799,7 @@ class _ShortVideoController extends ChangeNotifier {
     _hasError = false;
     _isInitialized = false;
     _completedSubscription?.cancel();
+    UbuntuTouchDisplay.instance.setPlaying(false, source: 'shorts');
     _player?.dispose();
     _player = null;
     _videoController = null;
@@ -1832,6 +1835,7 @@ class _ShortVideoController extends ChangeNotifier {
   @override
   void dispose() {
     _completedSubscription?.cancel();
+    UbuntuTouchDisplay.instance.setPlaying(false, source: 'shorts');
     _player?.dispose();
     _player = null;
     _videoController = null;

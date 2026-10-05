@@ -9,6 +9,7 @@ import 'package:fluxtube/core/services/pip_service.dart';
 import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:fluxtube/core/services/media_controls.dart';
 import 'package:fluxtube/core/services/media_hub_player.dart';
+import 'package:fluxtube/core/services/ubuntu_touch_display.dart';
 import 'package:fluxtube/core/services/exoplayer_notification_bridge.dart';
 
 Future<void> selectUbuntuTouchDecoder(Player player, {String? codec}) async {
@@ -55,6 +56,7 @@ class GlobalPlayerController extends ChangeNotifier {
   }
 
   Player? _player;
+  StreamSubscription<bool>? _displayPlaying;
   VideoController? _videoController;
   String? _currentVideoId;
   bool _isPipMode = false;
@@ -121,8 +123,18 @@ class GlobalPlayerController extends ChangeNotifier {
     );
     _videoController = _createVideoController(_player!);
     _isInitialized = true;
+    _watchDisplayInhibit();
     _tuneNetworkPlayback();
     log('[GlobalPlayer] Player and VideoController initialized eagerly');
+  }
+
+  void _watchDisplayInhibit() {
+    if (!UbuntuTouch.enabled) return;
+    final player = _player;
+    if (player == null || _displayPlaying != null) return;
+    _displayPlaying = player.stream.playing.listen((playing) {
+      UbuntuTouchDisplay.instance.setPlaying(playing);
+    });
   }
 
   Future<void> _tuneNetworkPlayback() async {
@@ -538,6 +550,7 @@ class GlobalPlayerController extends ChangeNotifier {
     try {
       // Create player if needed
       _player ??= Player();
+      _watchDisplayInhibit();
       _videoController ??= _createVideoController(player);
 
       final headers = httpHeaders ??
@@ -708,6 +721,9 @@ class GlobalPlayerController extends ChangeNotifier {
 
   /// Full dispose - only call when completely done with player
   void disposePlayer() {
+    _displayPlaying?.cancel();
+    _displayPlaying = null;
+    UbuntuTouchDisplay.instance.setPlaying(false);
     _player?.dispose();
     _player = null;
     _videoController = null;
