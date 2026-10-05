@@ -43,6 +43,7 @@ jobs:
             liblzma-dev \
             libmpv-dev \
             make \
+            gcc \
             ninja-build \
             openjdk-17-jdk-headless \
             pkg-config \

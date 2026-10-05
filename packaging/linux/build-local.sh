@@ -45,17 +45,17 @@ fi
 
 debian_packages=(
   clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libmpv-dev
-  curl git unzip xz-utils zip make openjdk-17-jdk-headless ca-certificates
+  curl git unzip xz-utils zip make gcc openjdk-17-jdk-headless ca-certificates
   dpkg-dev
 )
 redhat_packages=(
   clang cmake ninja-build pkgconf gtk3-devel xz-devel mpv-devel
-  curl git unzip xz zip make java-17-openjdk-devel
+  curl git unzip xz zip make gcc java-17-openjdk-devel
   rpm-build
 )
 arch_packages=(
   clang cmake ninja pkgconf gtk3 xz mpv
-  curl git unzip zip make jdk17-openjdk
+  curl git unzip zip make gcc jdk17-openjdk
   base-devel
 )
 
@@ -127,7 +127,7 @@ if [[ "${install_deps}" -eq 1 ]]; then
   install_temurin_17
 else
   missing=0
-  for cmd in clang cmake ninja make curl git unzip; do
+  for cmd in clang cmake ninja make gcc curl git unzip; do
     if ! command -v "${cmd}" >/dev/null 2>&1; then
       echo "Missing command: ${cmd}" >&2
       missing=1
