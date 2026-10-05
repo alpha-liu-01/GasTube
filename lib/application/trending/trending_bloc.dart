@@ -293,14 +293,14 @@ class TrendingBloc extends Bloc<TrendingEvent, TrendingState> {
           .where((id) => id.isNotEmpty)
           .toSet();
 
-      // Load more queries (fetch total queries including previous + 3 new ones)
-      // Then filter out duplicates
+      // Search only the next 3 queries. Asking for offset+3 again re-runs every
+      // previous YouTube search and is what steps the sidecar heap up.
       final result = await homeRecommendationService.getPersonalizedFeed(
         profileName: event.profileName,
         serviceType: event.serviceType,
         resultsPerQuery: 3,
-        queryLimit: state.personalizedFeedQueryOffset +
-            3, // Get all queries including new ones
+        queryLimit: 3,
+        onlyNew: true,
         page: 1,
       );
 

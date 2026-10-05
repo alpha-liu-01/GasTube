@@ -12,6 +12,7 @@ abstract class HomeRecommendationService {
     int resultsPerQuery = 5,
     int queryLimit = 10,
     int page = 1,
+    bool onlyNew = false,
   });
 
   /// Get default/trending topics for new users

@@ -112,7 +112,11 @@ class NewPipeSidecar {
     }
     debugPrint('[NewPipe] starting $javaBin -jar $jar');
     // The pipe is UTF-8 both ways. Windows defaults to the ANSI code page.
+    // Cap the heap. The default max is a large fraction of RAM, so home-feed
+    // searches expand java.exe until the collector stops growing it.
     final process = await Process.start(javaBin, [
+      '-Xms32m',
+      '-Xmx128m',
       '-Dfile.encoding=UTF-8',
       '-Dstdout.encoding=UTF-8',
       '-Dstderr.encoding=UTF-8',

@@ -17,6 +17,11 @@ class HomeRecommendationImpl implements HomeRecommendationService {
 
   HomeRecommendationImpl(this.userPreferencesService, this.searchService);
 
+  /// Queries already sent to the extractor for this profile.
+  /// Load-more must not search them again: each YouTube search builds a large
+  /// temporary object graph inside the sidecar.
+  final Map<String, Set<String>> _issuedQueries = {};
+
   @override
   Future<Either<MainFailure, List<NewPipeSearchItem>>> getPersonalizedFeed({
     required String profileName,
@@ -24,37 +29,46 @@ class HomeRecommendationImpl implements HomeRecommendationService {
     int resultsPerQuery = 5,
     int queryLimit = 10,
     int page = 1,
+    bool onlyNew = false,
   }) async {
     try {
       final stopwatch = Stopwatch()..start();
+      final alreadyIssued = _issuedQueries[profileName]?.length ?? 0;
+      final askLimit = onlyNew ? alreadyIssued + queryLimit : queryLimit;
 
       // Get recommended queries based on user history
       final queriesResult = await userPreferencesService.getRecommendedQueries(
         profileName: profileName,
-        limit: queryLimit,
+        limit: askLimit,
       );
 
       final queries = queriesResult.fold(
         (failure) {
           log('Failed to get recommended queries, using defaults');
           return DefaultTopic.defaultTopics
-              .take(queryLimit)
+              .take(askLimit)
               .map((t) => t.keyword)
               .toList();
         },
         (queries) => queries.isEmpty
             ? DefaultTopic.defaultTopics
-                .take(queryLimit)
+                .take(askLimit)
                 .map((t) => t.keyword)
                 .toList()
             : queries,
       );
 
-      log('[Recommendation] Fetching personalized feed with ${queries.length} queries in parallel');
+      final selected = _selectQueries(profileName, queries, queryLimit, onlyNew);
+      if (selected.isEmpty) {
+        log('[Recommendation] No new queries for $profileName');
+        return const Right(<NewPipeSearchItem>[]);
+      }
+
+      log('[Recommendation] Fetching personalized feed with ${selected.length} queries in parallel');
 
       // OPTIMIZATION: Fetch ALL queries in parallel
       final searchResults = await Future.wait(
-        queries.map((query) => _searchForQuery(query, serviceType, resultsPerQuery)),
+        selected.map((query) => _searchForQuery(query, serviceType, resultsPerQuery)),
         eagerError: false,
       );
 
@@ -83,6 +97,29 @@ class HomeRecommendationImpl implements HomeRecommendationService {
       log('Error in getPersonalizedFeed: $e');
       return const Left(MainFailure.clientFailure());
     }
+  }
+
+  /// A fresh load replaces the remembered queries. A load-more keeps them and
+  /// returns at most [queryLimit] queries that have not been searched yet.
+  List<String> _selectQueries(
+    String profileName,
+    List<String> queries,
+    int queryLimit,
+    bool onlyNew,
+  ) {
+    if (!onlyNew) {
+      _issuedQueries[profileName] = {};
+    }
+    final issued = _issuedQueries.putIfAbsent(profileName, () => {});
+    final selected = <String>[];
+    for (final query in queries) {
+      if (selected.length >= queryLimit) break;
+      final key = query.toLowerCase();
+      if (issued.contains(key)) continue;
+      issued.add(key);
+      selected.add(query);
+    }
+    return selected;
   }
 
   /// Search for a single query - used for parallel execution
