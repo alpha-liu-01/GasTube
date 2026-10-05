@@ -196,6 +196,24 @@ class PlaybackQueue extends ChangeNotifier {
     return _queue[index + 1];
   }
 
+  /// The video to play before [currentVideoId]. Mirrors [nextAfter].
+  VideoBasicInfo? previousAfter(String? currentVideoId) {
+    if (_queue.isEmpty || currentVideoId == null) return null;
+
+    final index = _queue.indexWhere((video) => video.id == currentVideoId);
+    if (index == -1) {
+      if (!_userManaged) return _queue.length > 1 ? _queue.last : null;
+      if (!hasPrevious) return null;
+      final video = _queue[_currentIndex - 1];
+      return video.id == currentVideoId ? null : video;
+    }
+    if (index == 0) {
+      if (_userManaged || _queue.length < 2) return null;
+      return _queue.last;
+    }
+    return _queue[index - 1];
+  }
+
   /// Moves the cursor onto [videoId] when it is already queued. Used when
   /// playback advances by navigation rather than through the sheet.
   void syncCurrent(String videoId) {

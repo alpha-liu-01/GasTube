@@ -150,7 +150,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       if (!Platform.isLinux) {
         initAudioService();
       } else {
-        unawaited(MprisPlayer.instance.claim());
+        if (!UbuntuTouch.enabled) {
+          unawaited(MprisPlayer.instance.claim());
+        }
         PulseUnplug.listen();
       }
       // Look for new uploads from subscribed channels. Self-throttling and a

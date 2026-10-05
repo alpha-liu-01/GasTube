@@ -5,17 +5,19 @@ import 'package:dbus/dbus.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:fluxtube/core/player/global_player_controller.dart';
-import 'package:fluxtube/core/services/media_controls.dart';
-import 'package:fluxtube/core/services/mpris_player.dart';
+import 'package:fluxtube/core/player/playback_queue.dart';
 import 'package:fluxtube/core/ubuntu_touch.dart';
+import 'package:fluxtube/domain/watch/models/newpipe/newpipe_watch_resp.dart';
+import 'package:fluxtube/infrastructure/newpipe/newpipe_channel.dart';
 import 'package:path/path.dart' as p;
 
 /// Plays one audio URL through Lomiri media-hub while this process is away.
 ///
 /// The session is opened while the app is still in front, because leaving only
 /// delivers [AppLifecycleState.inactive] and Lomiri then stops the process.
-/// In-app playback stays on mpv with `ao=pulse` until that moment. Desktop
-/// builds never call this bus.
+/// In-app playback stays on mpv with `ao=pulse` until that moment. The sound
+/// indicator then follows this media-hub session. Its previous and next
+/// buttons step the session track list. Desktop builds never call this bus.
 class MediaHubPlayer {
   static final MediaHubPlayer instance = MediaHubPlayer._();
 
@@ -24,6 +26,8 @@ class MediaHubPlayer {
   static const _serviceName = 'com.lomiri.MediaHub.Service';
   static const _servicePath = '/com/lomiri/MediaHub/Service';
   static const _playerInterface = 'org.mpris.MediaPlayer2.Player';
+  static const _trackInterface = 'org.mpris.MediaPlayer2.TrackList';
+  static const _noTrack = '/org/mpris/MediaPlayer2/TrackList/NoTrack';
   static const _sessionChannel = MethodChannel('lol.alphaliu01.gastube/url');
 
   final GlobalPlayerController _player = GlobalPlayerController();
@@ -33,12 +37,40 @@ class MediaHubPlayer {
   String? _openedUrl;
   bool _ready = false;
   bool _away = false;
-  bool _relayOn = false;
   Duration _pausedAt = Duration.zero;
   Future<void> _queue = Future<void>.value();
   String? _cachedUrl;
   String? _cachedFile;
   String? _downloadingUrl;
+  final Set<String> _extraDownloads = {};
+  final Map<String, String> _trackFiles = {};
+  final Map<String, String> _trackIds = {};
+  StreamSubscription<DBusSignal>? _trackChanged;
+  String? _indicatorVideoId;
+  bool _anchored = false;
+  String? _returnVideoId;
+  Duration? _returnPosition;
+  void Function(String videoId)? _onIndicatorReturn;
+
+  /// The watch screen registers this so returning from the indicator can open
+  /// the video the track list moved to.
+  void bindIndicatorReturn(void Function(String videoId)? callback) {
+    _onIndicatorReturn = callback;
+  }
+
+  void unbindIndicatorReturn(void Function(String videoId) callback) {
+    if (!identical(_onIndicatorReturn, callback)) return;
+    _onIndicatorReturn = null;
+  }
+
+  /// Position to start [videoId] when it was opened from the indicator.
+  Duration? takeReturnPosition(String videoId) {
+    if (_returnVideoId != videoId) return null;
+    final position = _returnPosition;
+    _returnVideoId = null;
+    _returnPosition = null;
+    return position;
+  }
 
   /// Open the current audio URL without playing it, and start saving a local
   /// copy. media-hub can seek a local file. Seeking the YouTube URL ends it.
@@ -62,7 +94,7 @@ class MediaHubPlayer {
 
   Future<void> stop() {
     if (!UbuntuTouch.enabled) return Future<void>.value();
-    return _enqueue(() => _dropSession(resume: false));
+    return _enqueue(_dropSession);
   }
 
   /// Pause the hub session when headphones are unplugged while it owns the
@@ -87,6 +119,7 @@ class MediaHubPlayer {
 
   Future<void> _prepare() async {
     if (_away) return;
+    unawaited(_prepareNeighbors());
     final url = _player.backgroundAudioUrl;
     if (url == null) return;
     if (_ready && _openedUrl == url) return;
@@ -103,13 +136,13 @@ class MediaHubPlayer {
     }
     _pausedAt = _player.currentPosition;
     _away = true;
+    unawaited(_prepareNeighbors());
     print(
       'gastube: mediahub handoff host=${Uri.tryParse(url)?.host ?? "unknown"} '
       'positionMs=${_pausedAt.inMilliseconds} ready=$_ready',
     );
     var playingOnHub = false;
     try {
-      await _stopLeftoverRelay();
       final local = _readyLocal(url) ?? _snapshotLocal(url, _pausedAt);
       if (!_ready || _openedUrl != url || _session == null) {
         await _open(url);
@@ -149,9 +182,7 @@ class MediaHubPlayer {
       print('gastube: mediahub play');
       playingOnHub = true;
       await _player.pausePlayback();
-      await _startControlRelay();
-      await MprisPlayer.instance.release();
-      await _waitRelayReady();
+      await _attachIndicatorTracks(anchor: true);
     } catch (error) {
       print('gastube: mediahub failed error=$error');
       if (!playingOnHub) _away = false;
@@ -168,8 +199,22 @@ class MediaHubPlayer {
     final status = session == null ? null : await _playbackStatus(session);
     final stayPaused = status == 'Paused';
     await _pauseHub();
-    await _stopControlRelay();
-    await _reclaimMpris();
+    final jumped = _indicatorVideoId;
+    final currentId = _player.currentVideoId;
+    if (jumped != null &&
+        jumped != currentId &&
+        _onIndicatorReturn != null) {
+      _returnVideoId = jumped;
+      _returnPosition = resumeAt;
+      _indicatorVideoId = null;
+      _away = false;
+      print(
+        'gastube: mediahub back video=$jumped '
+        'positionMs=${resumeAt.inMilliseconds}',
+      );
+      _onIndicatorReturn!(jumped);
+      return;
+    }
     _away = false;
     print('gastube: mediahub back positionMs=${resumeAt.inMilliseconds}');
     try {
@@ -629,14 +674,10 @@ class MediaHubPlayer {
     }
   }
 
-  Future<void> _dropSession({required bool resume}) async {
-    await _stopControlRelay();
+  Future<void> _dropSession() async {
     await _destroySession();
     await _closeClient();
     _away = false;
-    if (resume) {
-      await MprisPlayer.instance.reclaim();
-    }
   }
 
   Future<Duration> _hubPosition() async {
@@ -697,7 +738,232 @@ class MediaHubPlayer {
     return -1;
   }
 
+  Future<void> _prepareNeighbors() async {
+    final current = _indicatorVideoId ?? _player.currentVideoId;
+    if (current == null || current.isEmpty) return;
+    final queue = PlaybackQueue();
+    final neighbors = [
+      queue.previousAfter(current),
+      queue.nextAfter(current),
+    ];
+    for (final video in neighbors) {
+      if (video == null || video.id.isEmpty || video.id == current) continue;
+      if (_trackFiles.containsKey(video.id)) continue;
+      try {
+        final info = await NewPipeChannel.getStreamInfoFast(video.id);
+        final url = _neighborAudioUrl(info);
+        if (url == null) continue;
+        final file = await _cacheExtra(url);
+        if (file == null) continue;
+        _trackFiles[video.id] = file;
+        print('gastube: mediahub neighbor ready id=${video.id}');
+      } catch (error) {
+        print('gastube: mediahub neighbor failed id=${video.id} error=$error');
+      }
+    }
+    if (_away && _session != null) {
+      unawaited(_enqueue(() => _attachIndicatorTracks(anchor: true)));
+    }
+  }
+
+  String? _neighborAudioUrl(NewPipeWatchResp info) {
+    final streams = info.audioStreams ?? const [];
+    String? fallback;
+    String? m4a;
+    var m4aRate = -1;
+    for (final stream in streams) {
+      final url = stream.url;
+      if (url == null || url.isEmpty || stream.initStart != null) continue;
+      fallback ??= url;
+      final mime = '${stream.mimeType} ${stream.format}'.toLowerCase();
+      if (!mime.contains('mp4') && !mime.contains('m4a')) continue;
+      final rate = stream.averageBitrate ?? 0;
+      if (rate < m4aRate) continue;
+      m4aRate = rate;
+      m4a = url;
+    }
+    return m4a ?? fallback;
+  }
+
+  Future<String?> _cacheExtra(String url) async {
+    final path = _cachePath(url);
+    final expected =
+        int.tryParse(Uri.tryParse(url)?.queryParameters['clen'] ?? '') ?? -1;
+    final existing = File(path);
+    if (existing.existsSync() &&
+        expected > 0 &&
+        existing.lengthSync() == expected) {
+      return path;
+    }
+    if (!_extraDownloads.add(url)) return null;
+    try {
+      for (var attempt = 0; attempt < 4; attempt++) {
+        final bytes = await _downloadOnce(url, path, expected);
+        if (bytes == null) {
+          await Future<void>.delayed(const Duration(milliseconds: 300));
+          continue;
+        }
+        if (existing.existsSync()) existing.deleteSync();
+        await File('$path.partial').rename(path);
+        return path;
+      }
+      return null;
+    } finally {
+      _extraDownloads.remove(url);
+    }
+  }
+
+  Future<void> _attachIndicatorTracks({bool anchor = false}) async {
+    final session = _session;
+    final client = _client;
+    final currentId = _player.currentVideoId;
+    if (session == null || client == null || currentId == null) return;
+    final list = DBusRemoteObject(
+      client,
+      name: _serviceName,
+      path: DBusObjectPath('${session.path.value}/TrackList'),
+    );
+    try {
+      await _listenTracks(list);
+      var ids = await _trackListIds(list);
+      if (ids.isEmpty) return;
+      await _mapTracks(list, ids, currentId);
+      final currentTrack = _idFor(currentId);
+      if (currentTrack == null) return;
+      final anchorId = _indicatorVideoId ?? currentId;
+      final anchorTrack = _idFor(anchorId) ?? currentTrack;
+      final queue = PlaybackQueue();
+      final previous = queue.previousAfter(anchorId);
+      final next = queue.nextAfter(anchorId);
+      if (previous != null &&
+          _trackFiles.containsKey(previous.id) &&
+          _idFor(previous.id) == null) {
+        await _addTrack(list, _trackFiles[previous.id]!, anchorTrack);
+      }
+      if (next != null &&
+          _trackFiles.containsKey(next.id) &&
+          _idFor(next.id) == null) {
+        await _addTrack(list, _trackFiles[next.id]!, _noTrack);
+      }
+      ids = await _trackListIds(list);
+      await _mapTracks(list, ids, currentId);
+      final previousReady = previous != null && _idFor(previous.id) != null;
+      final stillOnOpened =
+          _indicatorVideoId == null || _indicatorVideoId == currentId;
+      if (anchor && previousReady && !_anchored && stillOnOpened) {
+        final at = await _hubPosition();
+        if (at > _pausedAt) _pausedAt = at;
+        await list.callMethod(_trackInterface, 'GoTo', [DBusString(currentTrack)]);
+        await _seekLocal(session);
+        if (await _playbackStatus(session) != 'Playing') {
+          await session.callMethod(_playerInterface, 'Play', const []);
+        }
+        _anchored = true;
+      }
+      print(
+        'gastube: mediahub indicator '
+        'previous=${previous != null && _idFor(previous.id) != null} '
+        'next=${next != null && _idFor(next.id) != null}',
+      );
+    } catch (error) {
+      print('gastube: mediahub indicator failed error=$error');
+    }
+  }
+
+  Future<void> _listenTracks(DBusRemoteObject list) async {
+    await _trackChanged?.cancel();
+    _trackChanged = DBusRemoteObjectSignalStream(
+      object: list,
+      interface: _trackInterface,
+      name: 'TrackChanged',
+    ).listen((signal) {
+      if (signal.values.isEmpty) return;
+      final videoId = _trackIds[signal.values.first.asString()];
+      if (videoId == null) return;
+      _indicatorVideoId = videoId;
+      print('gastube: mediahub indicator video=$videoId');
+      if (_away) unawaited(_prepareNeighbors());
+    });
+  }
+
+  Future<void> _addTrack(
+    DBusRemoteObject list,
+    String path,
+    String after,
+  ) async {
+    await list.callMethod(
+      _trackInterface,
+      'AddTrack',
+      [
+        DBusString(Uri.file(path).toString()),
+        DBusString(after),
+        const DBusBoolean(false),
+      ],
+    );
+  }
+
+  Future<List<String>> _trackListIds(DBusRemoteObject list) async {
+    final reply = await list.callMethod(
+      'org.freedesktop.DBus.Properties',
+      'Get',
+      [const DBusString(_trackInterface), const DBusString('Tracks')],
+      replySignature: DBusSignature('v'),
+    );
+    final native = reply.returnValues.first.asVariant().toNative();
+    if (native is! List) return const [];
+    return native.map((item) => '$item').toList();
+  }
+
+  Future<void> _mapTracks(
+    DBusRemoteObject list,
+    List<String> ids,
+    String currentId,
+  ) async {
+    for (final id in ids) {
+      if (_trackIds.containsKey(id)) continue;
+      final reply = await list.callMethod(
+        _trackInterface,
+        'GetTracksUri',
+        [DBusString(id)],
+        replySignature: DBusSignature('s'),
+      );
+      final uri = reply.returnValues.first.asString();
+      if (_sameResource(uri, _openedUrl ?? '')) {
+        _trackIds[id] = currentId;
+        continue;
+      }
+      for (final entry in _trackFiles.entries) {
+        if (!_sameResource(uri, Uri.file(entry.value).toString())) continue;
+        _trackIds[id] = entry.key;
+        break;
+      }
+    }
+  }
+
+  String? _idFor(String videoId) {
+    for (final entry in _trackIds.entries) {
+      if (entry.value == videoId) return entry.key;
+    }
+    return null;
+  }
+
+  bool _sameResource(String left, String right) {
+    if (left == right) return true;
+    return _filePathOf(left) != null && _filePathOf(left) == _filePathOf(right);
+  }
+
+  String? _filePathOf(String uri) {
+    final parsed = Uri.tryParse(uri);
+    if (parsed != null && parsed.scheme == 'file') return parsed.toFilePath();
+    if (uri.startsWith('/')) return uri;
+    return null;
+  }
+
   Future<void> _destroySession() async {
+    await _trackChanged?.cancel();
+    _trackChanged = null;
+    _trackIds.clear();
+    _anchored = false;
     final uuid = _uuid;
     final client = _client;
     _uuid = null;
@@ -720,175 +986,6 @@ class MediaHubPlayer {
     } catch (error) {
       print('gastube: mediahub destroy failed error=$error');
     }
-  }
-
-  static const _relayUnit = 'gastube-mpris-relay.service';
-  static const _clickArt =
-      'file:///opt/click.ubuntu.com/gastube.alphaliu01/current/gastube.png';
-
-  /// Stop a relay left by the previous package before media-hub starts.
-  Future<void> _stopLeftoverRelay() async {
-    if (_relayOn) return;
-    try {
-      await _systemd(
-        'StopUnit',
-        [const DBusString(_relayUnit), const DBusString('replace')],
-        DBusSignature('o'),
-      );
-      print('gastube: mpris relay leftover stop');
-    } catch (_) {}
-  }
-
-  /// Own the GasTube sound-indicator name from outside the stopped click.
-  /// The process only forwards pause and resume to the media-hub session.
-  Future<void> _startControlRelay() async {
-    final session = _session;
-    if (session == null) return;
-    final binary =
-        p.join(p.dirname(Platform.resolvedExecutable), 'gastube-mpris-relay');
-    if (!File(binary).existsSync()) {
-      print('gastube: mpris relay missing');
-      return;
-    }
-    final runtime = Platform.environment['XDG_RUNTIME_DIR'] ?? '';
-    if (runtime.isEmpty) {
-      print('gastube: mpris relay failed error=runtime');
-      return;
-    }
-    final ready = File(p.join(runtime, 'gastube-mpris-relay.ready'));
-    if (ready.existsSync()) ready.deleteSync();
-    final item = MediaControls.instance.nowPlaying;
-    final title = (item == null || item.title.isEmpty)
-        ? 'GasTube'
-        : item.title.replaceAll('\n', ' ');
-    final artist = item?.artist ?? '';
-    final desktop = Platform.environment['APP_ID'];
-    final args = <String>[
-      binary,
-      '--parent-pid',
-      '$pid',
-      '--session-path',
-      session.path.value,
-      '--title',
-      title,
-      '--artist',
-      artist,
-      '--art',
-      _clickArt,
-      '--desktop-entry',
-      (desktop == null || desktop.isEmpty) ? 'gastube' : desktop,
-      '--length-us',
-      '${item?.duration?.inMicroseconds ?? 0}',
-    ];
-    try {
-      await _systemd(
-        'StartTransientUnit',
-        [
-          const DBusString(_relayUnit),
-          const DBusString('replace'),
-          _relayUnitProperties(binary, args, runtime),
-          DBusArray(DBusSignature('(sa(sv))')),
-        ],
-        DBusSignature('o'),
-      );
-      _relayOn = true;
-      print('gastube: mpris relay started');
-    } catch (error) {
-      print('gastube: mpris relay failed error=$error');
-    }
-  }
-
-  Future<void> _waitRelayReady() async {
-    if (!_relayOn) return;
-    final runtime = Platform.environment['XDG_RUNTIME_DIR'] ?? '';
-    if (runtime.isEmpty) return;
-    final ready = File(p.join(runtime, 'gastube-mpris-relay.ready'));
-    for (var i = 0; i < 10; i++) {
-      if (ready.existsSync()) {
-        print('gastube: mpris relay ${ready.readAsStringSync().trim()}');
-        return;
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-    }
-    print('gastube: mpris relay waiting');
-  }
-
-  DBusArray _relayUnitProperties(
-    String binary,
-    List<String> args,
-    String runtime,
-  ) {
-    final home = Platform.environment['HOME'] ?? '';
-    final bus = Platform.environment['DBUS_SESSION_BUS_ADDRESS'];
-    final environment = <String>[
-      'XDG_RUNTIME_DIR=$runtime',
-      'HOME=$home',
-      if (bus != null && bus.isNotEmpty) 'DBUS_SESSION_BUS_ADDRESS=$bus',
-    ];
-    final exec = DBusArray(DBusSignature('(sasb)'), [
-      DBusStruct([
-        DBusString(binary),
-        DBusArray.string(args),
-        const DBusBoolean(false),
-      ]),
-    ]);
-    return DBusArray(DBusSignature('(sv)'), [
-      DBusStruct([
-        const DBusString('Description'),
-        const DBusVariant(DBusString('GasTube sound indicator')),
-      ]),
-      DBusStruct([const DBusString('ExecStart'), DBusVariant(exec)]),
-      DBusStruct([
-        const DBusString('Environment'),
-        DBusVariant(DBusArray.string(environment)),
-      ]),
-    ]);
-  }
-
-  Future<void> _stopControlRelay() async {
-    if (!_relayOn) return;
-    _relayOn = false;
-    try {
-      await _systemd(
-        'StopUnit',
-        [const DBusString(_relayUnit), const DBusString('replace')],
-        DBusSignature('o'),
-      );
-      print('gastube: mpris relay stop');
-    } catch (error) {
-      print('gastube: mpris relay stop failed error=$error');
-    }
-  }
-
-  Future<void> _reclaimMpris() async {
-    for (var i = 0; i < 30; i++) {
-      if (await MprisPlayer.instance.reclaim()) return;
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-    }
-    print('gastube: mpris reclaim waiting');
-  }
-
-  Future<void> _systemd(
-    String method,
-    List<DBusValue> values,
-    DBusSignature reply,
-  ) async {
-    final client = await _bus();
-    final manager = DBusRemoteObject(
-      client,
-      name: 'org.freedesktop.systemd1',
-      path: DBusObjectPath('/org/freedesktop/systemd1'),
-    );
-    await manager.callMethod(
-      'org.freedesktop.systemd1.Manager',
-      method,
-      values,
-      replySignature: reply,
-    );
-  }
-
-  Future<DBusClient> _bus() async {
-    return _client ??= DBusClient.session();
   }
 
   Future<void> _closeClient() async {

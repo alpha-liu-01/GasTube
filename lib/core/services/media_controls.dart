@@ -65,11 +65,19 @@ abstract class MediaControls {
     Future<void> Function(Duration position)? seek,
   });
 
+  /// Previous and next track. The player overlay registers these.
+  void bindQueueSteps({
+    Future<void> Function()? next,
+    Future<void> Function()? previous,
+  });
+
   /// Commands a system session calls. MPRIS uses these on Linux.
   Future<void> sessionPlay();
   Future<void> sessionPause();
   Future<void> sessionSeek(Duration position);
   Future<void> sessionStop();
+  Future<void> sessionNext();
+  Future<void> sessionPrevious();
 
   Future<void> clear();
 }
@@ -184,9 +192,21 @@ class AudioServiceMediaControls implements MediaControls {
   }
 
   @override
+  void bindQueueSteps({
+    Future<void> Function()? next,
+    Future<void> Function()? previous,
+  }) {}
+
+  @override
   Future<void> sessionStop() async {
     await getAudioHandler()?.stop();
   }
+
+  @override
+  Future<void> sessionNext() async {}
+
+  @override
+  Future<void> sessionPrevious() async {}
 
   @override
   Future<void> clear() async {
@@ -211,6 +231,8 @@ class LocalMediaControls implements MediaControls {
   Future<void> Function()? pause;
   Future<void> Function()? stop;
   Future<void> Function(Duration position)? seek;
+  Future<void> Function()? next;
+  Future<void> Function()? previous;
 
   @override
   NowPlaying? nowPlaying;
@@ -336,6 +358,15 @@ class LocalMediaControls implements MediaControls {
   }
 
   @override
+  void bindQueueSteps({
+    Future<void> Function()? next,
+    Future<void> Function()? previous,
+  }) {
+    this.next = next;
+    this.previous = previous;
+  }
+
+  @override
   Future<void> sessionPlay() async {
     final command = play;
     if (command != null) {
@@ -374,6 +405,18 @@ class LocalMediaControls implements MediaControls {
     if (command != null) {
       await command();
     }
+  }
+
+  @override
+  Future<void> sessionNext() async {
+    final command = next;
+    if (command != null) await command();
+  }
+
+  @override
+  Future<void> sessionPrevious() async {
+    final command = previous;
+    if (command != null) await command();
   }
 
   @override

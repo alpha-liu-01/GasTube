@@ -8,8 +8,5 @@
         "content_exchange",
         "content_exchange_source"
     ],
-    "abstractions": [
-        "dbus-session"
-    ],
     "policy_version": "@APPARMOR_POLICY@"
 }

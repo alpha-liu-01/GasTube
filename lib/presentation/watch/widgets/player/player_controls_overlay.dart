@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:fluxtube/core/player/global_player_controller.dart';
+import 'package:fluxtube/core/services/media_controls.dart';
 import 'package:fluxtube/domain/watch/models/newpipe/newpipe_subtitle.dart';
 import 'package:fluxtube/domain/watch/playback/models/stream_quality_info.dart';
 import 'package:fluxtube/domain/watch/playback/newpipe_stream_helper.dart';
@@ -13,6 +14,7 @@ import 'package:volume_controller/volume_controller.dart';
 
 import 'player_settings_sheet.dart';
 import '../../../watch/widgets/queue_sheet.dart';
+import '../../queue_playback.dart';
 
 /// YouTube-like custom video player controls overlay
 class PlayerControlsOverlay extends StatefulWidget {
@@ -136,6 +138,16 @@ class _PlayerControlsOverlayState extends State<PlayerControlsOverlay>
 
     _initBrightnessAndVolume();
     _startHideTimer();
+    MediaControls.instance.bindQueueSteps(
+      next: () async {
+        if (!mounted) return;
+        playQueueNeighbor(context, next: true);
+      },
+      previous: () async {
+        if (!mounted) return;
+        playQueueNeighbor(context, next: false);
+      },
+    );
 
     // Restore subtitle state from global player
     _restoreSubtitleState();
