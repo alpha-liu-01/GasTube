@@ -29,26 +29,40 @@ case "${GASTUBE_FFMPEG_ARCH:-$(uname -m)}" in
     ;;
 esac
 
-cc_matches() {
+is_windows=0
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*) is_windows=1 ;;
+esac
+
+compiler_matches() {
   local bin="$1"
-  command -v "${bin}" >/dev/null 2>&1 || return 1
-  "${bin}" -dumpmachine 2>/dev/null | grep -q "${wanted}"
+  local machine
+  [[ -n "${bin}" ]] || return 1
+  if [[ "${bin}" != */* ]]; then
+    command -v "${bin}" >/dev/null 2>&1 || return 1
+  elif [[ ! -x "${bin}" ]]; then
+    return 1
+  fi
+  machine="$("${bin}" -dumpmachine 2>/dev/null || true)"
+  [[ "${machine}" == *"${wanted}"* ]] || return 1
+  # An MSVC clang can report aarch64 while Git Bash still says x86_64.
+  # ffmpeg then configures for x86 and asks for nasm. Windows builds use mingw.
+  if [[ "${is_windows}" -eq 1 && "${machine}" != *mingw* ]]; then
+    return 1
+  fi
 }
 
-if cc_matches "${CC:-}"; then
+if compiler_matches "${CC:-}"; then
   :
-elif cc_matches gcc; then
+elif compiler_matches gcc; then
   CC=gcc
-elif cc_matches clang; then
+elif compiler_matches clang; then
   CC=clang
 else
-  case "$(uname -s)" in
-    MINGW* | MSYS* | CYGWIN*) ;;
-    *)
-      echo "No ${wanted} C compiler. Install gcc or clang." >&2
-      exit 1
-      ;;
-  esac
+  if [[ "${is_windows}" -ne 1 ]]; then
+    echo "No ${wanted} C compiler. Install gcc or clang." >&2
+    exit 1
+  fi
   case "${wanted}" in
     aarch64) mingw_asset="llvm-mingw-20260922-ucrt-aarch64.zip" ;;
     *) mingw_asset="llvm-mingw-20260922-ucrt-x86_64.zip" ;;
@@ -65,13 +79,15 @@ else
       tar -xf "${cache}/${mingw_asset}" -C "${cache}"
     fi
   fi
-  # Git Bash writes /c/... paths into the Makefile. llvm-mingw's own make
-  # looks for that path literally and stops. /usr/bin/make understands it,
-  # and it stays ahead of llvm-mingw so gcc still comes from the toolchain.
-  export PATH="/usr/bin:${mingw_root}/bin:${PATH}"
-  if cc_matches gcc; then
-    CC=gcc
+  if [[ -x "${mingw_root}/bin/gcc.exe" ]]; then
+    CC="${mingw_root}/bin/gcc.exe"
   else
+    CC="${mingw_root}/bin/gcc"
+  fi
+  # CC stays the absolute mingw gcc. /usr/bin stays ahead so make is Git's,
+  # not llvm-mingw's, when both exist.
+  export PATH="/usr/bin:${mingw_root}/bin:${PATH}"
+  if ! compiler_matches "${CC}"; then
     echo "llvm-mingw gcc does not target ${wanted}." >&2
     exit 1
   fi
@@ -121,11 +137,16 @@ configure_args=(
   --enable-decoder=vp9
   --enable-bsf=aac_adtstoasc,extract_extradata,vp9_superframe
   --extra-cflags=-Os
+  --arch="${wanted}"
+  --disable-x86asm
 )
-if [[ "${wanted}" == x86_64 ]]; then
-  configure_args+=(--disable-x86asm)
+# Git Bash on ARM Windows reports x86_64. Without --arch, configure follows
+# uname and then requires nasm.
+if [[ "${is_windows}" -eq 1 ]]; then
+  configure_args+=(--target-os=mingw64)
 fi
 machine="$("${CC}" -dumpmachine)"
+echo "ffmpeg target ${wanted} compiler ${CC} (${machine})"
 case "${machine}" in
   *mingw* | *windows*) configure_args+=(--extra-ldflags=-static) ;;
 esac
@@ -133,8 +154,41 @@ esac
 (
   cd "${build}"
   "${src}/configure" "${configure_args[@]}"
-  jobs="$(nproc 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-2}")"
-  make -j"${jobs}"
+)
+
+# configure records the source path as /c/Users/... . llvm-mingw make opens
+# that string as a real path and stops. C:/Users/... works for both makes.
+if [[ "${is_windows}" -eq 1 ]]; then
+  rewrite_make_path() {
+    local root="$1"
+    local from to file
+    from="$(cd "${root}" && pwd)"
+    to="$(cygpath -m "${from}")"
+    [[ "${from}" != "${to}" ]] || return 0
+    local from_re
+    from_re="$(printf '%s' "${from}" | sed 's/[.[\*^$|+?()\\]/\\&/g')"
+    while IFS= read -r -d '' file; do
+      sed -i "s|${from_re}|${to}|g" "${file}"
+    done < <(find "${build}" -type f \( \
+      -name Makefile -o -name '*.mak' -o -name '*.h' -o -name '*.pc' \
+      -o -name 'config.log' \) -print0)
+  }
+  rewrite_make_path "${src}"
+  rewrite_make_path "${build}"
+  if [[ -L "${build}/src" ]]; then
+    rm -f "${build}/src"
+    ln -s "$(cygpath -m "$(cd "${src}" && pwd)")" "${build}/src"
+  fi
+fi
+
+make_bin="make"
+if [[ "${is_windows}" -eq 1 && -x /usr/bin/make ]]; then
+  make_bin="/usr/bin/make"
+fi
+jobs="$(nproc 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-2}")"
+(
+  cd "${build}"
+  "${make_bin}" -j"${jobs}"
 )
 
 built="${build}/ffmpeg"
