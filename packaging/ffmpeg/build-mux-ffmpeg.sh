@@ -46,8 +46,9 @@ compiler_matches() {
   machine="$("${bin}" -dumpmachine 2>/dev/null || true)"
   [[ "${machine}" == *"${wanted}"* ]] || return 1
   # An MSVC clang can report aarch64 while Git Bash still says x86_64.
-  # ffmpeg then configures for x86 and asks for nasm. Windows builds use mingw.
-  if [[ "${is_windows}" -eq 1 && "${machine}" != *mingw* ]]; then
+  # ffmpeg then configures for x86 and asks for nasm. Windows builds use the
+  # mingw ABI. llvm-mingw prints that as mingw32 or as windows-gnu.
+  if [[ "${is_windows}" -eq 1 && "${machine}" != *mingw* && "${machine}" != *windows-gnu* ]]; then
     return 1
   fi
 }
