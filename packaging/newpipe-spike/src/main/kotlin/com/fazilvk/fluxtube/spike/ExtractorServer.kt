@@ -69,6 +69,10 @@ object ExtractorServer {
             "isAvailable" -> "true"
             "getStreamInfo" -> streamInfoJson(required(args, "id"), includeRelated = true)
             "getStreamInfoFast" -> streamInfoJson(required(args, "id"), includeRelated = false)
+            "forgetStreamInfo" -> {
+                streamInfoCache.remove(required(args, "id"))
+                "true"
+            }
             "getTrending" -> trending(optional(args, "region") ?: "US")
             "search" -> search(
                 required(args, "query"),

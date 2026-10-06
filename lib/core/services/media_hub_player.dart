@@ -42,6 +42,7 @@ class MediaHubPlayer {
   String? _cachedUrl;
   String? _cachedFile;
   String? _downloadingUrl;
+  String? _rejectedUrl;
   int? _jumpTo;
   bool _usingSlice = false;
   Duration? _sliceFrom;
@@ -77,6 +78,9 @@ class MediaHubPlayer {
 
   /// Open the current audio URL without playing it, and start saving a local
   /// copy. media-hub can seek a local file. Seeking the YouTube URL ends it.
+  bool urlWasRejected(String? url) =>
+      url != null && url.isNotEmpty && url == _rejectedUrl;
+
   Future<void> prepare() {
     if (!UbuntuTouch.enabled) return Future<void>.value();
     final url = _player.backgroundAudioUrl;
@@ -649,6 +653,7 @@ class MediaHubPlayer {
       final bytes = await _downloadOnce(url, path, expected);
       if (_jumpTo != null) break;
       if (bytes == null) {
+        if (_rejectedUrl == url) break;
         await Future<void>.delayed(const Duration(milliseconds: 300));
         continue;
       }
@@ -659,6 +664,10 @@ class MediaHubPlayer {
       _cachedFile = path;
       _downloadingUrl = null;
       print('gastube: mediahub cache ready bytes=$bytes');
+      return;
+    }
+    if (_rejectedUrl == url) {
+      if (_downloadingUrl == url) _downloadingUrl = null;
       return;
     }
     final jump = _jumpTo;
@@ -692,6 +701,10 @@ class MediaHubPlayer {
       final append = response.statusCode == HttpStatus.partialContent;
       if (response.statusCode != HttpStatus.ok && !append) {
         print('gastube: mediahub cache status=${response.statusCode}');
+        if (response.statusCode == HttpStatus.forbidden ||
+            response.statusCode == HttpStatus.gone) {
+          _rejectedUrl = url;
+        }
         return null;
       }
       if (!append) bytes = 0;
