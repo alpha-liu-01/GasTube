@@ -101,7 +101,14 @@ class MediaHubPlayer {
 
   Future<void> stop() {
     if (!UbuntuTouch.enabled) return Future<void>.value();
-    return _enqueue(_dropSession);
+    // This playback is over. Remember the cache files now, before the next
+    // video starts writing new ones, and delete them after media-hub lets go.
+    _downloadingUrl = null;
+    final stale = _backgroundAudioFiles();
+    return _enqueue(() async {
+      await _dropSession();
+      _removeSessionCache(stale);
+    });
   }
 
   /// Pause the hub session when headphones are unplugged while it owns the
@@ -748,23 +755,59 @@ class MediaHubPlayer {
     }
   }
 
-  String _cachePath(String url) {
+  String _backgroundAudioDirectory() {
     final cacheHome = Platform.environment['XDG_CACHE_HOME'];
     final home = Platform.environment['HOME'] ?? '';
     final base = (cacheHome != null && cacheHome.isNotEmpty)
         ? cacheHome
         : p.join(home, '.cache');
+    return p.join(base, UbuntuTouch.clickPackage, 'background-audio');
+  }
+
+  List<File> _backgroundAudioFiles() {
+    final dir = Directory(_backgroundAudioDirectory());
+    if (!dir.existsSync()) return const [];
+    final files = <File>[];
+    for (final entity in dir.listSync(followLinks: false)) {
+      if (entity is File) files.add(entity);
+    }
+    return files;
+  }
+
+  /// Deletes the files that belonged to the playback that just ended.
+  ///
+  /// A later video may already be writing its own cache. Only the paths
+  /// captured when that playback stopped are removed.
+  void _removeSessionCache(List<File> files) {
+    var removed = 0;
+    var bytes = 0;
+    for (final file in files) {
+      if (!file.existsSync()) continue;
+      final length = file.lengthSync();
+      try {
+        file.deleteSync();
+      } catch (error) {
+        print(
+          'gastube: mediahub cache session failed '
+          'file=${p.basename(file.path)} error=$error',
+        );
+        continue;
+      }
+      removed++;
+      bytes += length;
+    }
+    if (removed > 0) {
+      print('gastube: mediahub cache session removed=$removed bytes=$bytes');
+    }
+  }
+
+  String _cachePath(String url) {
     var hash = 0x811c9dc5;
     for (final unit in url.codeUnits) {
       hash = (hash ^ unit) & 0x7fffffff;
       hash = (hash * 0x01000193) & 0x7fffffff;
     }
-    return p.join(
-      base,
-      UbuntuTouch.clickPackage,
-      'background-audio',
-      'audio-$hash.m4a',
-    );
+    return p.join(_backgroundAudioDirectory(), 'audio-$hash.m4a');
   }
 
   int? _jumpTarget(String url, int have) {
