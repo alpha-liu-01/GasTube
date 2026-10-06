@@ -12,9 +12,12 @@ import 'package:fluxtube/core/services/media_hub_player.dart';
 import 'package:fluxtube/core/services/ubuntu_touch_display.dart';
 import 'package:fluxtube/core/services/exoplayer_notification_bridge.dart';
 
-/// Saved-position resume. A precise seek keeps the clock at 0:00 until every
-/// frame from the previous keyframe has been decoded. Keyframe resume starts
-/// playback immediately. Scrubbing still uses precise seeks.
+/// Saved-position resume. Call this while playback is still paused.
+///
+/// A keyframe seek puts the picture on the previous keyframe and the separate
+/// audio file on the saved time, so the picture runs for a few seconds before
+/// the sound starts and then speeds up to catch it. An exact seek drops those
+/// frames first, and both start together. Scrubbing uses the same precise seek.
 Future<void> seekUbuntuTouchResume(Player player, Duration position) async {
   if (position <= Duration.zero) return;
   if (!UbuntuTouch.enabled) {
@@ -25,11 +28,11 @@ Future<void> seekUbuntuTouchResume(Player player, Duration position) async {
     await (player.platform as dynamic).command([
       'seek',
       (position.inMilliseconds / 1000).toStringAsFixed(4),
-      'absolute+keyframes',
+      'absolute+exact',
     ]);
-    print('gastube: resume keyframe positionMs=${position.inMilliseconds}');
+    print('gastube: resume exact positionMs=${position.inMilliseconds}');
   } catch (error) {
-    print('gastube: resume keyframe failed error=$error');
+    print('gastube: resume exact failed error=$error');
     await player.seek(position);
   }
 }
@@ -236,6 +239,13 @@ class GlobalPlayerController extends ChangeNotifier {
     String? url,
     Map<String, String> headers = const {},
   }) {
+    // A setup that could not find an audio URL must not wipe the one already
+    // playing. stopAndClear still clears it when playback actually ends.
+    if ((url == null || url.isEmpty) &&
+        _backgroundAudioUrl != null &&
+        _backgroundAudioUrl!.isNotEmpty) {
+      return;
+    }
     _backgroundAudioUrl = url;
     _backgroundAudioHeaders = Map<String, String>.from(headers);
     if (UbuntuTouch.enabled && url != null && url.isNotEmpty) {
@@ -710,6 +720,7 @@ class GlobalPlayerController extends ChangeNotifier {
     _currentVideoId = null;
     _currentVideoUrl = null;
     _backgroundAudioUrl = null;
+    unawaited(MediaHubPlayer.instance.stop());
     _isPipMode = false;
     _lastPosition = Duration.zero;
     _wasPlaying = false;
@@ -765,6 +776,7 @@ class GlobalPlayerController extends ChangeNotifier {
     _currentVideoId = null;
     _currentVideoUrl = null;
     _backgroundAudioUrl = null;
+    unawaited(MediaHubPlayer.instance.stop());
     _isPipMode = false;
     _lastPosition = Duration.zero;
     _wasPlaying = false;

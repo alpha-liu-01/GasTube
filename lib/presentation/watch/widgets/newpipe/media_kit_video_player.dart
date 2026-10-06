@@ -740,13 +740,14 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
         if (!mounted) return;
       }
 
-      if (play) {
-        await _player.play();
+      if (startPosition > Duration.zero && !config.isLive) {
+        await seekUbuntuTouchResume(_player, startPosition);
+        debugPrint('Seeked to resume position: ${startPosition.inSeconds}s');
+        if (!mounted) return;
       }
 
-      if (startPosition > Duration.zero && !config.isLive) {
-        unawaited(seekUbuntuTouchResume(_player, startPosition));
-        debugPrint('Queued seek to position: ${startPosition.inSeconds}s');
+      if (play) {
+        await _player.play();
       }
 
       // Notify native side that video is playing (for auto-PiP)
