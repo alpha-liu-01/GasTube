@@ -139,7 +139,20 @@ class GlobalPlayerController extends ChangeNotifier {
 
   Future<void> _tuneNetworkPlayback() async {
     try {
-      await (_player!.platform as dynamic).setProperty('hr-seek', 'no');
+      // Ubuntu Touch audio is a separate DASH file, so a keyframe seek starts
+      // video early and leaves audio at the requested time. Precise seeks
+      // decode up to that time and start both together.
+      await (_player!.platform as dynamic).setProperty(
+        'hr-seek',
+        UbuntuTouch.enabled ? 'yes' : 'no',
+      );
+      if (UbuntuTouch.enabled) {
+        await (_player!.platform as dynamic).setProperty(
+          'hr-seek-framedrop',
+          'yes',
+        );
+        print('gastube: hr-seek=yes');
+      }
     } catch (e) {
       log('[GlobalPlayer] Could not tune native seek mode: $e');
     }
