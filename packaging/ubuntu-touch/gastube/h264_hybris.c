@@ -51,6 +51,7 @@ typedef struct HybrisApi {
     int (*configure)(HybrisCodec, HybrisFormat, void *, uint32_t);
     int (*queue_csd)(HybrisCodec, HybrisFormat);
     int (*start)(HybrisCodec);
+    int (*flush)(HybrisCodec);
     int (*stop)(HybrisCodec);
     int (*release)(HybrisCodec);
     void (*destroy)(HybrisCodec);
@@ -91,6 +92,10 @@ typedef struct HybrisH264Context {
     int annex_size;
     int started;
     int eos_queued;
+    int need_sync;
+    int dropped_sync;
+    int drop_old;
+    int64_t min_pts;
     int saw_format;
     int logged_color;
     int logged_buffer;
@@ -135,6 +140,7 @@ static int load_api(HybrisH264Context *ctx)
     LOAD(configure, "media_codec_configure");
     LOAD(queue_csd, "media_codec_queue_csd");
     LOAD(start, "media_codec_start");
+    LOAD(flush, "media_codec_flush");
     LOAD(stop, "media_codec_stop");
     LOAD(release, "media_codec_release");
     LOAD(destroy, "media_codec_delegate_destroy");
@@ -419,6 +425,13 @@ static int dequeue_frame(HybrisH264Context *ctx, AVFrame *frame, int64_t timeout
             ctx->api.release_output(ctx->codec, info.index, 0);
             return 0;
         }
+        if (ctx->drop_old && info.presentation_time_us > 0 &&
+            info.presentation_time_us + 80000 < ctx->min_pts) {
+            ctx->api.release_output(ctx->codec, info.index, 0);
+            continue;
+        }
+        if (ctx->drop_old && info.presentation_time_us > 0)
+            ctx->drop_old = 0;
         if (!ctx->saw_format)
             read_output_format(ctx);
         copied = copy_output(ctx, frame, &info);
@@ -443,7 +456,7 @@ static int queue_encoded(HybrisH264Context *ctx, const uint8_t *data, int size,
 {
     int attempt;
 
-    for (attempt = 0; attempt < 6; attempt++) {
+    for (attempt = 0; attempt < 20; attempt++) {
         size_t index = 0;
         HybrisBufferInfo info;
         uint8_t *buffer;
@@ -451,7 +464,7 @@ static int queue_encoded(HybrisH264Context *ctx, const uint8_t *data, int size,
         int ret = ctx->api.dequeue_input(ctx->codec, &index, attempt == 0 ? 0 : 10000);
         if (ret != 0) {
             if (ctx->held && !ctx->held_ready) {
-                int got = dequeue_frame(ctx, ctx->held, 0);
+                int got = dequeue_frame(ctx, ctx->held, 10000);
                 if (got == 1)
                     ctx->held_ready = 1;
             }
@@ -571,6 +584,31 @@ static int hybris_close(AVCodecContext *avctx)
     return 0;
 }
 
+static void hybris_flush(AVCodecContext *avctx)
+{
+    HybrisH264Context *ctx = avctx->priv_data;
+    int flushed = -1, restarted = -1, csd = 0;
+
+    if (ctx->held)
+        av_frame_unref(ctx->held);
+    ctx->held_ready = 0;
+    ctx->eos_queued = 0;
+    ctx->need_sync = 1;
+    ctx->dropped_sync = 0;
+    ctx->drop_old = 0;
+    ctx->min_pts = 0;
+    if (!ctx->codec || !ctx->started || !ctx->api.flush)
+        return;
+    flushed = ctx->api.flush(ctx->codec);
+    if (ctx->api.start)
+        restarted = ctx->api.start(ctx->codec);
+    if (restarted == 0 && ctx->csd0 && ctx->csd0_size > 0 && ctx->format &&
+        ctx->api.queue_csd)
+        csd = ctx->api.queue_csd(ctx->codec, ctx->format);
+    fprintf(stderr, "gastube: mediacodec flush=%d restart=%d csd=%d\n",
+            flushed, restarted, csd);
+}
+
 static int hybris_decode(AVCodecContext *avctx, AVFrame *frame, int *got_frame,
                          AVPacket *pkt)
 {
@@ -586,12 +624,35 @@ static int hybris_decode(AVCodecContext *avctx, AVFrame *frame, int *got_frame,
         uint32_t flags = (pkt->flags & AV_PKT_FLAG_KEY) ? HYBRIS_BUFFER_FLAG_SYNC : 0;
         if (pkt->pts != AV_NOPTS_VALUE && avctx->pkt_timebase.num && avctx->pkt_timebase.den)
             pts = av_rescale_q(pkt->pts, avctx->pkt_timebase, AV_TIME_BASE_Q);
+        if (ctx->need_sync && !(pkt->flags & AV_PKT_FLAG_KEY)) {
+            ctx->dropped_sync++;
+            if (ctx->dropped_sync == 1)
+                fprintf(stderr, "gastube: mediacodec wait-sync\n");
+            if (ctx->dropped_sync < 120)
+                return pkt->size;
+            fprintf(stderr, "gastube: mediacodec wait-sync give-up drop=%d\n",
+                    ctx->dropped_sync);
+        } else if (ctx->need_sync) {
+            if (ctx->dropped_sync)
+                fprintf(stderr, "gastube: mediacodec sync drop=%d\n",
+                        ctx->dropped_sync);
+            ctx->min_pts = pts;
+            ctx->drop_old = pts > 0;
+        }
+        ctx->need_sync = 0;
+        ctx->dropped_sync = 0;
         ret = convert_packet(ctx, pkt->data, pkt->size);
         if (ret < 0)
             return ret;
         ret = queue_encoded(ctx, ctx->annex, ctx->annex_size, pts, flags);
-        if (ret < 0)
+        if (ret == AVERROR(EAGAIN)) {
+            // The old decode callback must not return EAGAIN. libavcodec
+            // aborts the process from avcodec_send_packet.
+            fprintf(stderr, "gastube: mediacodec drop packet bytes=%d\n",
+                    pkt->size);
+        } else if (ret < 0) {
             return ret;
+        }
     } else if (!ctx->eos_queued) {
         ret = queue_encoded(ctx, NULL, 0, 0, HYBRIS_BUFFER_FLAG_EOS);
         if (ret == 0)
@@ -628,6 +689,7 @@ const FFCodec ff_h264_hybris_decoder = {
     .priv_data_size = sizeof(HybrisH264Context),
     .init           = hybris_init,
     .close          = hybris_close,
+    .flush          = hybris_flush,
     FF_CODEC_DECODE_CB(hybris_decode),
     .caps_internal  = FF_CODEC_CAP_NOT_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
 };

@@ -11,6 +11,7 @@ import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:fluxtube/domain/saved/models/local_store.dart';
 import 'package:fluxtube/domain/sponsorblock/models/sponsor_segment.dart';
 import 'package:fluxtube/domain/watch/models/newpipe/newpipe_stream.dart';
+import 'package:fluxtube/infrastructure/newpipe/newpipe_channel.dart';
 import 'package:fluxtube/domain/watch/models/newpipe/newpipe_watch_resp.dart';
 import 'package:fluxtube/domain/watch/playback/models/playback_configuration.dart';
 import 'package:fluxtube/domain/watch/playback/models/stream_quality_info.dart';
@@ -82,6 +83,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
   bool _isRestoringFromPip = false;
   Duration? _indicatorStart;
   bool _isChangingQuality = false;
+  bool _streamRefreshUsed = false;
   late BoxFit _currentFitMode;
 
   // SponsorBlock
@@ -615,7 +617,47 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
         }
       }
       print('gastube: decode=mediacodec-unopened');
+      await _refreshRejectedStream();
     }());
+  }
+
+  /// The last 0:00 stop was a googlevideo URL answering 403. Changing quality
+  /// reused that same extract. Drop it and open the video once more.
+  Future<void> _refreshRejectedStream() async {
+    if (!UbuntuTouch.enabled || _streamRefreshUsed || !mounted) return;
+    final audioUrl =
+        _selectedTrackAudioUrl() ?? _currentConfig?.audioUrl ?? _currentConfig?.videoUrl;
+    final rejected = MediaHubPlayer.instance.urlWasRejected(audioUrl);
+    final stuck = _player.state.playing &&
+        _player.state.position < const Duration(seconds: 1);
+    if (!rejected && !stuck) return;
+    _streamRefreshUsed = true;
+    final reason = rejected ? '403' : 'unopened';
+    print('gastube: stream refresh reason=$reason id=${widget.videoId}');
+    try {
+      await NewPipeChannel.forgetStreamInfo(widget.videoId);
+      final fresh = await NewPipeChannel.getStreamInfoFast(widget.videoId);
+      if (!mounted) return;
+      _availableQualities = _ubuntuTouchQualities(fresh);
+      _availableAudioTracks = NewPipeStreamHelper.getAvailableAudioTracks(
+        fresh.audioStreams ?? [],
+      );
+      final label = _currentQualityLabel ?? widget.defaultQuality;
+      final start = _player.state.position >= const Duration(seconds: 1)
+          ? _player.state.position
+          : (_indicatorStart ?? Duration(seconds: widget.playbackPosition));
+      await _setupMediaSource(
+        _resolveForThisBuild(label),
+        startPosition: start,
+        updateNotification: false,
+        fastSwitch: true,
+      );
+      if (!mounted) return;
+      _currentConfig = _resolveForThisBuild(label);
+      _currentQualityLabel = _currentConfig?.qualityLabel ?? label;
+    } catch (error) {
+      print('gastube: stream refresh failed error=$error');
+    }
   }
 
   Future<void> _setupMediaSource(
@@ -740,13 +782,14 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
         if (!mounted) return;
       }
 
-      if (play) {
-        await _player.play();
+      if (startPosition > Duration.zero && !config.isLive) {
+        await seekUbuntuTouchResume(_player, startPosition);
+        debugPrint('Seeked to resume position: ${startPosition.inSeconds}s');
+        if (!mounted) return;
       }
 
-      if (startPosition > Duration.zero && !config.isLive) {
-        unawaited(_player.seek(startPosition));
-        debugPrint('Queued seek to position: ${startPosition.inSeconds}s');
+      if (play) {
+        await _player.play();
       }
 
       // Notify native side that video is playing (for auto-PiP)

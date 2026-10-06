@@ -52,6 +52,7 @@ void install_fatal_signals() {
 namespace {
 
 gchar* g_media_hub_uuid = nullptr;
+gchar* g_media_hub_path = nullptr;
 
 // Swiping the app away destroys this window and returns from gtk_main before
 // Dart can reach the media-hub session. Locking and switching apps leave the
@@ -69,7 +70,20 @@ void destroy_media_hub_session() {
               error != nullptr ? error->message : "unknown");
     g_free(g_media_hub_uuid);
     g_media_hub_uuid = nullptr;
+    g_free(g_media_hub_path);
+    g_media_hub_path = nullptr;
     return;
+  }
+  if (g_media_hub_path != nullptr && g_media_hub_path[0] != '\0') {
+    g_autoptr(GError) pause_error = nullptr;
+    g_dbus_connection_call_sync(
+        bus, "com.lomiri.MediaHub.Service", g_media_hub_path,
+        "org.mpris.MediaPlayer2.Player", "Stop", g_variant_new("()"), nullptr,
+        G_DBUS_CALL_FLAGS_NONE, 500, nullptr, &pause_error);
+    if (pause_error != nullptr) {
+      g_message("gastube: mediahub window-destroy stop error=%s",
+                pause_error->message);
+    }
   }
   g_autoptr(GVariant) reply = g_dbus_connection_call_sync(
       bus, "com.lomiri.MediaHub.Service", "/com/lomiri/MediaHub/Service",
@@ -83,6 +97,8 @@ void destroy_media_hub_session() {
   }
   g_free(g_media_hub_uuid);
   g_media_hub_uuid = nullptr;
+  g_free(g_media_hub_path);
+  g_media_hub_path = nullptr;
 }
 
 void on_destroy(GtkWidget*, gpointer) {
@@ -437,9 +453,19 @@ void url_method_call(FlMethodChannel*, FlMethodCall* call, gpointer) {
     FlValue* args = fl_method_call_get_args(call);
     g_free(g_media_hub_uuid);
     g_media_hub_uuid = nullptr;
+    g_free(g_media_hub_path);
+    g_media_hub_path = nullptr;
     if (args != nullptr && fl_value_get_type(args) == FL_VALUE_TYPE_STRING) {
-      const gchar* uuid = fl_value_get_string(args);
-      if (uuid != nullptr && uuid[0] != '\0') g_media_hub_uuid = g_strdup(uuid);
+      const gchar* note = fl_value_get_string(args);
+      if (note != nullptr && note[0] != '\0') {
+        const gchar* split = strchr(note, '\n');
+        if (split == nullptr) {
+          g_media_hub_uuid = g_strdup(note);
+        } else {
+          g_media_hub_uuid = g_strndup(note, split - note);
+          if (split[1] != '\0') g_media_hub_path = g_strdup(split + 1);
+        }
+      }
     }
     g_message("gastube: mediahub session-note uuid=%s",
               g_media_hub_uuid != nullptr ? g_media_hub_uuid : "");
@@ -526,6 +552,11 @@ extern "C" int gastube_ubuntu_touch_main(int argc, char** argv) {
   use_application_stage(GTK_WINDOW(window));
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
+  // Linux defaults to Impeller. On Adreno GLES that re-issues GL state for
+  // every draw, and the window draw is most of the 60fps miss. Skia stays
+  // on this phone only; the desktop runner does not call this.
+  fl_dart_project_set_enable_impeller(project, FALSE);
+  g_message("renderer: Skia; Impeller left off");
   fl_dart_project_set_dart_entrypoint_arguments(project, argv + 1);
   FlView* view = fl_view_new(project);
   GdkRGBA background = {1.0, 1.0, 1.0, 1.0};
@@ -542,7 +573,7 @@ extern "C" int gastube_ubuntu_touch_main(int argc, char** argv) {
 
   // Do not call gdk_window_create_gl_context. That installs GTK's paint GL
   // context, and every later expose uploads this white background and swaps
-  // it onto the same wl_surface Impeller is presenting.
+  // it onto the same wl_surface the renderer is presenting.
   g_message("GDK_GL=gles; paint context left unset so exposes do not swap white");
 
   g_unix_signal_add(SIGTERM, on_shutdown_signal, nullptr);

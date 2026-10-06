@@ -12,6 +12,31 @@ import 'package:fluxtube/core/services/media_hub_player.dart';
 import 'package:fluxtube/core/services/ubuntu_touch_display.dart';
 import 'package:fluxtube/core/services/exoplayer_notification_bridge.dart';
 
+/// Saved-position resume. Call this while playback is still paused.
+///
+/// A keyframe seek puts the picture on the previous keyframe and the separate
+/// audio file on the saved time, so the picture runs for a few seconds before
+/// the sound starts and then speeds up to catch it. An exact seek drops those
+/// frames first, and both start together. Scrubbing uses the same precise seek.
+Future<void> seekUbuntuTouchResume(Player player, Duration position) async {
+  if (position <= Duration.zero) return;
+  if (!UbuntuTouch.enabled) {
+    await player.seek(position);
+    return;
+  }
+  try {
+    await (player.platform as dynamic).command([
+      'seek',
+      (position.inMilliseconds / 1000).toStringAsFixed(4),
+      'absolute+exact',
+    ]);
+    print('gastube: resume exact positionMs=${position.inMilliseconds}');
+  } catch (error) {
+    print('gastube: resume exact failed error=$error');
+    await player.seek(position);
+  }
+}
+
 Future<void> selectUbuntuTouchDecoder(Player player, {String? codec}) async {
   if (!UbuntuTouch.enabled) return;
   final value = (codec ?? '').toLowerCase();
@@ -139,7 +164,20 @@ class GlobalPlayerController extends ChangeNotifier {
 
   Future<void> _tuneNetworkPlayback() async {
     try {
-      await (_player!.platform as dynamic).setProperty('hr-seek', 'no');
+      // Ubuntu Touch audio is a separate DASH file, so a keyframe seek starts
+      // video early and leaves audio at the requested time. Precise seeks
+      // decode up to that time and start both together.
+      await (_player!.platform as dynamic).setProperty(
+        'hr-seek',
+        UbuntuTouch.enabled ? 'yes' : 'no',
+      );
+      if (UbuntuTouch.enabled) {
+        await (_player!.platform as dynamic).setProperty(
+          'hr-seek-framedrop',
+          'yes',
+        );
+        print('gastube: hr-seek=yes');
+      }
     } catch (e) {
       log('[GlobalPlayer] Could not tune native seek mode: $e');
     }
@@ -201,6 +239,13 @@ class GlobalPlayerController extends ChangeNotifier {
     String? url,
     Map<String, String> headers = const {},
   }) {
+    // A setup that could not find an audio URL must not wipe the one already
+    // playing. stopAndClear still clears it when playback actually ends.
+    if ((url == null || url.isEmpty) &&
+        _backgroundAudioUrl != null &&
+        _backgroundAudioUrl!.isNotEmpty) {
+      return;
+    }
     _backgroundAudioUrl = url;
     _backgroundAudioHeaders = Map<String, String>.from(headers);
     if (UbuntuTouch.enabled && url != null && url.isNotEmpty) {
@@ -675,6 +720,7 @@ class GlobalPlayerController extends ChangeNotifier {
     _currentVideoId = null;
     _currentVideoUrl = null;
     _backgroundAudioUrl = null;
+    unawaited(MediaHubPlayer.instance.stop());
     _isPipMode = false;
     _lastPosition = Duration.zero;
     _wasPlaying = false;
@@ -730,6 +776,7 @@ class GlobalPlayerController extends ChangeNotifier {
     _currentVideoId = null;
     _currentVideoUrl = null;
     _backgroundAudioUrl = null;
+    unawaited(MediaHubPlayer.instance.stop());
     _isPipMode = false;
     _lastPosition = Duration.zero;
     _wasPlaying = false;

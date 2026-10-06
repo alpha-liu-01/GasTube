@@ -42,8 +42,10 @@ class MediaHubPlayer {
   String? _cachedUrl;
   String? _cachedFile;
   String? _downloadingUrl;
+  String? _rejectedUrl;
   int? _jumpTo;
   bool _usingSlice = false;
+  Duration? _sliceFrom;
   final Set<String> _extraDownloads = {};
   final Map<String, String> _trackFiles = {};
   final Map<String, String> _trackIds = {};
@@ -76,6 +78,9 @@ class MediaHubPlayer {
 
   /// Open the current audio URL without playing it, and start saving a local
   /// copy. media-hub can seek a local file. Seeking the YouTube URL ends it.
+  bool urlWasRejected(String? url) =>
+      url != null && url.isNotEmpty && url == _rejectedUrl;
+
   Future<void> prepare() {
     if (!UbuntuTouch.enabled) return Future<void>.value();
     final url = _player.backgroundAudioUrl;
@@ -131,9 +136,14 @@ class MediaHubPlayer {
   Future<void> _handoff() async {
     if (_away) return;
     if (!_player.isPlaying) return;
+    // A cleared video can still report playing for a moment. The last opened
+    // URL must not start again after the user has left that video.
     final url = _player.backgroundAudioUrl;
-    if (url == null) {
-      print('gastube: mediahub skip reason=no-audio-url');
+    if (url == null || _player.currentVideoId == null) {
+      print(
+        'gastube: mediahub skip '
+        'reason=${_player.currentVideoId == null ? "no-video" : "no-audio-url"}',
+      );
       return;
     }
     _pausedAt = _player.currentPosition;
@@ -147,12 +157,10 @@ class MediaHubPlayer {
     try {
       var local = _readyLocal(url) ?? _snapshotLocal(url, _pausedAt);
       _usingSlice = false;
+      _sliceFrom = null;
       if (local == null) {
         local = await _sliceLocal(url, _pausedAt);
         _usingSlice = local != null;
-      }
-      if (!_ready || _openedUrl != url || _session == null) {
-        await _open(url);
       }
       var seekLocal = false;
       if (local != null) {
@@ -166,6 +174,9 @@ class MediaHubPlayer {
         }
       } else {
         print('gastube: mediahub local missing');
+        if (!_ready || _openedUrl != url || _session == null) {
+          await _open(url);
+        }
       }
       var session = _session;
       if (session == null || !_ready) {
@@ -191,10 +202,30 @@ class MediaHubPlayer {
         if (session == null || !_ready) throw StateError('open failed');
       }
       await session.callMethod(_playerInterface, 'Play', const []);
-      print('gastube: mediahub play');
-      playingOnHub = true;
-      await _player.pausePlayback();
-      await _attachIndicatorTracks(anchor: true);
+      var status = await _untilPlaying(session);
+      if (status != 'Playing' && seekLocal && _sliceFrom != null) {
+        print('gastube: mediahub play stalled status=$status');
+        final saved = _pausedAt;
+        _pausedAt = _sliceFrom!;
+        await _seekLocal(session);
+        _pausedAt = saved;
+        await session.callMethod(_playerInterface, 'Play', const []);
+        status = await _untilPlaying(session);
+      }
+      print('gastube: mediahub play status=$status');
+      if (status == 'Playing') {
+        playingOnHub = true;
+        await _player.pausePlayback();
+        await _attachIndicatorTracks(anchor: true);
+        final current = _session;
+        if (current != null && await _playbackStatus(current) != 'Playing') {
+          await current.callMethod(_playerInterface, 'Play', const []);
+          print('gastube: mediahub play after indicator');
+        }
+      } else {
+        print('gastube: mediahub play not started');
+        _away = false;
+      }
     } catch (error) {
       print('gastube: mediahub failed error=$error');
       if (!playingOnHub) _away = false;
@@ -264,7 +295,7 @@ class MediaHubPlayer {
     );
     _session = session;
     print('gastube: mediahub session path=$path uuid=$_uuid');
-    await _rememberSession(_uuid);
+    await _rememberSession(_uuid, path.value);
     final headerMap = url.startsWith('file:')
         ? const <String, String>{}
         : _player.backgroundAudioHeaders;
@@ -448,8 +479,9 @@ class MediaHubPlayer {
   _IndexedFragment? _indexedFragment(
     File file,
     int length,
-    Duration position,
-  ) {
+    Duration position, {
+    int extraUs = 60000000,
+  }) {
     final handle = file.openSync();
     try {
       var offset = 0;
@@ -471,7 +503,13 @@ class MediaHubPlayer {
           final body = Uint8List(size - 8);
           handle.setPositionSync(offset + 8);
           if (handle.readIntoSync(body) < body.length) return null;
-          return _fragmentInSidx(body, offset, offset + size, position);
+          return _fragmentInSidx(
+            body,
+            offset,
+            offset + size,
+            position,
+            extraUs: extraUs,
+          );
         }
         offset += size;
       }
@@ -485,8 +523,9 @@ class MediaHubPlayer {
     Uint8List body,
     int sidxOffset,
     int sidxEnd,
-    Duration position,
-  ) {
+    Duration position, {
+    int extraUs = 60000000,
+  }) {
     if (body.length < 20) return null;
     final version = body[0];
     var cursor = 4;
@@ -512,6 +551,9 @@ class MediaHubPlayer {
     var byte = sidxEnd + firstOffset;
     var timeUs = 0;
     final targetUs = position.inMicroseconds;
+    var chosenStart = -1;
+    var chosenEnd = -1;
+    var chosenStartUs = 0;
     for (var i = 0; i < count; i++) {
       if (cursor + 12 > body.length) return null;
       final size = _be32At(body, cursor) & 0x7fffffff;
@@ -522,16 +564,23 @@ class MediaHubPlayer {
       final startUs = timeUs;
       byte += size;
       timeUs += (duration * 1000000) ~/ timescale;
-      if (targetUs < timeUs) {
-        return _IndexedFragment(
-          start: start,
-          end: byte,
-          startUs: startUs,
-          sidxOffset: sidxOffset,
-        );
+      if (chosenStart < 0 && targetUs < timeUs) {
+        chosenStart = start;
+        chosenStartUs = startUs;
       }
+      if (chosenStart < 0) continue;
+      chosenEnd = byte;
+      // extraUs == 0 keeps only the fragment under the playhead. A lock cannot
+      // wait for the following minute to download.
+      if (extraUs <= 0 || timeUs - targetUs >= extraUs) break;
     }
-    return null;
+    if (chosenStart < 0 || chosenEnd <= chosenStart) return null;
+    return _IndexedFragment(
+      start: chosenStart,
+      end: chosenEnd,
+      startUs: chosenStartUs,
+      sidxOffset: sidxOffset,
+    );
   }
 
   int _be32At(Uint8List bytes, int offset) =>
@@ -604,6 +653,7 @@ class MediaHubPlayer {
       final bytes = await _downloadOnce(url, path, expected);
       if (_jumpTo != null) break;
       if (bytes == null) {
+        if (_rejectedUrl == url) break;
         await Future<void>.delayed(const Duration(milliseconds: 300));
         continue;
       }
@@ -616,11 +666,16 @@ class MediaHubPlayer {
       print('gastube: mediahub cache ready bytes=$bytes');
       return;
     }
+    if (_rejectedUrl == url) {
+      if (_downloadingUrl == url) _downloadingUrl = null;
+      return;
+    }
     final jump = _jumpTo;
     if (jump != null && _downloadingUrl == url) {
       _jumpTo = null;
       await _followPlayhead(url, jump);
     }
+    if (_downloadingUrl == url) await _keepNearPlayhead(url);
     if (_downloadingUrl == url) _downloadingUrl = null;
   }
 
@@ -646,6 +701,10 @@ class MediaHubPlayer {
       final append = response.statusCode == HttpStatus.partialContent;
       if (response.statusCode != HttpStatus.ok && !append) {
         print('gastube: mediahub cache status=${response.statusCode}');
+        if (response.statusCode == HttpStatus.forbidden ||
+            response.statusCode == HttpStatus.gone) {
+          _rejectedUrl = url;
+        }
         return null;
       }
       if (!append) bytes = 0;
@@ -727,6 +786,41 @@ class MediaHubPlayer {
     }
   }
 
+  /// The first jump can land on a resume position the user then leaves.
+  /// Keep saving the fragment under the playhead while this video is open.
+  Future<void> _keepNearPlayhead(String url) async {
+    var tried = -1;
+    while (_downloadingUrl == url) {
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      if (_downloadingUrl != url) return;
+      final partial = File('${_cachePath(url)}.partial');
+      if (!partial.existsSync() || partial.lengthSync() < 32) continue;
+      final frag = _indexedFragment(
+        partial,
+        partial.lengthSync(),
+        _player.currentPosition,
+        extraUs: 0,
+      );
+      if (frag == null || _aheadCovers(url, frag.start)) {
+        tried = -1;
+        continue;
+      }
+      if (frag.start == tried) continue;
+      tried = frag.start;
+      print('gastube: mediahub cache retarget byte=${frag.start}');
+      await _followPlayhead(url, frag.start);
+    }
+  }
+
+  bool _aheadCovers(String url, int byte) {
+    final path = _cachePath(url);
+    final file = File('$path.ahead');
+    final marked = _readIntFile(File('$path.ahead.off'));
+    if (marked == null || !file.existsSync()) return false;
+    final usable = _lastCompleteAtom(file, file.lengthSync());
+    return byte >= marked && byte < marked + usable;
+  }
+
   /// Bytes from [start] through the end of the audio. Returns a later file
   /// offset when the playhead moves past what this range has stored.
   Future<int?> _downloadAhead(String url, int start) async {
@@ -780,7 +874,8 @@ class MediaHubPlayer {
             partial.lengthSync(),
             _player.currentPosition,
           );
-          if (frag != null && frag.start > start + bytes) {
+          if (frag != null &&
+              (frag.start > start + bytes || frag.start < start)) {
             print('gastube: mediahub cache retarget byte=${frag.start}');
             return frag.start;
           }
@@ -810,8 +905,10 @@ class MediaHubPlayer {
       await _fillRange(url, 0, partial, 8192, extra: false);
     }
     if (!partial.existsSync() || partial.lengthSync() < 32) return null;
-    final frag = _indexedFragment(partial, partial.lengthSync(), position);
-    if (frag == null || frag.sidxOffset <= 0) return null;
+    final length = partial.lengthSync();
+    final frag = _indexedFragment(partial, length, position, extraUs: 0);
+    final span = _indexedFragment(partial, length, position) ?? frag;
+    if (frag == null || span == null || frag.sidxOffset <= 0) return null;
     final ahead = File('$path.ahead');
     final aheadAt = _readIntFile(File('$path.ahead.off'));
     File? media;
@@ -824,9 +921,13 @@ class MediaHubPlayer {
       }
     }
     if (media == null) {
-      await _player.pausePlayback();
       final grab = File('$path.grab');
-      final got = await _fillRange(url, frag.start, grab, frag.end - frag.start);
+      final got = await _fillRange(
+        url,
+        frag.start,
+        grab,
+        frag.end - frag.start,
+      );
       if (got < frag.end - frag.start) {
         print('gastube: mediahub slice short bytes=$got');
         return null;
@@ -835,7 +936,13 @@ class MediaHubPlayer {
       mediaAt = frag.start;
     }
     final usable = _lastCompleteAtom(media, media.lengthSync());
-    if (mediaAt + usable < frag.end) return null;
+    final from = frag.start - mediaAt;
+    final available = mediaAt + usable;
+    // Copy the minute when it is already on disk. Otherwise play the fragment
+    // we have now. Waiting out a fresh download is a lock with no sound.
+    final endByte = span.end < available ? span.end : available;
+    if (from < 0 || endByte > available || endByte <= frag.start) return null;
+    final count = endByte - frag.start;
     final play = File('$path.play');
     final header = partial.openSync();
     final output = play.openSync(mode: FileMode.write);
@@ -843,7 +950,8 @@ class MediaHubPlayer {
       output.writeFromSync(header.readSync(frag.sidxOffset));
       final input = media.openSync();
       try {
-        var left = usable;
+        if (from > 0) input.setPositionSync(from);
+        var left = count;
         while (left > 0) {
           final n = left > 65536 ? 65536 : left;
           output.writeFromSync(input.readSync(n));
@@ -856,6 +964,7 @@ class MediaHubPlayer {
       header.closeSync();
       output.closeSync();
     }
+    _sliceFrom = Duration(microseconds: frag.startUs);
     print(
       'gastube: mediahub slice bytes=${play.lengthSync()} fromUs=${frag.startUs}',
     );
@@ -951,9 +1060,12 @@ class MediaHubPlayer {
       final duration = await _intProperty(session, 'Duration');
       if (position < 0) return _pausedAt;
       final localUs = _player.totalDuration.inMicroseconds;
-      final nanoseconds =
-          (duration > 0 && localUs > 0 && duration > localUs * 50) ||
-              (localUs > 0 && position > localUs * 50);
+      // media-hub reports nanoseconds. Without a local duration the old check
+      // left the raw value, and a cleared player then resumed hours ahead.
+      const dayUs = 24 * 60 * 60 * 1000000;
+      final nanoseconds = duration > dayUs ||
+          (localUs > 0 && duration > localUs * 50) ||
+          (localUs > 0 && position > localUs * 50);
       final microseconds = nanoseconds ? position ~/ 1000 : position;
       print(
         'gastube: mediahub position raw=$position duration=$duration us=$microseconds',
@@ -963,6 +1075,16 @@ class MediaHubPlayer {
       print('gastube: mediahub position failed error=$error');
       return _pausedAt;
     }
+  }
+
+  Future<String?> _untilPlaying(DBusRemoteObject session) async {
+    String? status;
+    for (var attempt = 0; attempt < 5; attempt++) {
+      status = await _playbackStatus(session);
+      if (status == 'Playing') return status;
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+    }
+    return status;
   }
 
   Future<String?> _playbackStatus(DBusRemoteObject session) async {
@@ -981,9 +1103,10 @@ class MediaHubPlayer {
     return null;
   }
 
-  Future<void> _rememberSession(String? uuid) async {
+  Future<void> _rememberSession(String? uuid, [String? path]) async {
+    final note = (uuid == null || uuid.isEmpty) ? '' : '$uuid\n${path ?? ''}';
     try {
-      await _sessionChannel.invokeMethod<void>('mediaHubSession', uuid ?? '');
+      await _sessionChannel.invokeMethod<void>('mediaHubSession', note);
     } catch (error) {
       print('gastube: mediahub session note failed error=$error');
     }

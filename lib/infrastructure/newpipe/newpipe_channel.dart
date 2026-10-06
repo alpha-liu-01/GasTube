@@ -120,6 +120,16 @@ class NewPipeChannel {
     }
   }
 
+  /// Drop one video so the next read extracts new stream URLs.
+  /// A googlevideo URL can come back 403 while the rest of the list still plays.
+  static Future<void> forgetStreamInfo(String videoId) async {
+    _streamCache.remove(videoId);
+    if (Platform.isAndroid) return;
+    try {
+      await _invoke('forgetStreamInfo', {'id': videoId});
+    } catch (_) {}
+  }
+
   /// Clear expired cache entries
   static void clearExpiredCache() {
     _streamCache.removeWhere((_, cached) => cached.isExpired(_cacheTtl));

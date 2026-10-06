@@ -4,7 +4,7 @@
 set -euo pipefail
 
 prefix=/opt/gastube-playback
-stamp="ffmpeg-6.1.1-vp9-hybris libass-0.17.3 mpv-0.35.1"
+stamp="ffmpeg-6.1.1-hybris-flush2 libass-0.17.3 mpv-0.35.1"
 mkdir -p "$prefix"
 export LD_LIBRARY_PATH="$prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 if [[ -e "$prefix/lib/libmpv.so.2" && -x "$prefix/bin/ffmpeg" && -f "$prefix/stamp" ]] &&
