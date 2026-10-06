@@ -552,6 +552,11 @@ extern "C" int gastube_ubuntu_touch_main(int argc, char** argv) {
   use_application_stage(GTK_WINDOW(window));
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
+  // Linux defaults to Impeller. On Adreno GLES that re-issues GL state for
+  // every draw, and the window draw is most of the 60fps miss. Skia stays
+  // on this phone only; the desktop runner does not call this.
+  fl_dart_project_set_enable_impeller(project, FALSE);
+  g_message("renderer: Skia; Impeller left off");
   fl_dart_project_set_dart_entrypoint_arguments(project, argv + 1);
   FlView* view = fl_view_new(project);
   GdkRGBA background = {1.0, 1.0, 1.0, 1.0};
@@ -568,7 +573,7 @@ extern "C" int gastube_ubuntu_touch_main(int argc, char** argv) {
 
   // Do not call gdk_window_create_gl_context. That installs GTK's paint GL
   // context, and every later expose uploads this white background and swaps
-  // it onto the same wl_surface Impeller is presenting.
+  // it onto the same wl_surface the renderer is presenting.
   g_message("GDK_GL=gles; paint context left unset so exposes do not swap white");
 
   g_unix_signal_add(SIGTERM, on_shutdown_signal, nullptr);
