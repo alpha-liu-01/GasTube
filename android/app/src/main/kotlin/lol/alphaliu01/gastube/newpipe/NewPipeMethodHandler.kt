@@ -345,6 +345,12 @@ class NewPipeMethodHandler : MethodChannel.MethodCallHandler {
                         android.util.Log.e("NewPipeHandler", "Failed to get videos tab: ${tabError.message}", tabError)
                     }
                 }
+                if (initialVideos.isEmpty()) {
+                    uploadsFromChannel(channelInfo.id)?.let { uploads ->
+                        initialVideos = uploads.first
+                        videosNextPage = uploads.second
+                    }
+                }
 
                 // Get best quality avatar and banner using ResolutionLevel
                 val bestAvatar = channelInfo.avatars
@@ -396,6 +402,34 @@ class NewPipeMethodHandler : MethodChannel.MethodCallHandler {
             } catch (e: Exception) {
                 sendError(result, "EXTRACTION_ERROR", e.message ?: "Failed to get channel", null)
             }
+        }
+    }
+
+    /// Music "Topic" channels have no Videos tab. Their uploads playlist is the
+    /// channel id with the UC prefix replaced by UU.
+    private fun uploadsFromChannel(
+        channelId: String,
+    ): Pair<List<Map<String, Any?>>, String?>? {
+        if (!channelId.startsWith("UC") || channelId.length < 3) return null
+        val playlistId = "UU" + channelId.substring(2)
+        return try {
+            val info = PlaylistInfo.getInfo(
+                ServiceList.YouTube,
+                "https://www.youtube.com/playlist?list=$playlistId",
+            )
+            val items = info.relatedItems.map { mapInfoItem(it) }
+            if (items.isEmpty()) {
+                null
+            } else {
+                android.util.Log.d(
+                    "NewPipeHandler",
+                    "Channel uploads id=$channelId playlist=$playlistId count=${items.size}",
+                )
+                items to serializePage(info.nextPage)
+            }
+        } catch (error: Exception) {
+            android.util.Log.e("NewPipeHandler", "Channel uploads failed: ${error.message}")
+            null
         }
     }
 
