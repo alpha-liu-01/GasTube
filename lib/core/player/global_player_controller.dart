@@ -12,6 +12,28 @@ import 'package:fluxtube/core/services/media_hub_player.dart';
 import 'package:fluxtube/core/services/ubuntu_touch_display.dart';
 import 'package:fluxtube/core/services/exoplayer_notification_bridge.dart';
 
+/// Saved-position resume. A precise seek keeps the clock at 0:00 until every
+/// frame from the previous keyframe has been decoded. Keyframe resume starts
+/// playback immediately. Scrubbing still uses precise seeks.
+Future<void> seekUbuntuTouchResume(Player player, Duration position) async {
+  if (position <= Duration.zero) return;
+  if (!UbuntuTouch.enabled) {
+    await player.seek(position);
+    return;
+  }
+  try {
+    await (player.platform as dynamic).command([
+      'seek',
+      (position.inMilliseconds / 1000).toStringAsFixed(4),
+      'absolute+keyframes',
+    ]);
+    print('gastube: resume keyframe positionMs=${position.inMilliseconds}');
+  } catch (error) {
+    print('gastube: resume keyframe failed error=$error');
+    await player.seek(position);
+  }
+}
+
 Future<void> selectUbuntuTouchDecoder(Player player, {String? codec}) async {
   if (!UbuntuTouch.enabled) return;
   final value = (codec ?? '').toLowerCase();

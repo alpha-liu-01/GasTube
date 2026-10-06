@@ -745,7 +745,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
       }
 
       if (startPosition > Duration.zero && !config.isLive) {
-        unawaited(_player.seek(startPosition));
+        unawaited(seekUbuntuTouchResume(_player, startPosition));
         debugPrint('Queued seek to position: ${startPosition.inSeconds}s');
       }
 

@@ -456,7 +456,7 @@ static int queue_encoded(HybrisH264Context *ctx, const uint8_t *data, int size,
 {
     int attempt;
 
-    for (attempt = 0; attempt < 6; attempt++) {
+    for (attempt = 0; attempt < 20; attempt++) {
         size_t index = 0;
         HybrisBufferInfo info;
         uint8_t *buffer;
@@ -464,7 +464,7 @@ static int queue_encoded(HybrisH264Context *ctx, const uint8_t *data, int size,
         int ret = ctx->api.dequeue_input(ctx->codec, &index, attempt == 0 ? 0 : 10000);
         if (ret != 0) {
             if (ctx->held && !ctx->held_ready) {
-                int got = dequeue_frame(ctx, ctx->held, 0);
+                int got = dequeue_frame(ctx, ctx->held, 10000);
                 if (got == 1)
                     ctx->held_ready = 1;
             }
@@ -645,8 +645,14 @@ static int hybris_decode(AVCodecContext *avctx, AVFrame *frame, int *got_frame,
         if (ret < 0)
             return ret;
         ret = queue_encoded(ctx, ctx->annex, ctx->annex_size, pts, flags);
-        if (ret < 0)
+        if (ret == AVERROR(EAGAIN)) {
+            // The old decode callback must not return EAGAIN. libavcodec
+            // aborts the process from avcodec_send_packet.
+            fprintf(stderr, "gastube: mediacodec drop packet bytes=%d\n",
+                    pkt->size);
+        } else if (ret < 0) {
             return ret;
+        }
     } else if (!ctx->eos_queued) {
         ret = queue_encoded(ctx, NULL, 0, 0, HYBRIS_BUFFER_FLAG_EOS);
         if (ret == 0)

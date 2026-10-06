@@ -328,7 +328,10 @@ class _InvidiousMediaKitPlayerState extends State<InvidiousMediaKitPlayer> {
         await Future.delayed(const Duration(milliseconds: 100));
         if (!mounted) return;
 
-        await _player.seek(Duration(seconds: widget.playbackPosition));
+        await seekUbuntuTouchResume(
+          _player,
+          Duration(seconds: widget.playbackPosition),
+        );
         debugPrint(
             'Seeked to position: ${widget.playbackPosition}s (after play)');
 
