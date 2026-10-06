@@ -1,21 +1,27 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dbus/dbus.dart';
 import 'package:fluxtube/core/deep_link_handler.dart';
+import 'package:fluxtube/core/storage_paths.dart';
 import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:path/path.dart' as p;
 
 /// Opens a finished download in the system app for that kind of file.
 ///
-/// Video goes to Media Player. Audio goes to the Music app. Charge leaves the
-/// transfer charged so that app can take the copy. Collecting here, or opening
-/// a video:// URL ourselves, makes Media Player ask for a file.
+/// Video goes to Media Player. A fresh `video://` launch leaves that player
+/// without a source, so video still uses one Content Hub charge. Audio goes to
+/// the Music app, which copies every charge into `~/Music/Imported` under a
+/// new time prefix. A later open of the same audio plays the copy already
+/// there.
 Future<({bool ok, String message})> openInSystemPlayer({
   required String path,
   required bool audioOnly,
+  String title = '',
+  String videoId = '',
 }) async {
   final client = DBusClient.session();
   try {
@@ -27,18 +33,33 @@ Future<({bool ok, String message})> openInSystemPlayer({
       print('gastube: open system failed file=$path error=no music peer');
       return (ok: false, message: 'no music peer');
     }
+    if (audioOnly) {
+      final reused = await _reuseAudio(
+        sourcePath: path,
+        title: title,
+        videoId: videoId,
+        package: peer,
+      );
+      if (reused != null) return reused;
+    }
+    final chargePath = audioOnly
+        ? await _aliasForCharge(sourcePath: path, title: title, videoId: videoId)
+        : path;
     final state = await _chargeFile(
       client,
       hub,
       peer: peer,
       contentType: audioOnly ? 'music' : 'videos',
-      path: path,
+      path: chargePath,
     );
+    if (audioOnly && state != 5) {
+      await _markSent(_aliasName(chargePath));
+    }
     if (state == 5) {
       print('gastube: open system failed file=$path peer=$peer error=aborted');
       return (ok: false, message: 'aborted');
     }
-    print('gastube: open system file=$path peer=$peer state=$state');
+    print('gastube: open system file=$chargePath peer=$peer state=$state');
     return (ok: true, message: '');
   } catch (error) {
     print('gastube: open system failed file=$path error=$error');
@@ -95,9 +116,14 @@ List<int> _pasteboardBytes(String text) {
 }
 
 /// Hands a finished download to Gallery or Music so it leaves the click.
+///
+/// The file handed over is named from [title]. A second save of the same
+/// download finds that copy and does not charge again.
 Future<({bool ok, String message})> exportDownload({
   required String path,
   required bool audioOnly,
+  String title = '',
+  String videoId = '',
 }) async {
   final client = DBusClient.session();
   try {
@@ -109,13 +135,49 @@ Future<({bool ok, String message})> exportDownload({
       print('gastube: save hub failed file=$path error=no peer');
       return (ok: false, message: 'no peer');
     }
+    final chargePath = await _aliasForCharge(
+      sourcePath: path,
+      title: title,
+      videoId: videoId,
+    );
+    final wanted = _aliasName(chargePath);
+    final existing = _findSystemCopy(
+      audioOnly: audioOnly,
+      wantedName: wanted,
+      legacyName: '',
+    );
+    if (existing != null) {
+      print('gastube: save hub reuse file=${existing.path}');
+      return (ok: true, message: '');
+    }
+    if (await _alreadySent(wanted)) {
+      final waited = await _waitForCopy(
+        audioOnly: audioOnly,
+        wantedName: wanted,
+        legacyName: '',
+      );
+      if (waited != null) {
+        print('gastube: save hub reuse file=${waited.path}');
+        return (ok: true, message: '');
+      }
+      final marker = await _sentMarker(wanted);
+      if (marker.existsSync()) marker.deleteSync();
+      print('gastube: save hub retry file=$path reason=previous copy missing');
+    }
     final type = audioOnly ? 'music' : 'videos';
-    final state = await _chargeFile(client, hub, peer: peer, contentType: type, path: path);
+    final state = await _chargeFile(
+      client,
+      hub,
+      peer: peer,
+      contentType: type,
+      path: chargePath,
+    );
+    if (state != 5) await _markSent(wanted);
     if (state == 5) {
       print('gastube: save hub failed file=$path peer=$peer error=aborted');
       return (ok: false, message: 'aborted');
     }
-    print('gastube: save hub file=$path peer=$peer type=$type state=$state');
+    print('gastube: save hub file=$chargePath peer=$peer type=$type state=$state');
     return (ok: true, message: '');
   } catch (error) {
     print('gastube: save hub failed file=$path error=$error');
@@ -316,6 +378,299 @@ String _dbusEscape(String id) {
     final hex = match.group(0)!.codeUnitAt(0).toRadixString(16);
     return '_${hex.padLeft(2, '0')}';
   });
+}
+
+/// Plays an audio file the Music app already imported, instead of charging
+/// another copy into `~/Music/Imported`.
+Future<({bool ok, String message})?> _reuseAudio({
+  required String sourcePath,
+  required String title,
+  required String videoId,
+  required String package,
+}) async {
+  final chargePath = await _aliasForCharge(
+    sourcePath: sourcePath,
+    title: title,
+    videoId: videoId,
+  );
+  final wanted = _aliasName(chargePath);
+  final legacy = p.basename(sourcePath);
+  final legacyName = legacy == wanted ? '' : legacy;
+  final found = _findSystemCopy(
+    audioOnly: true,
+    wantedName: wanted,
+    legacyName: legacyName,
+  );
+  if (found != null) return _dispatchMusic(found.path, package);
+  if (!await _alreadySent(wanted)) return null;
+  final waited = await _waitForCopy(
+    audioOnly: true,
+    wantedName: wanted,
+    legacyName: legacyName,
+  );
+  if (waited != null) return _dispatchMusic(waited.path, package);
+  print('gastube: open system reuse failed file=$sourcePath error=copy still missing');
+  return (ok: false, message: 'copy still missing');
+}
+
+/// Click ids are `package_app_version`. The dispatcher compares the package
+/// only. The full id makes it refuse the URL, so the saved file never opens.
+String _clickPackage(String appId) {
+  final split = appId.split('_');
+  if (split.length >= 3 && split.first.isNotEmpty) return split.first;
+  return appId;
+}
+
+Future<({bool ok, String message})> _dispatchMusic(String path, String package) async {
+  final client = DBusClient.session();
+  try {
+    final url = Uri.file(path).toString().replaceFirst('file://', 'music://');
+    final dispatcher = DBusRemoteObject(
+      client,
+      name: 'com.lomiri.URLDispatcher',
+      path: DBusObjectPath('/com/lomiri/URLDispatcher'),
+    );
+    await dispatcher.callMethod(
+      'com.lomiri.URLDispatcher',
+      'DispatchURL',
+      [DBusString(url), DBusString(_clickPackage(package))],
+    );
+    print('gastube: open system reuse file=$path');
+    return (ok: true, message: '');
+  } catch (error) {
+    print('gastube: open system reuse failed file=$path error=$error');
+    return (ok: false, message: error.toString());
+  } finally {
+    await client.close();
+  }
+}
+
+/// Hard link named with the video title. The Music app keeps the URL's last
+/// component, so the charged path has to already carry that name.
+Future<String> _aliasForCharge({
+  required String sourcePath,
+  required String title,
+  required String videoId,
+}) async {
+  final names = Directory(p.join((await ubuntuTouchExportsDirectory()).path, 'names'));
+  await names.create(recursive: true);
+  final ext = p.extension(sourcePath);
+  var base = _safeTitle(title);
+  if (base.isEmpty) base = _safeTitle(p.basenameWithoutExtension(sourcePath));
+  if (base.isEmpty) base = 'download';
+  var fileName = '$base$ext';
+  var dest = p.join(names.path, fileName);
+  if (File(dest).existsSync() && !_sameInode(sourcePath, dest)) {
+    final id = _safeTitle(videoId);
+    if (id.isNotEmpty) {
+      fileName = '$base $id$ext';
+      dest = p.join(names.path, fileName);
+    }
+  }
+  if (File(dest).existsSync()) {
+    if (_sameInode(sourcePath, dest)) return dest;
+    print('gastube: export alias occupied dest=$dest');
+    return sourcePath;
+  }
+  if (_hardLink(sourcePath, dest)) return dest;
+  return sourcePath;
+}
+
+String _aliasName(String path) => p.basename(path);
+
+List<String> _exportFileNames({
+  required String sourcePath,
+  required String title,
+  required String videoId,
+}) {
+  final ext = p.extension(sourcePath);
+  var base = _safeTitle(title);
+  if (base.isEmpty) base = _safeTitle(p.basenameWithoutExtension(sourcePath));
+  if (base.isEmpty) base = 'download';
+  final names = <String>['$base$ext'];
+  final id = _safeTitle(videoId);
+  if (id.isNotEmpty) names.add('$base $id$ext');
+  final legacy = p.basename(sourcePath);
+  if (legacy.isNotEmpty && !names.contains(legacy)) names.add(legacy);
+  return names;
+}
+
+/// True when Gallery or Music already has this download.
+///
+/// The downloads menu uses this to stop offering Save to Device again.
+bool ubuntuTouchDeviceCopyExists({
+  required String sourcePath,
+  required bool audioOnly,
+  required String title,
+  required String videoId,
+}) {
+  for (final name in _exportFileNames(
+    sourcePath: sourcePath,
+    title: title,
+    videoId: videoId,
+  )) {
+    if (_findSystemCopy(audioOnly: audioOnly, wantedName: name, legacyName: '') !=
+        null) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// Drops the sandbox hard link created for a titled export.
+///
+/// The copy in Music or Videos stays. That file is the one the user saved.
+Future<void> ubuntuTouchReleaseDownload({
+  required String sourcePath,
+  required String title,
+  required String videoId,
+}) async {
+  final root = await ubuntuTouchExportsDirectory();
+  final namesDir = Directory(p.join(root.path, 'names'));
+  final sentDir = Directory(p.join(root.path, 'sent'));
+  for (final name in _exportFileNames(
+    sourcePath: sourcePath,
+    title: title,
+    videoId: videoId,
+  )) {
+    final alias = File(p.join(namesDir.path, name));
+    if (!alias.existsSync() || !_sameInode(sourcePath, alias.path)) continue;
+    alias.deleteSync();
+    print('gastube: export alias removed file=${alias.path}');
+    final marker = File(p.join(sentDir.path, name));
+    if (marker.existsSync()) marker.deleteSync();
+  }
+}
+
+String _safeTitle(String raw) {
+  final cleaned = raw
+      .replaceAll(RegExp(r'[<>:"/\\|?*\n\r\t]'), '')
+      .replaceAll(RegExp(r'''[&,+()$~%'":*?<>{}]'''), '')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  if (cleaned.length <= 80) return cleaned;
+  return cleaned.substring(0, 80).trim();
+}
+
+bool _sameInode(String leftPath, String rightPath) {
+  try {
+    return FileSystemEntity.identicalSync(leftPath, rightPath);
+  } catch (_) {
+    return false;
+  }
+}
+
+bool _hardLink(String source, String dest) {
+  try {
+    final libc = DynamicLibrary.open('libc.so.6');
+    final link = libc.lookupFunction<
+        Int32 Function(Pointer<Uint8>, Pointer<Uint8>),
+        int Function(Pointer<Uint8>, Pointer<Uint8>)>('link');
+    final malloc = libc.lookupFunction<
+        Pointer<Uint8> Function(IntPtr),
+        Pointer<Uint8> Function(int)>('malloc');
+    final free = libc.lookupFunction<
+        Void Function(Pointer<Uint8>),
+        void Function(Pointer<Uint8>)>('free');
+    final from = _nativePath(source, malloc);
+    final to = _nativePath(dest, malloc);
+    try {
+      if (link(from, to) == 0) return true;
+      print('gastube: export alias link failed source=$source dest=$dest');
+      return false;
+    } finally {
+      free(from);
+      free(to);
+    }
+  } catch (error) {
+    print('gastube: export alias link failed error=$error');
+    return false;
+  }
+}
+
+Pointer<Uint8> _nativePath(
+  String value,
+  Pointer<Uint8> Function(int) malloc,
+) {
+  final units = utf8.encode(value);
+  final pointer = malloc(units.length + 1);
+  final bytes = pointer.asTypedList(units.length + 1);
+  bytes.setRange(0, units.length, units);
+  bytes[units.length] = 0;
+  return pointer;
+}
+
+Future<File> _sentMarker(String fileName) async {
+  final root = await ubuntuTouchExportsDirectory();
+  final dir = Directory(p.join(root.path, 'sent'));
+  await dir.create(recursive: true);
+  return File(p.join(dir.path, fileName));
+}
+
+Future<void> _markSent(String fileName) async {
+  final marker = await _sentMarker(fileName);
+  if (!marker.existsSync()) marker.writeAsStringSync(fileName);
+}
+
+Future<bool> _alreadySent(String fileName) async {
+  return (await _sentMarker(fileName)).existsSync();
+}
+
+File? _findSystemCopy({
+  required bool audioOnly,
+  required String wantedName,
+  required String legacyName,
+}) {
+  final home = Platform.environment['HOME'] ?? '';
+  if (home.isEmpty || wantedName.isEmpty) return null;
+  final roots = audioOnly
+      ? [Directory(p.join(home, 'Music', 'Imported'))]
+      : [
+          Directory(p.join(home, 'Videos', 'imported')),
+          Directory(p.join(home, 'Videos', 'Imported')),
+        ];
+  File? titled;
+  File? legacy;
+  for (final root in roots) {
+    if (!root.existsSync()) continue;
+    try {
+      for (final entity in root.listSync(recursive: true, followLinks: false)) {
+        if (entity is! File) continue;
+        final name = p.basename(entity.path);
+        if (_importNameMatches(name, wantedName)) {
+          titled ??= entity;
+        } else if (legacyName.isNotEmpty && _importNameMatches(name, legacyName)) {
+          legacy ??= entity;
+        }
+      }
+    } catch (error) {
+      print('gastube: import lookup failed dir=${root.path} error=$error');
+    }
+  }
+  return titled ?? legacy;
+}
+
+bool _importNameMatches(String name, String wanted) {
+  if (wanted.isEmpty) return false;
+  if (name == wanted) return true;
+  return RegExp('^(?:\\d{6}-)+${RegExp.escape(wanted)}\$').hasMatch(name);
+}
+
+Future<File?> _waitForCopy({
+  required bool audioOnly,
+  required String wantedName,
+  required String legacyName,
+}) async {
+  for (var attempt = 0; attempt < 8; attempt++) {
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    final found = _findSystemCopy(
+      audioOnly: audioOnly,
+      wantedName: wantedName,
+      legacyName: legacyName,
+    );
+    if (found != null) return found;
+  }
+  return null;
 }
 
 Future<int> _chargeFile(

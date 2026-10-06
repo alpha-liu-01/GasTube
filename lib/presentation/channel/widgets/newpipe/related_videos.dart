@@ -63,6 +63,35 @@ class _NewPipeChannelRelatedVideoSectionState
     }
   }
 
+  Future<void> _loadUploadsPage() async {
+    final channelId = widget.channelInfo.id ?? widget.channelId;
+    if (_nextPage == null ||
+        !channelId.startsWith('UC') ||
+        channelId.length < 3) {
+      return;
+    }
+    setState(() {
+      _isLoadingMore = true;
+    });
+    try {
+      final moreContent = await NewPipeChannel.getMorePlaylist(
+        playlistId: 'UU${channelId.substring(2)}',
+        nextPage: _nextPage!,
+      );
+      if (!mounted) return;
+      setState(() {
+        _allVideos.addAll(moreContent.videos ?? []);
+        _nextPage = moreContent.nextPage;
+        _isLoadingMore = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingMore = false;
+      });
+    }
+  }
+
   Future<void> _loadMore() async {
     if (_nextPage == null || _isLoadingMore) return;
 
@@ -71,7 +100,10 @@ class _NewPipeChannelRelatedVideoSectionState
       orElse: () => widget.channelInfo.tabs?.first ?? NewPipeChannelTab(),
     );
     final url = videosTab?.url;
-    if (url == null || videosTab == null) return;
+    if (url == null || videosTab == null) {
+      await _loadUploadsPage();
+      return;
+    }
 
     setState(() {
       _isLoadingMore = true;

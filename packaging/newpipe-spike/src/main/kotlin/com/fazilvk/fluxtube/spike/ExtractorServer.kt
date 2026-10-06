@@ -209,6 +209,12 @@ object ExtractorServer {
                 System.err.println("NewPipe channel tab failed: ${tabError.message}")
             }
         }
+        if (initialVideos.isEmpty()) {
+            uploadsFromChannel(channelInfo.id)?.let { uploads ->
+                initialVideos = uploads.first
+                videosNextPage = uploads.second
+            }
+        }
         return gson.toJson(
             mapOf(
                 "id" to channelInfo.id,
@@ -230,6 +236,33 @@ object ExtractorServer {
                 },
             ),
         )
+    }
+
+    /// Music "Topic" channels have no Videos tab. Their uploads playlist is the
+    /// channel id with the UC prefix replaced by UU.
+    private fun uploadsFromChannel(
+        channelId: String,
+    ): Pair<List<Map<String, Any?>>, String?>? {
+        if (!channelId.startsWith("UC") || channelId.length < 3) return null
+        val playlistId = "UU" + channelId.substring(2)
+        return try {
+            val info = PlaylistInfo.getInfo(
+                ServiceList.YouTube,
+                "https://www.youtube.com/playlist?list=$playlistId",
+            )
+            val items = info.relatedItems.map { mapInfoItem(it) }
+            if (items.isEmpty()) {
+                null
+            } else {
+                System.err.println(
+                    "NewPipe channel uploads id=$channelId playlist=$playlistId count=${items.size}",
+                )
+                items to serializePage(info.nextPage)
+            }
+        } catch (error: Exception) {
+            System.err.println("NewPipe channel uploads failed: ${error.message}")
+            null
+        }
     }
 
     private fun channelTab(

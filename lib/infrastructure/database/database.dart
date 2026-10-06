@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
+import 'package:sqlite3/common.dart';
+import 'package:sqlite3/sqlite3.dart';
 import 'package:fluxtube/core/storage_paths.dart';
 import 'package:path/path.dart' as p;
 
@@ -210,14 +212,147 @@ class AppDatabase extends _$AppDatabase {
       name: 'fluxtube.db',
       native: DriftNativeOptions(
         databaseDirectory: _databaseDirectory,
+        setup: _configureSqlite,
       ),
     );
+  }
+
+  /// A kill during a write used to leave a file the next launch could not
+  /// open, and the app stayed dead until the data directory was removed.
+  /// Only a file sqlite itself calls corrupt is moved aside.
+  static void _configureSqlite(CommonDatabase db) {
+    db.execute('PRAGMA journal_mode=WAL');
+    db.execute('PRAGMA synchronous=NORMAL');
+  }
+
+  static bool _databaseIsCorrupt(String path) {
+    if (!File(path).existsSync()) return false;
+    Database? opened;
+    try {
+      opened = sqlite3.open(path);
+      final rows = opened.select('PRAGMA quick_check');
+      for (final row in rows) {
+        if (row.values.isEmpty) continue;
+        if (row.values.first?.toString() != 'ok') return true;
+      }
+      return false;
+    } on SqliteException catch (error) {
+      // 11 SQLITE_CORRUPT, 26 SQLITE_NOTADB. A lock or a full disk is not
+      // a reason to throw the library away.
+      final code = error.resultCode;
+      return code == 11 || code == 26;
+    } finally {
+      opened?.dispose();
+    }
+  }
+
+  static void _deleteQuarantine(String path) {
+    final dir = Directory(p.dirname(path));
+    if (!dir.existsSync()) return;
+    final prefix = '${p.basename(path)}.bad-';
+    var removed = 0;
+    for (final entity in dir.listSync()) {
+      if (entity is! File) continue;
+      if (!p.basename(entity.path).startsWith(prefix)) continue;
+      try {
+        entity.deleteSync();
+        removed++;
+      } catch (_) {}
+    }
+    if (removed > 0) {
+      print('gastube: database quarantine removed count=$removed');
+    }
+  }
+
+  static void _quarantineDatabase(String path) {
+    // Drop older copies first so a corrupt file cannot accumulate.
+    _deleteQuarantine(path);
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+    for (final suffix in ['', '-wal', '-shm', '-journal']) {
+      final file = File('$path$suffix');
+      if (!file.existsSync()) continue;
+      file.renameSync('$path.bad-$stamp$suffix');
+    }
+    print('gastube: database quarantined path=$path');
+  }
+
+  /// One snapshot from the last launch that could still open the file.
+  /// Replaced on each healthy start, so a later failure keeps that library
+  /// and drops only what was written after it.
+  static void _writeBackup(String path) {
+    if (!File(path).existsSync()) return;
+    final temp = File('$path.bak-new');
+    final backup = File('$path.bak');
+    Database? opened;
+    try {
+      if (temp.existsSync()) temp.deleteSync();
+      opened = sqlite3.open(path);
+      final sqlPath = temp.path.replaceAll("'", "''");
+      opened.execute("VACUUM INTO '$sqlPath'");
+    } on SqliteException catch (error) {
+      print('gastube: database backup skipped code=${error.resultCode}');
+      try {
+        if (temp.existsSync()) temp.deleteSync();
+      } catch (_) {}
+      return;
+    } finally {
+      opened?.dispose();
+    }
+    try {
+      if (backup.existsSync()) backup.deleteSync();
+      temp.renameSync(backup.path);
+      print('gastube: database backup bytes=${backup.lengthSync()}');
+    } catch (error) {
+      print('gastube: database backup skipped error=$error');
+    }
+  }
+
+  static bool _restoreBackup(String path) {
+    final backup = File('$path.bak');
+    if (!backup.existsSync() || _databaseIsCorrupt(backup.path)) {
+      try {
+        if (backup.existsSync()) backup.deleteSync();
+      } catch (_) {}
+      return false;
+    }
+    final restored = File('$path.restore');
+    try {
+      if (restored.existsSync()) restored.deleteSync();
+      backup.copySync(restored.path);
+    } catch (error) {
+      print('gastube: database restore failed error=$error');
+      return false;
+    }
+    if (_databaseIsCorrupt(restored.path)) {
+      try {
+        restored.deleteSync();
+        backup.deleteSync();
+      } catch (_) {}
+      print('gastube: database restore failed path=$path');
+      return false;
+    }
+    _deleteQuarantine(path);
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+    for (final suffix in ['', '-wal', '-shm', '-journal']) {
+      final file = File('$path$suffix');
+      if (!file.existsSync()) continue;
+      file.renameSync('$path.bad-$stamp$suffix');
+    }
+    restored.renameSync(path);
+    _deleteQuarantine(path);
+    print('gastube: database restored path=$path');
+    return true;
   }
 
   /// drift names the file `<name>.sqlite`.
   static Future<Directory> _databaseDirectory() async {
     final support = await persistentAppDirectory();
     final current = File(p.join(support.path, 'fluxtube.db.sqlite'));
+    if (_databaseIsCorrupt(current.path)) {
+      if (!_restoreBackup(current.path) && current.existsSync()) {
+        _quarantineDatabase(current.path);
+      }
+    }
     if (!await current.exists()) {
       await copyLegacyDocumentFile('fluxtube.db.sqlite', current);
       for (final suffix in ['-wal', '-shm']) {
@@ -226,6 +361,13 @@ class AppDatabase extends _$AppDatabase {
           File(p.join(support.path, 'fluxtube.db.sqlite$suffix')),
         );
       }
+    }
+    if (!current.existsSync()) {
+      _restoreBackup(current.path);
+    }
+    if (current.existsSync() && !_databaseIsCorrupt(current.path)) {
+      _deleteQuarantine(current.path);
+      _writeBackup(current.path);
     }
     return support;
   }
