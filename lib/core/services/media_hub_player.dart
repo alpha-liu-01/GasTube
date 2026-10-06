@@ -475,8 +475,9 @@ class MediaHubPlayer {
   _IndexedFragment? _indexedFragment(
     File file,
     int length,
-    Duration position,
-  ) {
+    Duration position, {
+    int extraUs = 60000000,
+  }) {
     final handle = file.openSync();
     try {
       var offset = 0;
@@ -498,7 +499,13 @@ class MediaHubPlayer {
           final body = Uint8List(size - 8);
           handle.setPositionSync(offset + 8);
           if (handle.readIntoSync(body) < body.length) return null;
-          return _fragmentInSidx(body, offset, offset + size, position);
+          return _fragmentInSidx(
+            body,
+            offset,
+            offset + size,
+            position,
+            extraUs: extraUs,
+          );
         }
         offset += size;
       }
@@ -512,8 +519,9 @@ class MediaHubPlayer {
     Uint8List body,
     int sidxOffset,
     int sidxEnd,
-    Duration position,
-  ) {
+    Duration position, {
+    int extraUs = 60000000,
+  }) {
     if (body.length < 20) return null;
     final version = body[0];
     var cursor = 4;
@@ -558,9 +566,9 @@ class MediaHubPlayer {
       }
       if (chosenStart < 0) continue;
       chosenEnd = byte;
-      // One fragment is about ten seconds. Keep a minute so a lock does not
-      // run off the end of the slice.
-      if (timeUs - targetUs >= 60000000) break;
+      // extraUs == 0 keeps only the fragment under the playhead. A lock cannot
+      // wait for the following minute to download.
+      if (extraUs <= 0 || timeUs - targetUs >= extraUs) break;
     }
     if (chosenStart < 0 || chosenEnd <= chosenStart) return null;
     return _IndexedFragment(
@@ -658,6 +666,7 @@ class MediaHubPlayer {
       _jumpTo = null;
       await _followPlayhead(url, jump);
     }
+    if (_downloadingUrl == url) await _keepNearPlayhead(url);
     if (_downloadingUrl == url) _downloadingUrl = null;
   }
 
@@ -764,6 +773,41 @@ class MediaHubPlayer {
     }
   }
 
+  /// The first jump can land on a resume position the user then leaves.
+  /// Keep saving the fragment under the playhead while this video is open.
+  Future<void> _keepNearPlayhead(String url) async {
+    var tried = -1;
+    while (_downloadingUrl == url) {
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      if (_downloadingUrl != url) return;
+      final partial = File('${_cachePath(url)}.partial');
+      if (!partial.existsSync() || partial.lengthSync() < 32) continue;
+      final frag = _indexedFragment(
+        partial,
+        partial.lengthSync(),
+        _player.currentPosition,
+        extraUs: 0,
+      );
+      if (frag == null || _aheadCovers(url, frag.start)) {
+        tried = -1;
+        continue;
+      }
+      if (frag.start == tried) continue;
+      tried = frag.start;
+      print('gastube: mediahub cache retarget byte=${frag.start}');
+      await _followPlayhead(url, frag.start);
+    }
+  }
+
+  bool _aheadCovers(String url, int byte) {
+    final path = _cachePath(url);
+    final file = File('$path.ahead');
+    final marked = _readIntFile(File('$path.ahead.off'));
+    if (marked == null || !file.existsSync()) return false;
+    final usable = _lastCompleteAtom(file, file.lengthSync());
+    return byte >= marked && byte < marked + usable;
+  }
+
   /// Bytes from [start] through the end of the audio. Returns a later file
   /// offset when the playhead moves past what this range has stored.
   Future<int?> _downloadAhead(String url, int start) async {
@@ -817,7 +861,8 @@ class MediaHubPlayer {
             partial.lengthSync(),
             _player.currentPosition,
           );
-          if (frag != null && frag.start > start + bytes) {
+          if (frag != null &&
+              (frag.start > start + bytes || frag.start < start)) {
             print('gastube: mediahub cache retarget byte=${frag.start}');
             return frag.start;
           }
@@ -847,8 +892,10 @@ class MediaHubPlayer {
       await _fillRange(url, 0, partial, 8192, extra: false);
     }
     if (!partial.existsSync() || partial.lengthSync() < 32) return null;
-    final frag = _indexedFragment(partial, partial.lengthSync(), position);
-    if (frag == null || frag.sidxOffset <= 0) return null;
+    final length = partial.lengthSync();
+    final frag = _indexedFragment(partial, length, position, extraUs: 0);
+    final span = _indexedFragment(partial, length, position) ?? frag;
+    if (frag == null || span == null || frag.sidxOffset <= 0) return null;
     final ahead = File('$path.ahead');
     final aheadAt = _readIntFile(File('$path.ahead.off'));
     File? media;
@@ -862,7 +909,12 @@ class MediaHubPlayer {
     }
     if (media == null) {
       final grab = File('$path.grab');
-      final got = await _fillRange(url, frag.start, grab, frag.end - frag.start);
+      final got = await _fillRange(
+        url,
+        frag.start,
+        grab,
+        frag.end - frag.start,
+      );
       if (got < frag.end - frag.start) {
         print('gastube: mediahub slice short bytes=$got');
         return null;
@@ -872,11 +924,12 @@ class MediaHubPlayer {
     }
     final usable = _lastCompleteAtom(media, media.lengthSync());
     final from = frag.start - mediaAt;
-    final end = frag.end - mediaAt;
-    // frag.end is about a minute past the playhead. One fragment is about ten
-    // seconds, which is why the lock went quiet after a few seconds.
-    if (from < 0 || end > usable || end <= from) return null;
-    final count = end - from;
+    final available = mediaAt + usable;
+    // Copy the minute when it is already on disk. Otherwise play the fragment
+    // we have now. Waiting out a fresh download is a lock with no sound.
+    final endByte = span.end < available ? span.end : available;
+    if (from < 0 || endByte > available || endByte <= frag.start) return null;
+    final count = endByte - frag.start;
     final play = File('$path.play');
     final header = partial.openSync();
     final output = play.openSync(mode: FileMode.write);
