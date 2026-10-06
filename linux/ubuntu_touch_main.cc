@@ -26,7 +26,17 @@
 void gastube_ut_install_present_hook(GtkWidget* view);
 void gastube_ut_set_present_allowed(bool allowed);
 
+namespace {
+void destroy_media_hub_session();
+}
+
 void on_fatal_signal(int sig) {
+  // The process is already dying. media-hub is outside it, and a swipe that
+  // crashes after Play never reaches the window destroy handler. Bound the
+  // stop so a stuck session bus cannot keep this handler from re-raising.
+  alarm(2);
+  destroy_media_hub_session();
+  alarm(0);
   const char* name = "signal";
   if (sig == SIGSEGV) name = "SIGSEGV";
   if (sig == SIGBUS) name = "SIGBUS";
@@ -53,11 +63,15 @@ namespace {
 
 gchar* g_media_hub_uuid = nullptr;
 gchar* g_media_hub_path = nullptr;
+volatile sig_atomic_t g_media_hub_stopping = 0;
 
 // Swiping the app away destroys this window and returns from gtk_main before
 // Dart can reach the media-hub session. Locking and switching apps leave the
 // window in place, so this only runs when the process is actually going away.
+// A fatal signal takes the same path: the session otherwise keeps playing.
 void destroy_media_hub_session() {
+  if (g_media_hub_stopping) return;
+  g_media_hub_stopping = 1;
   if (g_media_hub_uuid == nullptr) {
     g_message("gastube: mediahub window-destroy uuid=");
     return;
