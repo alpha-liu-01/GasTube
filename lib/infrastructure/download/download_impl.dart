@@ -1393,6 +1393,14 @@ class DownloadImpl implements DownloadService {
   }
 
   Future<void> _deleteAllFiles(domain.DownloadItem item) async {
+    final output = item.outputFilePath;
+    if (UbuntuTouch.enabled && output != null) {
+      await ubuntuTouchReleaseDownload(
+        sourcePath: output,
+        title: item.title,
+        videoId: item.videoId,
+      );
+    }
     final paths = [item.videoFilePath, item.audioFilePath, item.outputFilePath];
     for (final path in paths) {
       if (path != null) {
@@ -1489,6 +1497,8 @@ class DownloadImpl implements DownloadService {
         final handed = await exportDownload(
           path: sourceFile.path,
           audioOnly: item.downloadType == domain.DownloadType.audioOnly,
+          title: item.title,
+          videoId: item.videoId,
         );
         if (!handed.ok) {
           return Left(MainFailure.unknown(message: handed.message));

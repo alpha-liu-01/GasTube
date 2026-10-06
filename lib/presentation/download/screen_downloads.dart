@@ -295,6 +295,8 @@ class _ScreenDownloadsState extends State<ScreenDownloads>
           final opened = await openInSystemPlayer(
             path: item.outputFilePath!,
             audioOnly: item.downloadType == DownloadType.audioOnly,
+            title: item.title,
+            videoId: item.videoId,
           );
           if (!opened.ok && mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -822,7 +824,16 @@ class _DownloadItemCard extends StatelessWidget {
         }
 
         if (item.status == DownloadStatus.completed) {
-          if (Platform.isAndroid || Platform.isIOS || UbuntuTouch.enabled) {
+          final alreadyOnDevice = UbuntuTouch.enabled &&
+              item.outputFilePath != null &&
+              ubuntuTouchDeviceCopyExists(
+                sourcePath: item.outputFilePath!,
+                audioOnly: item.downloadType == DownloadType.audioOnly,
+                title: item.title,
+                videoId: item.videoId,
+              );
+          if ((Platform.isAndroid || Platform.isIOS || UbuntuTouch.enabled) &&
+              !alreadyOnDevice) {
             items.add(PopupMenuItem(
               value: 'save_to_device',
               child: Row(
@@ -833,7 +844,7 @@ class _DownloadItemCard extends StatelessWidget {
                 ],
               ),
             ));
-          } else {
+          } else if (!Platform.isAndroid && !Platform.isIOS && !UbuntuTouch.enabled) {
             items.add(PopupMenuItem(
               value: 'open_folder',
               child: Row(
