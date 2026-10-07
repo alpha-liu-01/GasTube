@@ -295,8 +295,6 @@ class _ScreenDownloadsState extends State<ScreenDownloads>
           final opened = await openInSystemPlayer(
             path: item.outputFilePath!,
             audioOnly: item.downloadType == DownloadType.audioOnly,
-            title: item.title,
-            videoId: item.videoId,
           );
           if (!opened.ok && mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -828,7 +826,6 @@ class _DownloadItemCard extends StatelessWidget {
               item.outputFilePath != null &&
               ubuntuTouchDeviceCopyExists(
                 sourcePath: item.outputFilePath!,
-                audioOnly: item.downloadType == DownloadType.audioOnly,
                 title: item.title,
                 videoId: item.videoId,
               );

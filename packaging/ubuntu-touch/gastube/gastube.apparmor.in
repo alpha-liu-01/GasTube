@@ -7,10 +7,5 @@
         "content_exchange",
         "content_exchange_source"
     ],
-    "read_path": [
-        "@{HOME}/Music/Imported/",
-        "@{HOME}/Videos/imported/",
-        "@{HOME}/Videos/Imported/"
-    ],
     "policy_version": "@APPARMOR_POLICY@"
 }

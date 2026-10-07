@@ -101,7 +101,14 @@ class MediaHubPlayer {
 
   Future<void> stop() {
     if (!UbuntuTouch.enabled) return Future<void>.value();
-    return _enqueue(_dropSession);
+    // This playback is over. Remember the cache files now, before the next
+    // video starts writing new ones, and delete them after media-hub lets go.
+    _downloadingUrl = null;
+    final stale = _backgroundAudioFiles();
+    return _enqueue(() async {
+      await _dropSession();
+      _removeSessionCache(stale);
+    });
   }
 
   /// Pause the hub session when headphones are unplugged while it owns the
@@ -748,23 +755,59 @@ class MediaHubPlayer {
     }
   }
 
-  String _cachePath(String url) {
+  String _backgroundAudioDirectory() {
     final cacheHome = Platform.environment['XDG_CACHE_HOME'];
     final home = Platform.environment['HOME'] ?? '';
     final base = (cacheHome != null && cacheHome.isNotEmpty)
         ? cacheHome
         : p.join(home, '.cache');
+    return p.join(base, UbuntuTouch.clickPackage, 'background-audio');
+  }
+
+  List<File> _backgroundAudioFiles() {
+    final dir = Directory(_backgroundAudioDirectory());
+    if (!dir.existsSync()) return const [];
+    final files = <File>[];
+    for (final entity in dir.listSync(followLinks: false)) {
+      if (entity is File) files.add(entity);
+    }
+    return files;
+  }
+
+  /// Deletes the files that belonged to the playback that just ended.
+  ///
+  /// A later video may already be writing its own cache. Only the paths
+  /// captured when that playback stopped are removed.
+  void _removeSessionCache(List<File> files) {
+    var removed = 0;
+    var bytes = 0;
+    for (final file in files) {
+      if (!file.existsSync()) continue;
+      final length = file.lengthSync();
+      try {
+        file.deleteSync();
+      } catch (error) {
+        print(
+          'gastube: mediahub cache session failed '
+          'file=${p.basename(file.path)} error=$error',
+        );
+        continue;
+      }
+      removed++;
+      bytes += length;
+    }
+    if (removed > 0) {
+      print('gastube: mediahub cache session removed=$removed bytes=$bytes');
+    }
+  }
+
+  String _cachePath(String url) {
     var hash = 0x811c9dc5;
     for (final unit in url.codeUnits) {
       hash = (hash ^ unit) & 0x7fffffff;
       hash = (hash * 0x01000193) & 0x7fffffff;
     }
-    return p.join(
-      base,
-      UbuntuTouch.clickPackage,
-      'background-audio',
-      'audio-$hash.m4a',
-    );
+    return p.join(_backgroundAudioDirectory(), 'audio-$hash.m4a');
   }
 
   int? _jumpTarget(String url, int have) {
@@ -858,7 +901,7 @@ class MediaHubPlayer {
       final sink = file.openWrite(
         mode: existing > 0 ? FileMode.append : FileMode.write,
       );
-      var nextCheck = bytes + 65536;
+      var nextCheck = bytes + 32768;
       try {
         await for (final chunk in response) {
           if (_downloadingUrl != url) return null;
@@ -866,7 +909,7 @@ class MediaHubPlayer {
           bytes += chunk.length;
           if (bytes < nextCheck) continue;
           await sink.flush();
-          nextCheck = bytes + 65536;
+          nextCheck = bytes + 32768;
           final partial = File('$path.partial');
           if (!partial.existsSync()) continue;
           final frag = _indexedFragment(
@@ -907,40 +950,59 @@ class MediaHubPlayer {
     if (!partial.existsSync() || partial.lengthSync() < 32) return null;
     final length = partial.lengthSync();
     final frag = _indexedFragment(partial, length, position, extraUs: 0);
-    final span = _indexedFragment(partial, length, position) ?? frag;
-    if (frag == null || span == null || frag.sidxOffset <= 0) return null;
+    // Three minutes is enough to start. Anything already saved past that is
+    // copied too, up to half an hour, so a long video is not cut at one
+    // fragment or at sixty seconds.
+    final near = _indexedFragment(partial, length, position, extraUs: 180000000) ??
+        frag;
+    final far =
+        _indexedFragment(partial, length, position, extraUs: 1800000000) ??
+            near;
+    if (frag == null || near == null || far == null || frag.sidxOffset <= 0) {
+      return null;
+    }
     final ahead = File('$path.ahead');
     final aheadAt = _readIntFile(File('$path.ahead.off'));
     File? media;
     var mediaAt = 0;
+    var usable = 0;
     if (aheadAt != null && ahead.existsSync() && aheadAt <= frag.start) {
-      final usable = _lastCompleteAtom(ahead, ahead.lengthSync());
-      if (aheadAt + usable >= frag.end) {
+      final aheadUsable = _lastCompleteAtom(ahead, ahead.lengthSync());
+      if (aheadAt + aheadUsable >= frag.end) {
         media = ahead;
         mediaAt = aheadAt;
+        usable = aheadUsable;
       }
     }
-    if (media == null) {
+    if (media == null || mediaAt + usable < near.end) {
       final grab = File('$path.grab');
+      final floor = frag.end - frag.start;
+      final want = far.end - frag.start;
       final got = await _fillRange(
         url,
         frag.start,
         grab,
-        frag.end - frag.start,
+        want,
+        extra: false,
+        floor: floor,
+        maxWait: const Duration(milliseconds: 2500),
       );
-      if (got < frag.end - frag.start) {
+      final grabUsable =
+          grab.existsSync() ? _lastCompleteAtom(grab, grab.lengthSync()) : 0;
+      if (grabUsable > usable && got >= floor) {
+        media = grab;
+        mediaAt = frag.start;
+        usable = grabUsable;
+      } else if (media == null) {
         print('gastube: mediahub slice short bytes=$got');
         return null;
       }
-      media = grab;
-      mediaAt = frag.start;
     }
-    final usable = _lastCompleteAtom(media, media.lengthSync());
+    final chosen = media;
+    if (chosen == null) return null;
     final from = frag.start - mediaAt;
     final available = mediaAt + usable;
-    // Copy the minute when it is already on disk. Otherwise play the fragment
-    // we have now. Waiting out a fresh download is a lock with no sound.
-    final endByte = span.end < available ? span.end : available;
+    final endByte = far.end < available ? far.end : available;
     if (from < 0 || endByte > available || endByte <= frag.start) return null;
     final count = endByte - frag.start;
     final play = File('$path.play');
@@ -948,7 +1010,7 @@ class MediaHubPlayer {
     final output = play.openSync(mode: FileMode.write);
     try {
       output.writeFromSync(header.readSync(frag.sidxOffset));
-      final input = media.openSync();
+      final input = chosen.openSync();
       try {
         if (from > 0) input.setPositionSync(from);
         var left = count;
@@ -966,7 +1028,8 @@ class MediaHubPlayer {
     }
     _sliceFrom = Duration(microseconds: frag.startUs);
     print(
-      'gastube: mediahub slice bytes=${play.lengthSync()} fromUs=${frag.startUs}',
+      'gastube: mediahub slice bytes=${play.lengthSync()} '
+      'fromUs=${frag.startUs} coverBytes=$count',
     );
     return play.path;
   }
@@ -979,6 +1042,8 @@ class MediaHubPlayer {
     File dest,
     int minimum, {
     bool extra = true,
+    int? floor,
+    Duration? maxWait,
   }) async {
     if (dest.existsSync()) dest.deleteSync();
     await dest.parent.create(recursive: true);
@@ -1004,7 +1069,17 @@ class MediaHubPlayer {
         await for (final chunk in response) {
           sink.add(chunk);
           bytes += chunk.length;
-          if (bytes < minimum) continue;
+          final haveFloor = floor == null || bytes >= floor;
+          if (haveFloor && bytes >= minimum) break;
+          if (maxWait != null &&
+              haveFloor &&
+              clock.elapsed >= maxWait) {
+            break;
+          }
+          if (maxWait != null && clock.elapsed >= const Duration(seconds: 6)) {
+            break;
+          }
+          if (maxWait != null || bytes < minimum) continue;
           if (!extra) break;
           if (coveredAt == 0) coveredAt = clock.elapsedMilliseconds;
           if (clock.elapsedMilliseconds - coveredAt >= 1200) break;
