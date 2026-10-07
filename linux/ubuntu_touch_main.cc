@@ -5,8 +5,12 @@
 #include <glib-unix.h>
 #include <gtk/gtk.h>
 
+#include <sys/prctl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+
+#include <fcntl.h>
+#include <sys/stat.h>
 
 #include <cerrno>
 #include <cmath>
@@ -514,6 +518,237 @@ void install_url_channel(FlView* view) {
                                             nullptr, nullptr);
 }
 
+bool proc_status_value(pid_t pid, const char* key, char* out, size_t out_len) {
+  char path[64];
+  std::snprintf(path, sizeof path, "/proc/%d/status", static_cast<int>(pid));
+  FILE* file = std::fopen(path, "r");
+  if (file == nullptr) return false;
+  char line[256];
+  size_t key_len = std::strlen(key);
+  bool found = false;
+  while (std::fgets(line, sizeof line, file) != nullptr) {
+    if (std::strncmp(line, key, key_len) != 0 || line[key_len] != ':') continue;
+    const char* value = line + key_len + 1;
+    while (*value == ' ' || *value == '\t') value++;
+    std::snprintf(out, out_len, "%s", value);
+    char* nl = std::strchr(out, '\n');
+    if (nl != nullptr) *nl = '\0';
+    found = true;
+    break;
+  }
+  std::fclose(file);
+  return found;
+}
+
+bool proc_is_stopped(pid_t pid) {
+  char state[64];
+  if (!proc_status_value(pid, "State", state, sizeof state)) return false;
+  return state[0] == 'T' || state[0] == 't';
+}
+
+// The installed binary's identity. Click remove unlinks it while Lomiri has
+// SIGSTOP'd the player, and a stopped process never handles the unit's
+// SIGTERM, so the icon stays "closing".
+struct PackageIdentity {
+  char path[PATH_MAX];
+  dev_t dev;
+  ino_t ino;
+  bool ok;
+};
+
+bool capture_package(PackageIdentity* id) {
+  id->ok = false;
+  id->path[0] = '\0';
+  char maps_path[64];
+  std::snprintf(maps_path, sizeof maps_path, "/proc/%d/maps", getpid());
+  FILE* file = std::fopen(maps_path, "r");
+  if (file == nullptr) {
+    std::fprintf(stderr, "gastube: reaper maps error=%s\n", std::strerror(errno));
+    return false;
+  }
+  char line[768];
+  bool found = false;
+  while (std::fgets(line, sizeof line, file) != nullptr) {
+    char* slash = std::strchr(line, '/');
+    if (slash == nullptr) continue;
+    char* end = slash + std::strlen(slash);
+    while (end > slash &&
+           (end[-1] == '\n' || end[-1] == '\r' || end[-1] == ' ')) {
+      *--end = '\0';
+    }
+    if (std::strstr(slash, " (deleted)") != nullptr) continue;
+    const char* base = std::strrchr(slash, '/');
+    if (base == nullptr || std::strcmp(base + 1, "gastube") != 0) continue;
+    std::snprintf(id->path, sizeof id->path, "%s", slash);
+    found = true;
+    break;
+  }
+  std::fclose(file);
+  if (!found) {
+    std::fprintf(stderr, "gastube: reaper maps missing executable\n");
+    return false;
+  }
+  struct stat st;
+  if (stat(id->path, &st) != 0) {
+    std::fprintf(stderr, "gastube: reaper stat path=%s error=%s\n", id->path,
+                 std::strerror(errno));
+    return false;
+  }
+  id->dev = st.st_dev;
+  id->ino = st.st_ino;
+  id->ok = true;
+  return true;
+}
+
+// Fail closed: a permission error must not look like the package was removed.
+bool package_replaced(const PackageIdentity* id) {
+  if (!id->ok) return false;
+  struct stat st;
+  if (stat(id->path, &st) != 0) return errno == ENOENT;
+  return st.st_dev != id->dev || st.st_ino != id->ino;
+}
+
+volatile sig_atomic_t g_reaper_term = 0;
+
+void on_reaper_term(int) { g_reaper_term = 1; }
+
+void write_own_pid(const char* path) {
+  int fd = open(path, O_WRONLY | O_CLOEXEC);
+  if (fd < 0) {
+    std::fprintf(stderr, "gastube: reaper cgroup open path=%s error=%s\n", path,
+                 std::strerror(errno));
+    return;
+  }
+  char pid_text[32];
+  int length = std::snprintf(pid_text, sizeof pid_text, "%d", getpid());
+  ssize_t wrote = write(fd, pid_text, static_cast<size_t>(length));
+  int err = errno;
+  close(fd);
+  if (wrote < 0) {
+    std::fprintf(stderr, "gastube: reaper cgroup write path=%s error=%s\n",
+                 path, std::strerror(err));
+  } else {
+    std::fprintf(stderr, "gastube: reaper cgroup moved path=%s\n", path);
+  }
+}
+
+// Lomiri stops every pid still in this app's scope. Moving to the user
+// service cgroup keeps this watcher running after the player is suspended.
+void leave_app_cgroup() {
+  uid_t uid = getuid();
+  const char* formats[] = {
+      "/sys/fs/cgroup/systemd/user.slice/user-%u.slice/user@%u.service/"
+      "cgroup.procs",
+      "/sys/fs/cgroup/unified/user.slice/user-%u.slice/user@%u.service/"
+      "cgroup.procs",
+  };
+  for (const char* format : formats) {
+    char path[512];
+    std::snprintf(path, sizeof path, format, uid, uid);
+    write_own_pid(path);
+  }
+}
+
+void kill_logged(pid_t pid) {
+  if (pid <= 0) return;
+  if (kill(pid, SIGKILL) == 0) {
+    std::fprintf(stderr, "gastube: reaper killed pid=%d\n",
+                 static_cast<int>(pid));
+  } else if (errno != ESRCH) {
+    std::fprintf(stderr, "gastube: reaper kill failed pid=%d error=%s\n",
+                 static_cast<int>(pid), std::strerror(errno));
+  }
+  std::fflush(stderr);
+}
+
+void kill_scope_members(pid_t parent) {
+  pid_t self = getpid();
+  const char* app_id = std::getenv("APP_ID");
+  uid_t uid = getuid();
+  const char* formats[] = {
+      "/sys/fs/cgroup/systemd/user.slice/user-%u.slice/user@%u.service/"
+      "lomiri-app-launch--application-click--%s--.service/cgroup.procs",
+      "/sys/fs/cgroup/unified/user.slice/user-%u.slice/user@%u.service/"
+      "lomiri-app-launch--application-click--%s--.service/cgroup.procs",
+  };
+  std::vector<pid_t> members;
+  if (app_id != nullptr && app_id[0] != '\0') {
+    for (const char* format : formats) {
+      char path[512];
+      std::snprintf(path, sizeof path, format, uid, uid, app_id);
+      FILE* file = std::fopen(path, "r");
+      if (file == nullptr) {
+        std::fprintf(stderr, "gastube: reaper scope open path=%s error=%s\n",
+                     path, std::strerror(errno));
+        std::fflush(stderr);
+        continue;
+      }
+      int pid = 0;
+      while (std::fscanf(file, "%d", &pid) == 1) {
+        if (pid > 0 && static_cast<pid_t>(pid) != self) {
+          members.push_back(static_cast<pid_t>(pid));
+        }
+      }
+      std::fclose(file);
+    }
+  }
+  if (members.empty()) members.push_back(parent);
+  for (pid_t pid : members) {
+    if (pid != parent) kill_logged(pid);
+  }
+  kill_logged(parent);
+}
+
+void reaper_main(pid_t parent) {
+  if (setsid() < 0) {
+    std::fprintf(stderr, "gastube: reaper setsid error=%s\n",
+                 std::strerror(errno));
+  }
+  prctl(PR_SET_PDEATHSIG, SIGKILL);
+  if (getppid() != parent) _exit(0);
+  signal(SIGHUP, SIG_IGN);
+  signal(SIGTERM, on_reaper_term);
+  signal(SIGINT, on_reaper_term);
+  PackageIdentity package;
+  capture_package(&package);
+  leave_app_cgroup();
+  std::fprintf(stderr, "gastube: reaper watching pid=%d path=%s\n",
+               static_cast<int>(parent), package.ok ? package.path : "");
+  std::fflush(stderr);
+  for (;;) {
+    bool replaced = package_replaced(&package);
+    if (g_reaper_term != 0) {
+      if (proc_is_stopped(parent) || replaced) {
+        std::fprintf(stderr, "gastube: reaper killed stopped pid=%d\n",
+                     static_cast<int>(parent));
+        std::fflush(stderr);
+        kill_scope_members(parent);
+      }
+      _exit(0);
+    }
+    if (kill(parent, 0) != 0 && errno == ESRCH) _exit(0);
+    if (replaced) {
+      std::fprintf(stderr, "gastube: reaper killed unlinked pid=%d\n",
+                   static_cast<int>(parent));
+      std::fflush(stderr);
+      kill_scope_members(parent);
+      _exit(0);
+    }
+    sleep(1);
+  }
+}
+
+void start_stopped_process_reaper() {
+  pid_t parent = getpid();
+  pid_t child = fork();
+  if (child < 0) {
+    std::fprintf(stderr, "gastube: reaper fork error=%s\n",
+                 std::strerror(errno));
+    return;
+  }
+  if (child == 0) reaper_main(parent);
+}
+
 }  // namespace
 
 extern "C" void gastube_media_hub_on_exit() {
@@ -533,6 +768,7 @@ extern "C" int gastube_ubuntu_touch_main(int argc, char** argv) {
     g_message("url forwarded %s", launch_url);
     return 0;
   }
+  start_stopped_process_reaper();
   start_url_listener();
   if (launch_url != nullptr) {
     g_message("url argv %s", launch_url);

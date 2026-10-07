@@ -7,5 +7,11 @@
         "content_exchange",
         "content_exchange_source"
     ],
+    "write_path": [
+        "/sys/fs/cgroup/systemd/user.slice/user-*/user@*.service/cgroup.procs",
+        "/sys/fs/cgroup/unified/user.slice/user-*/user@*.service/cgroup.procs",
+        "/sys/fs/cgroup/systemd/user.slice/user-*/user@*.service/lomiri-app-launch--application-click--gastube.alphaliu01_gastube_*--.service/cgroup.procs",
+        "/sys/fs/cgroup/unified/user.slice/user-*/user@*.service/lomiri-app-launch--application-click--gastube.alphaliu01_gastube_*--.service/cgroup.procs"
+    ],
     "policy_version": "@APPARMOR_POLICY@"
 }
