@@ -81,6 +81,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
   String? _currentQualityLabel;
   String? _systemPlayerUrl;
   bool _systemPlayerOpening = false;
+  DateTime? _systemPlayerHandoffAt;
   bool _isInitialized = false;
   bool _isInitializing = false; // Guard against concurrent initializations
   bool _isRestoringFromPip = false;
@@ -873,6 +874,13 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
   /// Muxed YouTube addresses play in the system player. Video-only streams
   /// stay in this page because that player would have no sound.
   Future<bool> _openMuxedInSystemPlayer(String url) async {
+    final handoffAt = _systemPlayerHandoffAt;
+    if (handoffAt != null &&
+        DateTime.now().difference(handoffAt) < const Duration(seconds: 4)) {
+      print('gastube: system player handoff skipped reason=recent');
+      return true;
+    }
+    _systemPlayerHandoffAt = DateTime.now();
     _globalPlayer.forgetBackgroundAudio();
     try {
       await _player.pause();
@@ -880,6 +888,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
       print('gastube: system player pause error=$error');
     }
     await MediaHubPlayer.instance.stop();
+    await systemPlayerStoredPosition(url);
     final opened = await openUrlInSystemPlayer(url);
     print(
       'gastube: system player handoff ok=${opened.ok} '

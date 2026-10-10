@@ -42,6 +42,178 @@ Future<({bool ok, String message})> openUrlInSystemPlayer(String url) async {
   }
 }
 
+/// Milliseconds the system player stored for [url].
+///
+/// The player keeps the part after the last `/`, and percent-encodes it in
+/// the ini file. A stored value below five seconds is a later open that
+/// already started from the beginning. The real minutes are kept in
+/// `gastube-resume.txt`, because that failed open overwrites the player file.
+///
+/// When the phone-local seek helper is running, the player file is set to 0
+/// so its Continue dialog does not call play() from the start. The helper
+/// seeks the new media-hub session after this process has been stopped.
+Future<Duration?> systemPlayerStoredPosition(String url) async {
+  final wanted = _playerSettingsKey(url);
+  final fromFile = await _storedMsForKey(wanted);
+  final remembered = await _rememberedMs(wanted);
+  var ms = fromFile != null && fromFile >= _resumeMinMs ? fromFile : null;
+  if (ms == null && remembered != null && remembered >= _resumeMinMs) {
+    ms = remembered;
+    print('gastube: system player resume restore ms=$ms');
+  }
+  if (ms == null) {
+    if (fromFile != null && fromFile > 0 && fromFile < _resumeMinMs) {
+      await clearSystemPlayerStoredPosition(url);
+      print('gastube: system player resume discard ms=$fromFile');
+    }
+    await _writePendingSeek(0, '');
+    return null;
+  }
+  await _rememberMs(wanted, ms);
+  if (await _seekHelperAlive()) {
+    await _writePendingSeek(ms, wanted);
+    await clearSystemPlayerStoredPosition(url);
+    print('gastube: system player resume stored ms=$ms helper=up');
+  } else {
+    if (fromFile == null || fromFile < _resumeMinMs) {
+      await _writePlayerMs(wanted, ms);
+    }
+    print('gastube: system player resume stored ms=$ms helper=down');
+  }
+  return Duration(milliseconds: ms);
+}
+
+const _resumeMinMs = 5000;
+
+/// Writes 0 for [url] so the player starts immediately and shows no dialog.
+Future<void> clearSystemPlayerStoredPosition(String url) async {
+  final file = await _systemPlayerSettingsFile();
+  if (!file.existsSync()) return;
+  final wanted = _playerSettingsKey(url);
+  final next = file.readAsLinesSync().map((line) {
+    final split = line.indexOf('=');
+    if (split <= 0) return line;
+    if (_unescapeIniKey(line.substring(0, split)) != wanted) return line;
+    return '${line.substring(0, split)}=0';
+  }).join('\n');
+  await file.writeAsString('$next\n');
+}
+
+/// `videoplayback?expire=...`, the key mediaplayer-app actually stores.
+String _playerSettingsKey(String url) {
+  final slash = url.lastIndexOf('/');
+  if (slash < 0 || slash + 1 >= url.length) return url;
+  return url.substring(slash + 1);
+}
+
+String _unescapeIniKey(String key) {
+  final out = StringBuffer();
+  for (var i = 0; i < key.length; i++) {
+    final ch = key[i];
+    if (ch == '\\') {
+      out.write('/');
+      continue;
+    }
+    if (ch == '%' && i + 2 < key.length) {
+      final value = int.tryParse(key.substring(i + 1, i + 3), radix: 16);
+      if (value != null) {
+        out.writeCharCode(value);
+        i += 2;
+        continue;
+      }
+    }
+    out.write(ch);
+  }
+  return out.toString();
+}
+
+Future<File> _systemPlayerSettingsFile() async {
+  final root = await persistentAppDirectory();
+  return File(p.join(root.path, 'player-resume', 'Media Player.conf'));
+}
+
+Future<File> _resumeDirFile(String name) async {
+  final root = await persistentAppDirectory();
+  return File(p.join(root.path, 'player-resume', name));
+}
+
+Future<int?> _storedMsForKey(String wanted) async {
+  final file = await _systemPlayerSettingsFile();
+  if (!file.existsSync()) return null;
+  for (final line in file.readAsLinesSync()) {
+    final split = line.indexOf('=');
+    if (split <= 0) continue;
+    if (_unescapeIniKey(line.substring(0, split)) != wanted) continue;
+    return int.tryParse(line.substring(split + 1).trim());
+  }
+  return null;
+}
+
+Future<void> _writePlayerMs(String wanted, int ms) async {
+  final file = await _systemPlayerSettingsFile();
+  if (!file.existsSync()) return;
+  var found = false;
+  final next = file.readAsLinesSync().map((line) {
+    final split = line.indexOf('=');
+    if (split <= 0) return line;
+    if (_unescapeIniKey(line.substring(0, split)) != wanted) return line;
+    found = true;
+    return '${line.substring(0, split)}=$ms';
+  }).toList();
+  if (!found) next.add('${_escapeIniKey(wanted)}=$ms');
+  await file.writeAsString('${next.join('\n')}\n');
+}
+
+String _escapeIniKey(String key) {
+  final out = StringBuffer();
+  for (final unit in key.codeUnits) {
+    final ch = String.fromCharCode(unit);
+    final alnum = (unit >= 0x30 && unit <= 0x39) ||
+        (unit >= 0x41 && unit <= 0x5a) ||
+        (unit >= 0x61 && unit <= 0x7a);
+    if (alnum || ch == '_' || ch == '-' || ch == '.') {
+      out.write(ch);
+    } else if (ch == '/') {
+      out.write(r'\');
+    } else {
+      out.write('%${unit.toRadixString(16).padLeft(2, '0').toUpperCase()}');
+    }
+  }
+  return out.toString();
+}
+
+Future<int?> _rememberedMs(String wanted) async {
+  final file = await _resumeDirFile('gastube-resume.txt');
+  if (!file.existsSync()) return null;
+  final lines = file.readAsLinesSync();
+  if (lines.length < 2 || lines[1] != wanted) return null;
+  return int.tryParse(lines.first.trim());
+}
+
+Future<void> _rememberMs(String wanted, int ms) async {
+  final file = await _resumeDirFile('gastube-resume.txt');
+  await file.parent.create(recursive: true);
+  await file.writeAsString('$ms\n$wanted\n');
+}
+
+/// Tells the phone-local helper which session to seek.
+///
+/// `ms` of 0 cancels a previous request. The helper is not part of the click.
+Future<void> _writePendingSeek(int ms, String wanted) async {
+  final file = await _resumeDirFile('pending-seek');
+  final tmp = await _resumeDirFile('pending-seek.tmp');
+  await tmp.parent.create(recursive: true);
+  await tmp.writeAsString('$ms\n$wanted\n');
+  await tmp.rename(file.path);
+}
+
+Future<bool> _seekHelperAlive() async {
+  final file = await _resumeDirFile('seek-helper.heartbeat');
+  if (!file.existsSync()) return false;
+  final age = DateTime.now().difference(file.lastModifiedSync());
+  return age < const Duration(seconds: 3);
+}
+
 /// Opens a finished download in Media Player.
 ///
 /// The handoff is a temporary Content Hub link. It does not copy the file
