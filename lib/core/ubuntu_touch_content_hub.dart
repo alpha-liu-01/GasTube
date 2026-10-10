@@ -10,6 +10,38 @@ import 'package:fluxtube/core/storage_paths.dart';
 import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:path/path.dart' as p;
 
+/// Opens an http(s) video in Media Player without downloading it first.
+///
+/// Content Hub passes the URL through as the item address. `mediaplayer-app`
+/// plays that address. Launching it with `lomiri-app-launch` from this
+/// profile cannot talk to systemd, so this is the handoff the profile allows.
+Future<({bool ok, String message})> openUrlInSystemPlayer(String url) async {
+  final client = DBusClient.session();
+  try {
+    final hub = _service(client);
+    const peer = 'mediaplayer-app';
+    final state = await _chargeItem(
+      client,
+      hub,
+      peer: peer,
+      contentType: 'videos',
+      name: 'video',
+      url: url,
+    );
+    if (state == 5) {
+      print('gastube: open system url failed peer=$peer error=aborted');
+      return (ok: false, message: 'aborted');
+    }
+    print('gastube: open system url peer=$peer state=$state');
+    return (ok: true, message: '');
+  } catch (error) {
+    print('gastube: open system url failed error=$error');
+    return (ok: false, message: error.toString());
+  } finally {
+    await client.close();
+  }
+}
+
 /// Opens a finished download in Media Player.
 ///
 /// The handoff is a temporary Content Hub link. It does not copy the file
@@ -22,12 +54,13 @@ Future<({bool ok, String message})> openInSystemPlayer({
   try {
     final hub = _service(client);
     const peer = 'mediaplayer-app';
-    final state = await _chargeFile(
+    final state = await _chargeItem(
       client,
       hub,
       peer: peer,
       contentType: 'videos',
-      path: path,
+      name: p.basename(path),
+      url: Uri.file(path).toString(),
     );
     if (state == 5) {
       print('gastube: open system failed file=$path peer=$peer error=aborted');
@@ -522,6 +555,24 @@ Future<int> _chargeFile(
   required String peer,
   required String contentType,
   required String path,
+}) {
+  return _chargeItem(
+    client,
+    hub,
+    peer: peer,
+    contentType: contentType,
+    name: p.basename(path),
+    url: Uri.file(path).toString(),
+  );
+}
+
+Future<int> _chargeItem(
+  DBusClient client,
+  DBusRemoteObject hub, {
+  required String peer,
+  required String contentType,
+  required String name,
+  required String url,
 }) async {
   final created = await hub.callMethod(
     'com.lomiri.content.dbus.Service',
@@ -542,8 +593,8 @@ Future<int> _chargeFile(
         DBusVariant(DBusStruct([
           const DBusString(''),
           DBusArray.byte(<int>[]),
-          DBusString(p.basename(path)),
-          DBusString(Uri.file(path).toString()),
+          DBusString(name),
+          DBusString(url),
         ])),
       ]),
     ],

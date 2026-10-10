@@ -252,6 +252,13 @@ class GlobalPlayerController extends ChangeNotifier {
       unawaited(MediaHubPlayer.instance.prepare());
     }
   }
+
+  /// Drop the URL [MediaHubPlayer] would start when this app leaves the
+  /// screen. Used when the system player is about to own the video.
+  void forgetBackgroundAudio() {
+    _backgroundAudioUrl = null;
+    _backgroundAudioHeaders = const {};
+  }
   bool get isPipMode => _isPipMode;
   bool get isSystemPipMode => _isSystemPipMode;
   Duration get lastPosition =>

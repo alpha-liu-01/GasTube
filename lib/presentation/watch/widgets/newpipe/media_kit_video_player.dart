@@ -8,6 +8,7 @@ import 'package:fluxtube/core/player/global_player_controller.dart';
 import 'package:fluxtube/core/player/playback_queue.dart';
 import 'package:fluxtube/core/services/media_hub_player.dart';
 import 'package:fluxtube/core/ubuntu_touch.dart';
+import 'package:fluxtube/core/ubuntu_touch_content_hub.dart';
 import 'package:fluxtube/domain/saved/models/local_store.dart';
 import 'package:fluxtube/domain/sponsorblock/models/sponsor_segment.dart';
 import 'package:fluxtube/domain/watch/models/newpipe/newpipe_stream.dart';
@@ -78,6 +79,8 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
   PlaybackConfiguration? _currentConfig;
   List<StreamQualityInfo>? _availableQualities;
   String? _currentQualityLabel;
+  String? _systemPlayerUrl;
+  bool _systemPlayerOpening = false;
   bool _isInitialized = false;
   bool _isInitializing = false; // Guard against concurrent initializations
   bool _isRestoringFromPip = false;
@@ -334,8 +337,18 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
       );
     }
     final qualities = _availableQualities ?? _loadQualities();
+    // A settings value such as "720p" is not a menu label. Prefer the muxed
+    // stream so the system player gets picture and sound together. An exact
+    // menu label, including a video-only entry, still selects that entry.
+    final normalized = preferredQuality.toLowerCase().trim();
+    final exact = qualities.any(
+      (quality) => quality.label.toLowerCase().trim() == normalized,
+    );
+    final muxed =
+        qualities.where((quality) => !quality.requiresMerging).toList();
+    final pool = exact || muxed.isEmpty ? qualities : muxed;
     final match = NewPipeStreamHelper.findBestMatchingQuality(
-      qualities,
+      pool,
       preferredQuality,
       preferredCodec: widget.defaultVideoCodec,
     );
@@ -397,11 +410,15 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
       ));
     }
 
-    for (final stream in watch.videoOnlyStreams ?? const <NewPipeVideoStream>[]) {
-      add(stream, merging: true);
-    }
+    // Muxed streams share labels with video-only ones ("360p H.264").
+    // Add them first so the duplicate video-only entry is dropped. Otherwise
+    // the menu's 360p H.264 is video-only, stays in this page, and still has
+    // a separate audio track.
     for (final stream in watch.videoStreams ?? const <NewPipeVideoStream>[]) {
       add(stream, merging: false);
+    }
+    for (final stream in watch.videoOnlyStreams ?? const <NewPipeVideoStream>[]) {
+      add(stream, merging: true);
     }
     qualities.sort((a, b) {
       final byQuality = a.compareTo(b);
@@ -668,6 +685,15 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     bool fastSwitch = false,
   }) async {
     try {
+      if (UbuntuTouch.enabled &&
+          config.sourceType == MediaSourceType.progressive &&
+          _isHttpPlaybackUrl(config.videoUrl)) {
+        final handed = await _openMuxedInSystemPlayer(config.videoUrl!);
+        if (handed || !mounted) return;
+      }
+      if (mounted && _systemPlayerUrl != null) {
+        setState(() => _systemPlayerUrl = null);
+      }
       if (UbuntuTouch.enabled) {
         await (_player.platform as dynamic).setProperty('ao', 'pulse');
         await selectUbuntuTouchDecoder(
@@ -838,6 +864,44 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     });
   }
 
+  bool _isHttpPlaybackUrl(String? url) {
+    if (url == null || url.isEmpty) return false;
+    final uri = Uri.tryParse(url);
+    return uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
+  }
+
+  /// Muxed YouTube addresses play in the system player. Video-only streams
+  /// stay in this page because that player would have no sound.
+  Future<bool> _openMuxedInSystemPlayer(String url) async {
+    _globalPlayer.forgetBackgroundAudio();
+    try {
+      await _player.pause();
+    } catch (error) {
+      print('gastube: system player pause error=$error');
+    }
+    await MediaHubPlayer.instance.stop();
+    final opened = await openUrlInSystemPlayer(url);
+    print(
+      'gastube: system player handoff ok=${opened.ok} '
+      'message=${opened.message}',
+    );
+    if (opened.ok && mounted) {
+      setState(() => _systemPlayerUrl = url);
+    }
+    return opened.ok;
+  }
+
+  Future<void> _reopenSystemPlayer() async {
+    final url = _systemPlayerUrl;
+    if (url == null || _systemPlayerOpening) return;
+    _systemPlayerOpening = true;
+    try {
+      await _openMuxedInSystemPlayer(url);
+    } finally {
+      _systemPlayerOpening = false;
+    }
+  }
+
   /// URL of the track the menu is showing, when one is selected.
   String? _selectedTrackAudioUrl() {
     final tracks = _availableAudioTracks;
@@ -974,8 +1038,15 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
       return targetQuality;
     }
 
+    final qualities = _availableQualities!;
+    // Settings such as "720p" are not a menu label. On Ubuntu Touch that
+    // search must stay on muxed streams. Matching the whole list picks a
+    // video-only 720p, and the later exact-label check then keeps it.
+    final muxed = UbuntuTouch.enabled
+        ? qualities.where((quality) => !quality.requiresMerging).toList()
+        : qualities;
     return NewPipeStreamHelper.findBestMatchingQuality(
-          _availableQualities!,
+          muxed.isEmpty ? qualities : muxed,
           targetQuality,
           preferredCodec: widget.defaultVideoCodec,
         )?.label ??
@@ -1352,6 +1423,23 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
               color: Colors.black,
               child: const Center(
                 child: CircularProgressIndicator(color: Colors.white),
+              ),
+            ),
+          );
+        }
+
+        if (_systemPlayerUrl != null) {
+          return AspectRatio(
+            aspectRatio: _getAspectRatio(),
+            child: ColoredBox(
+              color: Colors.black,
+              child: Center(
+                child: IconButton(
+                  iconSize: 72,
+                  color: Colors.white,
+                  icon: const Icon(Icons.play_circle_fill),
+                  onPressed: _reopenSystemPlayer,
+                ),
               ),
             ),
           );
