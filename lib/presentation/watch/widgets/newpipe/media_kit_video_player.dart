@@ -384,6 +384,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
     if (!mounted || _systemPlayerUrl != url) return;
     if (position != null) {
       _globalPlayer.updateSystemPlayerHandoffPosition(position);
+      _updateVideoHistory(position: position);
       print(
         'gastube: system player preview positionMs=${position.inMilliseconds}',
       );
@@ -395,6 +396,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
     final again = await peekSystemPlayerPosition(url);
     if (!mounted || again == null || again == position) return;
     _globalPlayer.updateSystemPlayerHandoffPosition(again);
+    _updateVideoHistory(position: again);
     print(
       'gastube: system player preview positionMs=${again.inMilliseconds}',
     );
@@ -1699,6 +1701,18 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
     _playingSubscription?.cancel();
     if (_systemPlayerUrl == null) {
       _updateVideoHistory();
+    } else {
+      // mpv never played this handoff, so its position stays 0 and must not
+      // be stored. The system player position is the one that belongs in
+      // history. It can land a moment after this page is already gone.
+      final known = _globalPlayer.systemPlayerHandoffFor(widget.videoId)
+          ? _globalPlayer.systemPlayerPosition
+          : Duration.zero;
+      if (known.inSeconds > 0) {
+        _updateVideoHistory(position: known);
+      }
+      final url = _systemPlayerUrl!;
+      unawaited(_saveSystemPlayerHistory(url));
     }
     // Don't dispose the global player - save state for PiP transition
     // The player will persist and can be restored when returning from PiP
@@ -1891,11 +1905,22 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
     }
   }
 
-  void _updateVideoHistory() {
-    final currentPosition = _player.state.position;
+  /// The system player pauses before this process is scheduled again, and the
+  /// position file can appear after the watch page has already been disposed.
+  Future<void> _saveSystemPlayerHistory(String url) async {
+    await Future.delayed(const Duration(milliseconds: 700));
+    final position = await peekSystemPlayerPosition(url);
+    if (position == null || position.inSeconds <= 0) return;
+    _updateVideoHistory(position: position);
+  }
 
-    _watchBloc
-        .add(WatchEvent.updatePlayBack(playBack: currentPosition.inSeconds));
+  void _updateVideoHistory({Duration? position}) {
+    final currentPosition = position ?? _player.state.position;
+
+    if (mounted) {
+      _watchBloc
+          .add(WatchEvent.updatePlayBack(playBack: currentPosition.inSeconds));
+    }
 
     if (currentPosition.inSeconds > 0 && widget.videoId.isNotEmpty) {
       final videoInfo = LocalStoreVideoInfo(
@@ -1920,6 +1945,12 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
 
       // Use updatePlaybackPosition instead of addVideoInfo to preserve isSaved state
       _savedBloc.add(SavedEvent.updatePlaybackPosition(videoInfo: videoInfo));
+      if (position != null) {
+        print(
+          'gastube: history system id=${widget.videoId} '
+          'positionMs=${currentPosition.inMilliseconds}',
+        );
+      }
     }
   }
 
