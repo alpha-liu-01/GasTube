@@ -49,9 +49,9 @@ Future<({bool ok, String message})> openUrlInSystemPlayer(String url) async {
 /// already started from the beginning. The real minutes are kept in
 /// `gastube-resume.txt`, because that failed open overwrites the player file.
 ///
-/// When the phone-local seek helper is running, the player file is set to 0
-/// so its Continue dialog does not call play() from the start. The helper
-/// seeks the new media-hub session after this process has been stopped.
+/// When the seek helper is running, the player file is set to 0 so its
+/// Continue dialog does not call play() from the start. The helper seeks the
+/// new media-hub session after this process has been stopped.
 Future<Duration?> systemPlayerStoredPosition(String url) async {
   final wanted = _playerSettingsKey(url);
   final fromFile = await _storedMsForKey(wanted);
@@ -196,9 +196,9 @@ Future<void> _rememberMs(String wanted, int ms) async {
   await file.writeAsString('$ms\n$wanted\n');
 }
 
-/// Tells the phone-local helper which session to seek.
+/// Tells the in-click helper which session to seek.
 ///
-/// `ms` of 0 cancels a previous request. The helper is not part of the click.
+/// `ms` of 0 cancels a previous request.
 Future<void> _writePendingSeek(int ms, String wanted) async {
   final file = await _resumeDirFile('pending-seek');
   final tmp = await _resumeDirFile('pending-seek.tmp');
@@ -486,6 +486,30 @@ Future<({bool ok, String message})> shareText(String text) async {
     return (ok: false, message: error.toString());
   } finally {
     await client.close();
+  }
+}
+
+/// Starts the resume helper that ships inside the click.
+///
+/// Lomiri stops this process group when the system player is in front.
+/// The helper calls setsid, so it is not in that group and can seek after
+/// the player is ready.
+Future<void> startUbuntuTouchSeekHelper() async {
+  if (!UbuntuTouch.enabled) return;
+  final helper = p.join(p.dirname(Platform.resolvedExecutable), 'gastube-seek');
+  if (!File(helper).existsSync()) {
+    print('gastube: seek helper missing');
+    return;
+  }
+  try {
+    await Process.start(
+      helper,
+      const [],
+      mode: ProcessStartMode.detached,
+    );
+    print('gastube: seek helper started');
+  } catch (error) {
+    print('gastube: seek helper start error=$error');
   }
 }
 

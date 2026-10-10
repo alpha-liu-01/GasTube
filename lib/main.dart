@@ -76,6 +76,7 @@ void main(List<String> args) async {
   // builds keep the system library.
   if (UbuntuTouch.enabled) {
     unawaited(startUbuntuTouchContentHub());
+    unawaited(startUbuntuTouchSeekHelper());
     final libmpv = p.join(
       p.dirname(Platform.resolvedExecutable),
       'lib',

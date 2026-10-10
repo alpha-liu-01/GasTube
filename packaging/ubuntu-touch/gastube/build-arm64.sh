@@ -51,6 +51,12 @@ fi
 cp "$custom_engine" "$(dirname "$bundle")/lib/libflutter_linux_gtk.so"
 echo "replaced libflutter_linux_gtk.so with the onscreen present build"
 
+# Resume helper. It is a separate session from GasTube, so Lomiri's pause
+# does not stop it. pkg-config is libglib from this image, not the phone.
+gcc -O2 -Wall -Wextra -o "$(dirname "$bundle")/gastube-seek" \
+  /src/packaging/ubuntu-touch/gastube/gastube-seek.c \
+  $(pkg-config --cflags --libs gio-2.0)
+
 bundle_dir=$(dirname "$bundle")
 shopt -s nullglob
 copied=0

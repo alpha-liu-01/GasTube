@@ -29,5 +29,6 @@ RUN apt-get update \
         libgles2-mesa-dev \
         libwayland-dev \
         libepoxy-dev \
+        libglib2.0-dev \
     && pip3 install 'meson==1.2.3' \
     && rm -rf /var/lib/apt/lists/*
