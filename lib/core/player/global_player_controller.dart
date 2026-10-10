@@ -103,6 +103,10 @@ class GlobalPlayerController extends ChangeNotifier {
   /// audio stream wins over the video URL. Empty means there is nothing to hand off.
   String? _backgroundAudioUrl;
   Map<String, String> _backgroundAudioHeaders = const {};
+  bool _backgroundAudioArmed = false;
+
+  /// The watch-page headset stays on until the user turns it off.
+  bool _backgroundAudioEnabled = true;
 
   /// Long video already given to the system player. The watch page that
   /// started it is gone after a swipe into the mini window, so the picture
@@ -243,6 +247,19 @@ class GlobalPlayerController extends ChangeNotifier {
 
   Map<String, String> get backgroundAudioHeaders => _backgroundAudioHeaders;
 
+  /// The watch-page placeholder asked for this video's audio now, and to keep
+  /// it when the user leaves. In-app playback does not set this.
+  bool get backgroundAudioArmed => _backgroundAudioArmed;
+
+  /// Headset on the placeholder. On until the user taps it off.
+  bool get backgroundAudioEnabled => _backgroundAudioEnabled;
+
+  void setBackgroundAudioEnabled(bool enabled) {
+    if (_backgroundAudioEnabled == enabled) return;
+    _backgroundAudioEnabled = enabled;
+    _safeNotifyListeners();
+  }
+
   /// Remember the single URL to give media-hub. Pass the audio-only URL when
   /// picture and sound are separate. Pass the opened URL when one stream
   /// already contains the sound.
@@ -264,11 +281,23 @@ class GlobalPlayerController extends ChangeNotifier {
     }
   }
 
+  /// Remember [url]. The watch page then starts it through media-hub at once.
+  void armBackgroundAudio({
+    required String url,
+    Map<String, String> headers = const {},
+  }) {
+    _backgroundAudioArmed = true;
+    noteBackgroundAudio(url: url, headers: headers);
+    _safeNotifyListeners();
+  }
+
   /// Drop the URL [MediaHubPlayer] would start when this app leaves the
   /// screen. Used when the system player is about to own the video.
   void forgetBackgroundAudio() {
+    _backgroundAudioArmed = false;
     _backgroundAudioUrl = null;
     _backgroundAudioHeaders = const {};
+    _safeNotifyListeners();
   }
 
   bool systemPlayerHandoffFor(String videoId) {
@@ -815,6 +844,7 @@ class GlobalPlayerController extends ChangeNotifier {
     _currentVideoId = null;
     _currentVideoUrl = null;
     _backgroundAudioUrl = null;
+    _backgroundAudioArmed = false;
     _systemHandoffVideoId = null;
     _systemHandoffUrl = null;
     _systemHandoffThumbnail = null;
@@ -877,6 +907,7 @@ class GlobalPlayerController extends ChangeNotifier {
     _currentVideoId = null;
     _currentVideoUrl = null;
     _backgroundAudioUrl = null;
+    _backgroundAudioArmed = false;
     _systemHandoffVideoId = null;
     _systemHandoffUrl = null;
     _systemHandoffThumbnail = null;

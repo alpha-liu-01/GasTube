@@ -17,6 +17,7 @@ class SystemPlayerPreview extends StatelessWidget {
     this.thumbnailUrl,
     this.onPlay,
     this.finished = false,
+    this.onBackground,
     this.qualityLabel,
     this.onQuality,
   });
@@ -27,6 +28,10 @@ class SystemPlayerPreview extends StatelessWidget {
 
   /// The system player reached the end, so [onPlay] starts this video again.
   final bool finished;
+
+  /// Arms this video's audio for when the user leaves. The mini window leaves
+  /// this null.
+  final VoidCallback? onBackground;
 
   /// Label for this video only. The mini window leaves [onQuality] null.
   final String? qualityLabel;
@@ -46,6 +51,7 @@ class SystemPlayerPreview extends StatelessWidget {
             : thumbnailUrl;
         final position =
             matched ? player.systemPlayerPosition : Duration.zero;
+        final backgroundArmed = player.backgroundAudioEnabled;
         return ColoredBox(
           color: Colors.black,
           child: LayoutBuilder(
@@ -142,6 +148,32 @@ class SystemPlayerPreview extends StatelessWidget {
                             ],
                           );
                         },
+                      ),
+                    ),
+                  if (onBackground != null)
+                    Align(
+                      alignment: Alignment.topRight,
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Material(
+                          color: backgroundArmed
+                              ? Colors.white
+                              : const Color(0xCC000000),
+                          borderRadius: BorderRadius.circular(4),
+                          child: InkWell(
+                            onTap: onBackground,
+                            child: Padding(
+                              padding: const EdgeInsets.all(6),
+                              child: Icon(
+                                Icons.headset,
+                                size: 20,
+                                color: backgroundArmed
+                                    ? Colors.black
+                                    : Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   if (onQuality != null &&

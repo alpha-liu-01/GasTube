@@ -63,6 +63,18 @@ Future<Duration?> peekSystemPlayerPosition(String url) async {
   return null;
 }
 
+/// Writes [position] as the bookmark for [url], without asking the helper to seek.
+///
+/// Background audio uses this when the listener comes back, so the next
+/// system-player open continues from the audio instead of the older picture.
+Future<void> noteSystemPlayerBookmark(String url, Duration position) async {
+  final ms = position.inMilliseconds;
+  if (ms <= 0) return;
+  final wanted = _playerSettingsKey(url);
+  await _rememberMs(wanted, ms);
+  await _writePlayerMs(wanted, ms);
+}
+
 /// The system player writes -1 when playback reaches the end.
 ///
 /// A later open that has not reached the end stores a positive position, or

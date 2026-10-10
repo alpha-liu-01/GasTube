@@ -229,6 +229,10 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
       _systemPlayerUrl = null;
       _systemPlayerEnded = false;
       _systemPlayerHandoffAt = null;
+      if (_globalPlayer.backgroundAudioArmed) {
+        _globalPlayer.forgetBackgroundAudio();
+        unawaited(MediaHubPlayer.instance.stop());
+      }
       _pendingPreviewFrame = null;
       _isInitialized = false;
       _isRestoringFromPip = false;
@@ -418,6 +422,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
     print(
       'gastube: system player preview positionMs=${position.inMilliseconds}',
     );
+    _ensureBackgroundAudio();
   }
 
   /// A frame mpv has already drawn. The first handoff never opens the
@@ -1301,6 +1306,9 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
     final previousLabel = _currentQualityLabel;
     final previousConfig = _currentConfig;
     try {
+      if (_globalPlayer.backgroundAudioArmed) {
+        await MediaHubPlayer.instance.stampArmedPosition();
+      }
       final carry = await _carriedSystemPlayerPosition();
       var config = _resolveForThisBuild(label);
       if (!config.isValid) return;
@@ -1341,6 +1349,43 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
     }
   }
 
+  void _ensureBackgroundAudio() {
+    if (!UbuntuTouch.enabled || !_globalPlayer.backgroundAudioEnabled) return;
+    if (_systemPlayerOpening || _systemPlayerEnded) return;
+    if (widget.watchInfo.isLive == true) return;
+    final url = _handoffAudio()?.url;
+    if (url == null || url.isEmpty) return;
+    if (MediaHubPlayer.instance.holdsPageAudio &&
+        _globalPlayer.backgroundAudioArmed &&
+        _globalPlayer.backgroundAudioUrl == url) {
+      return;
+    }
+    final same = _globalPlayer.backgroundAudioArmed &&
+        _globalPlayer.backgroundAudioUrl == url;
+    if (!same) {
+      _globalPlayer.setCurrentVideoId(widget.videoId);
+      _globalPlayer.armBackgroundAudio(
+        url: url,
+        headers: _newPipePlaybackHeaders,
+      );
+      print('gastube: background audio on id=${widget.videoId}');
+    }
+    unawaited(MediaHubPlayer.instance.playOnPage());
+  }
+
+  void _toggleBackgroundAudio() {
+    if (widget.watchInfo.isLive == true) return;
+    if (_globalPlayer.backgroundAudioEnabled) {
+      _globalPlayer.setBackgroundAudioEnabled(false);
+      _globalPlayer.forgetBackgroundAudio();
+      unawaited(MediaHubPlayer.instance.stop());
+      print('gastube: background audio off id=${widget.videoId}');
+      return;
+    }
+    _globalPlayer.setBackgroundAudioEnabled(true);
+    _ensureBackgroundAudio();
+  }
+
   Future<void> _reopenSystemPlayer({bool fromStart = false}) async {
     final url = _systemPlayerUrl;
     if (url == null || _systemPlayerOpening) return;
@@ -1352,6 +1397,8 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
         _globalPlayer.updateSystemPlayerHandoffPosition(Duration.zero);
         if (mounted) setState(() => _systemPlayerEnded = false);
         print('gastube: system player replay id=${widget.videoId}');
+      } else if (_globalPlayer.backgroundAudioArmed) {
+        await MediaHubPlayer.instance.stampArmedPosition();
       }
       final carry =
           fromStart ? null : await _carriedSystemPlayerPosition();
@@ -1914,6 +1961,10 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
                   onPlay: () => _reopenSystemPlayer(
                     fromStart: _systemPlayerEnded,
                   ),
+                  onBackground: widget.watchInfo.isLive == true ||
+                          _handoffAudio()?.url == null
+                      ? null
+                      : _toggleBackgroundAudio,
                   qualityLabel: _systemPlayerQualityCaption(),
                   onQuality: (_availableQualities ??
                               const <StreamQualityInfo>[])

@@ -7,6 +7,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:fluxtube/core/player/global_player_controller.dart';
 import 'package:fluxtube/core/player/playback_queue.dart';
 import 'package:fluxtube/core/ubuntu_touch.dart';
+import 'package:fluxtube/core/ubuntu_touch_content_hub.dart';
 import 'package:fluxtube/domain/watch/models/newpipe/newpipe_watch_resp.dart';
 import 'package:fluxtube/infrastructure/newpipe/newpipe_channel.dart';
 import 'package:path/path.dart' as p;
@@ -37,6 +38,24 @@ class MediaHubPlayer {
   String? _openedUrl;
   bool _ready = false;
   bool _away = false;
+  bool _pageAudio = false;
+  int _sliceEpoch = 0;
+  int? _sliceMediaStart;
+  int? _sliceSidxOffset;
+  int? _sliceGrabBytes;
+  int? _sliceUntilUs;
+  bool _extendPending = false;
+  bool _didExtend = false;
+  bool _replacedByFull = false;
+  DateTime _extendChecked = DateTime.fromMillisecondsSinceEpoch(0);
+  Duration _heardUntil = Duration.zero;
+  DateTime? _awaySince;
+  _ExtendOffer? _extendOffer;
+  bool _extendRunning = false;
+  bool _hubKnown = false;
+
+  /// The armed m4a is already playing on this page. A rebuild must not seek it.
+  bool get holdsPageAudio => _pageAudio;
   Duration _pausedAt = Duration.zero;
   Future<void> _queue = Future<void>.value();
   String? _cachedUrl;
@@ -84,14 +103,33 @@ class MediaHubPlayer {
   Future<void> prepare() {
     if (!UbuntuTouch.enabled) return Future<void>.value();
     final url = _player.backgroundAudioUrl;
-    if (url != null) unawaited(_cacheAudio(url));
+    // The armed page starts at the saved position. A download from byte 0
+    // and a remote open both fight that range request and leave a short clip.
+    if (url != null && !_player.backgroundAudioArmed) {
+      unawaited(_cacheAudio(url));
+    }
     return _enqueue(_prepare);
   }
 
   /// media-hub starts the sound, then local playback stops.
   Future<void> handoff() {
     if (!UbuntuTouch.enabled) return Future<void>.value();
-    return _enqueue(_handoff);
+    return _enqueue(() => _handoff());
+  }
+
+  /// Starts the armed m4a while this page is still open.
+  Future<void> playOnPage() {
+    if (!UbuntuTouch.enabled) return Future<void>.value();
+    return _enqueue(() => _handoff(onPage: true));
+  }
+
+  /// Writes the live hub position onto the system-player bookmark.
+  ///
+  /// Opening the system player reads that bookmark, so a listen on this page
+  /// is not thrown away.
+  Future<void> stampArmedPosition() {
+    if (!UbuntuTouch.enabled) return Future<void>.value();
+    return _enqueue(_stampArmedPosition);
   }
 
   Future<void> takeBack() {
@@ -104,6 +142,15 @@ class MediaHubPlayer {
     // This playback is over. Remember the cache files now, before the next
     // video starts writing new ones, and delete them after media-hub lets go.
     _downloadingUrl = null;
+    _sliceEpoch++;
+    _extendPending = false;
+    _didExtend = false;
+    _replacedByFull = false;
+    _heardUntil = Duration.zero;
+    _awaySince = null;
+    _extendOffer = null;
+    _extendRunning = false;
+    _hubKnown = false;
     final stale = _backgroundAudioFiles();
     return _enqueue(() async {
       await _dropSession();
@@ -117,9 +164,14 @@ class MediaHubPlayer {
     if (!UbuntuTouch.enabled) return false;
     var paused = false;
     await _enqueue(() async {
-      if (!_away) return;
+      if (!_away && !_pageAudio) return;
       await _pauseHub();
       paused = true;
+      if (_pageAudio) {
+        _pageAudio = false;
+        _player.setBackgroundAudioEnabled(false);
+        _player.forgetBackgroundAudio();
+      }
       print('gastube: pulse unplug hub');
     });
     return paused;
@@ -132,7 +184,7 @@ class MediaHubPlayer {
   }
 
   Future<void> _prepare() async {
-    if (_away) return;
+    if (_away || _player.backgroundAudioArmed) return;
     unawaited(_prepareNeighbors());
     final url = _player.backgroundAudioUrl;
     if (url == null) return;
@@ -140,21 +192,39 @@ class MediaHubPlayer {
     await _open(url);
   }
 
-  Future<void> _handoff() async {
+  Future<void> _handoff({bool onPage = false}) async {
     if (_away) return;
-    if (!_player.isPlaying) return;
-    // A cleared video can still report playing for a moment. The last opened
-    // URL must not start again after the user has left that video.
-    final url = _player.backgroundAudioUrl;
-    if (url == null || _player.currentVideoId == null) {
+    final videoId = _player.currentVideoId;
+    final armed = _player.backgroundAudioArmed &&
+        videoId != null &&
+        _player.systemPlayerHandoffFor(videoId);
+    // A scroll rebuilds this page and asks again. The bookmark is the moment
+    // the system player was left, so seeking there jumps backward.
+    if (onPage && _pageAudio && armed) return;
+    if (!onPage && _pageAudio && armed) {
+      _pausedAt = await _hubPosition();
+      _away = true;
+      _pageAudio = false;
+      _awaySince = DateTime.now();
       print(
-        'gastube: mediahub skip '
-        'reason=${_player.currentVideoId == null ? "no-video" : "no-audio-url"}',
+        'gastube: background audio keep '
+        'positionMs=${_pausedAt.inMilliseconds}',
       );
       return;
     }
-    _pausedAt = _player.currentPosition;
-    _away = true;
+    if (!armed && !_player.isPlaying) return;
+    // A cleared video can still report playing for a moment. The last opened
+    // URL must not start again after the user has left that video.
+    final url = _player.backgroundAudioUrl;
+    if (url == null || videoId == null) {
+      print(
+        'gastube: mediahub skip '
+        'reason=${videoId == null ? "no-video" : "no-audio-url"}',
+      );
+      return;
+    }
+    _pausedAt = armed ? _player.systemPlayerPosition : _player.currentPosition;
+    if (!onPage) _away = true;
     unawaited(_prepareNeighbors());
     print(
       'gastube: mediahub handoff host=${Uri.tryParse(url)?.host ?? "unknown"} '
@@ -162,12 +232,24 @@ class MediaHubPlayer {
     );
     var playingOnHub = false;
     try {
-      var local = _readyLocal(url) ?? _snapshotLocal(url, _pausedAt);
+      var local = _readyLocal(url);
       _usingSlice = false;
       _sliceFrom = null;
+      if (!armed) local ??= _snapshotLocal(url, _pausedAt);
+      var extendEpoch = 0;
       if (local == null) {
-        local = await _sliceLocal(url, _pausedAt);
+        if (armed) {
+          _downloadingUrl = null;
+          _sliceEpoch++;
+          _didExtend = false;
+          _extendPending = false;
+          _replacedByFull = false;
+          _heardUntil = _pausedAt;
+        }
+        extendEpoch = _sliceEpoch;
+        local = await _sliceLocal(url, _pausedAt, fast: armed);
         _usingSlice = local != null;
+        if (armed && !_player.backgroundAudioArmed) return;
       }
       var seekLocal = false;
       if (local != null) {
@@ -222,6 +304,19 @@ class MediaHubPlayer {
       print('gastube: mediahub play status=$status');
       if (status == 'Playing') {
         playingOnHub = true;
+        if (onPage) {
+          _pageAudio = true;
+          _away = false;
+          print(
+            'gastube: background audio play '
+            'positionMs=${_pausedAt.inMilliseconds}',
+          );
+        }
+        if (armed && _usingSlice && extendEpoch == _sliceEpoch) {
+          if (_pausedAt > _heardUntil) _heardUntil = _pausedAt;
+          unawaited(_extendArmed(url, extendEpoch));
+          unawaited(_followArmedClock(url, extendEpoch));
+        }
         await _player.pausePlayback();
         await _attachIndicatorTracks(anchor: true);
         final current = _session;
@@ -232,28 +327,71 @@ class MediaHubPlayer {
       } else {
         print('gastube: mediahub play not started');
         _away = false;
+        _pageAudio = false;
+        if (onPage) _player.forgetBackgroundAudio();
       }
     } catch (error) {
       print('gastube: mediahub failed error=$error');
-      if (!playingOnHub) _away = false;
+      if (!playingOnHub) {
+        _away = false;
+        if (onPage) {
+          _pageAudio = false;
+          _player.forgetBackgroundAudio();
+        }
+      }
     }
+  }
+
+  Future<void> _stampArmedPosition() async {
+    if (!_pageAudio && !_away) return;
+    if (!_player.backgroundAudioArmed) return;
+    final url = _player.systemPlayerHandoffUrl;
+    if (url == null || url.isEmpty) return;
+    final at = await _hubPosition();
+    final best = at > _heardUntil ? at : _heardUntil;
+    if (best <= Duration.zero) return;
+    await noteSystemPlayerBookmark(url, best);
+    _player.updateSystemPlayerHandoffPosition(best);
+    print('gastube: background audio stamp positionMs=${best.inMilliseconds}');
   }
 
   Future<void> _takeBack() async {
     if (!_away) return;
     final hubAt = await _hubPosition();
-    // A hub position behind the handoff point means playback restarted at
-    // the beginning. Keep the in-app position in that case.
-    final resumeAt = hubAt >= _pausedAt ? hubAt : _pausedAt;
+    final known = _hubKnown;
+    final awayFor = _awaySince == null
+        ? Duration.zero
+        : DateTime.now().difference(_awaySince!);
+    final cover = Duration(microseconds: _sliceUntilUs ?? 0);
+    final left = cover > _pausedAt ? cover - _pausedAt : Duration.zero;
+    // While this process is stopped, media-hub can only play the file it
+    // already has open. Once that file ends the session resets, and the
+    // position read falls back to the lock stamp. Continuing from that stamp
+    // rewinds to the lock. The audio died at the end of the open file.
+    final fileEnded = _usingSlice &&
+        cover > _pausedAt &&
+        left > const Duration(seconds: 1) &&
+        awayFor > left &&
+        awayFor > const Duration(seconds: 3) &&
+        (!known || hubAt + const Duration(seconds: 2) < _pausedAt);
+    var resumeAt = hubAt >= _pausedAt ? hubAt : _pausedAt;
+    if (fileEnded) resumeAt = cover;
+    if (resumeAt > _heardUntil) _heardUntil = resumeAt;
     final session = _session;
     final status = session == null ? null : await _playbackStatus(session);
     final stayPaused = status == 'Paused';
-    await _pauseHub();
+    final currentIdEarly = _player.currentVideoId;
+    final keepPageAudio = !stayPaused &&
+        _player.backgroundAudioArmed &&
+        currentIdEarly != null &&
+        _player.systemPlayerHandoffFor(currentIdEarly);
     final jumped = _indicatorVideoId;
-    final currentId = _player.currentVideoId;
+    final currentId = currentIdEarly;
     if (jumped != null &&
         jumped != currentId &&
         _onIndicatorReturn != null) {
+      await _pauseHub();
+      _pageAudio = false;
       _returnVideoId = jumped;
       _returnPosition = resumeAt;
       _indicatorVideoId = null;
@@ -265,6 +403,69 @@ class MediaHubPlayer {
       _onIndicatorReturn!(jumped);
       return;
     }
+    if (_player.backgroundAudioArmed &&
+        currentId != null &&
+        _player.systemPlayerHandoffFor(currentId)) {
+      _away = false;
+      final handoffUrl = _player.systemPlayerHandoffUrl;
+      if (handoffUrl != null && resumeAt > Duration.zero) {
+        await noteSystemPlayerBookmark(handoffUrl, resumeAt);
+      }
+      _player.updateSystemPlayerHandoffPosition(resumeAt);
+      if (stayPaused || !keepPageAudio) {
+        _pageAudio = false;
+        _player.forgetBackgroundAudio();
+        await _dropSession();
+        print('gastube: background audio paused');
+      } else {
+        _pageAudio = true;
+        _awaySince = null;
+        final stalled = !fileEnded &&
+            awayFor > const Duration(seconds: 3) &&
+            known &&
+            (hubAt - _pausedAt).inMilliseconds.abs() < 1500;
+        final live = _session;
+        if (live != null &&
+            status != 'Paused' &&
+            (fileEnded || stalled || status != 'Playing')) {
+          _pausedAt = fileEnded && resumeAt > const Duration(seconds: 1)
+              ? resumeAt - const Duration(seconds: 1)
+              : resumeAt;
+          var sought = await _seekLocal(live);
+          if (!sought) {
+            await live.callMethod(_playerInterface, 'Play', const []);
+            await Future<void>.delayed(const Duration(milliseconds: 250));
+            sought = await _seekLocal(live);
+          }
+          if (await _playbackStatus(live) != 'Playing') {
+            await live.callMethod(_playerInterface, 'Play', const []);
+          }
+          final woke = await _untilPlaying(live);
+          print(
+            fileEnded
+                ? 'gastube: background audio resume status=$woke '
+                    'positionMs=${_pausedAt.inMilliseconds} '
+                    'coverMs=${cover.inMilliseconds}'
+                : 'gastube: background audio wake status=$woke '
+                    'positionMs=${_pausedAt.inMilliseconds}',
+          );
+        }
+        print(
+          'gastube: background audio back '
+          'positionMs=${resumeAt.inMilliseconds}',
+        );
+        final audioUrl = _player.backgroundAudioUrl;
+        if (audioUrl != null) {
+          if (_usingSlice && !_extendRunning && !_replacedByFull) {
+            unawaited(_extendArmed(audioUrl, _sliceEpoch));
+          }
+          unawaited(_cacheAudio(audioUrl));
+        }
+      }
+      return;
+    }
+    await _pauseHub();
+    _pageAudio = false;
     _away = false;
     print('gastube: mediahub back positionMs=${resumeAt.inMilliseconds}');
     try {
@@ -561,6 +762,7 @@ class MediaHubPlayer {
     var chosenStart = -1;
     var chosenEnd = -1;
     var chosenStartUs = 0;
+    var chosenEndUs = 0;
     for (var i = 0; i < count; i++) {
       if (cursor + 12 > body.length) return null;
       final size = _be32At(body, cursor) & 0x7fffffff;
@@ -577,6 +779,7 @@ class MediaHubPlayer {
       }
       if (chosenStart < 0) continue;
       chosenEnd = byte;
+      chosenEndUs = timeUs;
       // extraUs == 0 keeps only the fragment under the playhead. A lock cannot
       // wait for the following minute to download.
       if (extraUs <= 0 || timeUs - targetUs >= extraUs) break;
@@ -586,6 +789,7 @@ class MediaHubPlayer {
       start: chosenStart,
       end: chosenEnd,
       startUs: chosenStartUs,
+      endUs: chosenEndUs,
       sidxOffset: sidxOffset,
     );
   }
@@ -941,7 +1145,11 @@ class MediaHubPlayer {
 
   /// A local file whose samples start at the fragment covering [position].
   /// media-hub keeps those timestamps, so a seek still lands on [position].
-  Future<String?> _sliceLocal(String url, Duration position) async {
+  Future<String?> _sliceLocal(
+    String url,
+    Duration position, {
+    bool fast = false,
+  }) async {
     final path = _cachePath(url);
     final partial = File('$path.partial');
     if (!partial.existsSync()) {
@@ -977,7 +1185,7 @@ class MediaHubPlayer {
     if (media == null || mediaAt + usable < near.end) {
       final grab = File('$path.grab');
       final floor = frag.end - frag.start;
-      final want = far.end - frag.start;
+      final want = fast ? floor : far.end - frag.start;
       final got = await _fillRange(
         url,
         frag.start,
@@ -985,7 +1193,8 @@ class MediaHubPlayer {
         want,
         extra: false,
         floor: floor,
-        maxWait: const Duration(milliseconds: 2500),
+        maxWait: fast ? null : const Duration(milliseconds: 2500),
+        cancelWhenDisarmed: fast,
       );
       final grabUsable =
           grab.existsSync() ? _lastCompleteAtom(grab, grab.lengthSync()) : 0;
@@ -1027,11 +1236,568 @@ class MediaHubPlayer {
       output.closeSync();
     }
     _sliceFrom = Duration(microseconds: frag.startUs);
+    if (fast) {
+      _sliceMediaStart = frag.start;
+      _sliceSidxOffset = frag.sidxOffset;
+      _sliceGrabBytes = count;
+      _sliceUntilUs = frag.endUs;
+    }
     print(
       'gastube: mediahub slice bytes=${play.lengthSync()} '
       'fromUs=${frag.startUs} coverBytes=$count',
     );
     return play.path;
+  }
+
+  /// Keeps fetching the rest of [url] from the fragment already playing and
+  /// replaces the short file before it runs out.
+  Future<void> _extendArmed(String url, int epoch, {int attempt = 0}) async {
+    if (_extendRunning) return;
+    _extendRunning = true;
+    final mediaStart = _sliceMediaStart;
+    final sidxOffset = _sliceSidxOffset;
+    final grabBytes = _sliceGrabBytes;
+    if (mediaStart == null || sidxOffset == null || grabBytes == null) {
+      _extendRunning = false;
+      return;
+    }
+    final path = _cachePath(url);
+    final partial = File('$path.partial');
+    final grab = File('$path.grab');
+    if (!partial.existsSync() || !grab.existsSync()) {
+      _extendRunning = false;
+      return;
+    }
+    final more = File('$path.more');
+    if (more.existsSync()) more.deleteSync();
+    await more.parent.create(recursive: true);
+    final offer = _ExtendOffer(
+      epoch: epoch,
+      path: path,
+      partial: partial,
+      sidxOffset: sidxOffset,
+      grab: grab,
+      grabBytes: grabBytes,
+      more: more,
+      mediaStart: mediaStart,
+      openedUntil: _sliceUntilUs ?? 0,
+    );
+    _extendOffer = offer;
+    final client = HttpClient();
+    var bytes = 0;
+    var failed = false;
+    try {
+      final sink = more.openWrite();
+      try {
+        // One long range is sent about as fast as playback. A bounded range
+        // comes back in a burst. Keep asking until the open file can hold
+        // about eight minutes past the playhead, which is what still plays
+        // after the screen lock stops this process.
+        while (epoch == _sliceEpoch &&
+            _player.backgroundAudioArmed &&
+            !_replacedByFull &&
+            !offer.finished) {
+          final rangeStart = mediaStart + grabBytes + bytes;
+          final heardUs = _heardUntil.inMicroseconds;
+          final anchor =
+              heardUs > offer.openedUntil ? heardUs : offer.openedUntil;
+          final wantUs = anchor + 480000000;
+          final indexed = partial.existsSync()
+              ? _fileByteAtUs(partial, partial.lengthSync(), wantUs)
+              : null;
+          var rangeEnd = indexed ?? rangeStart + 768 * 1024;
+          if (indexed != null && indexed <= rangeStart) {
+            rangeEnd = rangeStart;
+          }
+          if (rangeEnd > rangeStart + 1536 * 1024) {
+            rangeEnd = rangeStart + 1536 * 1024;
+          }
+          if (rangeEnd <= rangeStart) {
+            await Future<void>.delayed(const Duration(milliseconds: 400));
+            if (_coverRunningOut()) {
+              _offerArmedExtension(offer, finished: false);
+            }
+            continue;
+          }
+          final request = await client.getUrl(Uri.parse(url));
+          _setAudioHeaders(request);
+          request.headers.set(
+            HttpHeaders.rangeHeader,
+            'bytes=$rangeStart-${rangeEnd - 1}',
+          );
+          final response = await request.close();
+          if (response.statusCode != HttpStatus.partialContent) {
+            print(
+              'gastube: background audio extend status=${response.statusCode}',
+            );
+            return;
+          }
+          final total = _contentRangeTotal(response.headers);
+          var got = 0;
+          await for (final chunk in response) {
+            if (epoch != _sliceEpoch ||
+                !_player.backgroundAudioArmed ||
+                _replacedByFull) {
+              return;
+            }
+            sink.add(chunk);
+            got += chunk.length;
+            bytes += chunk.length;
+            if (got < 131072) continue;
+            await sink.flush();
+            offer.moreBytes = bytes;
+            if (_coverRunningOut()) {
+              _offerArmedExtension(offer, finished: false);
+            }
+          }
+          await sink.flush();
+          offer.moreBytes = bytes;
+          if (total != null && rangeStart + got >= total) {
+            offer.finished = true;
+          }
+          print('gastube: background audio chunk bytes=$bytes');
+          _offerArmedExtension(offer, finished: offer.finished);
+        }
+      } finally {
+        await sink.flush();
+        await sink.close();
+      }
+    } catch (error) {
+      failed = true;
+      print(
+        'gastube: background audio extend failed error=${error.runtimeType}',
+      );
+    } finally {
+      _extendRunning = false;
+      client.close(force: true);
+    }
+    if (!failed ||
+        attempt >= 3 ||
+        epoch != _sliceEpoch ||
+        !_player.backgroundAudioArmed ||
+        _replacedByFull) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(seconds: 1));
+    await _extendArmed(url, epoch, attempt: attempt + 1);
+  }
+
+  void _offerArmedExtension(
+    _ExtendOffer offer, {
+    required bool finished,
+    bool followUp = false,
+  }) {
+    if (offer.epoch != _sliceEpoch ||
+        !_player.backgroundAudioArmed ||
+        _replacedByFull) {
+      return;
+    }
+    if (finished) offer.finished = true;
+    final moreBytes = offer.moreBytes;
+    if (moreBytes <= 0 || !offer.partial.existsSync()) return;
+    if (_extendPending) {
+      offer.refresh = true;
+      return;
+    }
+    final covered = _coveredMedia(
+      offer.partial,
+      offer.partial.lengthSync(),
+      offer.mediaStart,
+      offer.grabBytes + moreBytes,
+    );
+    if (covered == null || covered.endUs <= offer.openedUntil) return;
+    final moreCopy = covered.mediaBytes - offer.grabBytes;
+    if (moreCopy <= 0) return;
+    // The first extra file has to arrive before the one fragment ends.
+    // Later files wait until playback is close to that end, and they include
+    // every complete fragment already downloaded. A follow-up after the
+    // first swap takes the bytes that arrived while that swap was opening.
+    final rescue = !_didExtend;
+    final urgent = _coverRunningOut();
+    final gained = covered.endUs - offer.openedUntil;
+    final heardUs = _heardUntil.inMicroseconds;
+    final openAhead = (_sliceUntilUs ?? offer.openedUntil) - heardUs;
+    // The file media-hub has open is the only audio that survives a lock.
+    // Top it up while the screen is on, once a few more minutes are on disk.
+    final roomToFill = openAhead < 180000000;
+    final extendNow = finished || (followUp && urgent);
+    if (!extendNow && rescue && !urgent && gained < 45000000) return;
+    if (!extendNow && rescue && urgent && gained < 8000000) return;
+    if (!extendNow && !rescue && !urgent && !roomToFill) return;
+    if (!extendNow && !rescue && !urgent && gained < 90000000) return;
+    if (!extendNow && !rescue && urgent && gained < 8000000) return;
+    final endUs = covered.endUs;
+    final gap = !urgent && !rescue
+        ? const Duration(seconds: 20)
+        : const Duration(seconds: 2);
+    if (!extendNow &&
+        _extendChecked.millisecondsSinceEpoch != 0 &&
+        DateTime.now().difference(_extendChecked) < gap) {
+      return;
+    }
+    offer.refresh = false;
+    _extendChecked = DateTime.now();
+    _extendPending = true;
+    final composed = _composeArmed(
+      partial: offer.partial,
+      sidxOffset: offer.sidxOffset,
+      grab: offer.grab,
+      grabBytes: offer.grabBytes,
+      more: offer.more,
+      moreBytes: moreCopy,
+      path: offer.path,
+      endUs: endUs,
+    );
+    if (composed == null) {
+      _extendPending = false;
+      return;
+    }
+    unawaited(_enqueue(() async {
+      var played = false;
+      try {
+        played = await _swapArmed(composed, offer.epoch, endUs);
+        if (played) offer.openedUntil = endUs;
+      } finally {
+        _extendPending = false;
+        final again = played && offer.refresh && !offer.followed;
+        offer.refresh = false;
+        if (again &&
+            offer.epoch == _sliceEpoch &&
+            _player.backgroundAudioArmed &&
+            !_replacedByFull) {
+          offer.followed = true;
+          print('gastube: background audio extend again');
+          _offerArmedExtension(
+            offer,
+            finished: offer.finished,
+            followUp: true,
+          );
+        } else if (!played) {
+          _extendChecked = DateTime.now();
+        }
+      }
+    }));
+  }
+
+  String? _composeArmed({
+    required File partial,
+    required int sidxOffset,
+    required File grab,
+    required int grabBytes,
+    required File more,
+    required int moreBytes,
+    required String path,
+    required int endUs,
+  }) {
+    try {
+      final dest = File('$path.ext-$endUs');
+      final header = partial.openSync();
+      final output = dest.openSync(mode: FileMode.write);
+      try {
+        output.writeFromSync(header.readSync(sidxOffset));
+        _copyInto(output, grab, grabBytes);
+        _copyInto(output, more, moreBytes);
+      } finally {
+        header.closeSync();
+        output.closeSync();
+      }
+      return dest.path;
+    } catch (error) {
+      print('gastube: background audio compose failed error=$error');
+      return null;
+    }
+  }
+
+  void _copyInto(RandomAccessFile output, File input, int count) {
+    final handle = input.openSync();
+    try {
+      var left = count;
+      while (left > 0) {
+        final n = left > 65536 ? 65536 : left;
+        output.writeFromSync(handle.readSync(n));
+        left -= n;
+      }
+    } finally {
+      handle.closeSync();
+    }
+  }
+
+  Future<bool> _swapArmed(
+    String path,
+    int epoch,
+    int coverUs, {
+    bool wholeFile = false,
+  }) async {
+    if (epoch != _sliceEpoch || !_player.backgroundAudioArmed) return false;
+    if (!_pageAudio && !_away) return false;
+    final hub = await _hubPosition();
+    if (hub > _pausedAt) _pausedAt = hub;
+    if (hub > _heardUntil) _heardUntil = hub;
+    if (!wholeFile && coverUs <= _pausedAt.inMicroseconds + 500000) return false;
+    await _open(Uri.file(path).toString());
+    final session = _session;
+    if (session == null || !_ready) {
+      print('gastube: background audio extend open failed');
+      return false;
+    }
+    final sought = await _seekLocal(session);
+    if (!sought) {
+      print('gastube: background audio extend seek failed');
+      return false;
+    }
+    var status = await _playbackStatus(session);
+    for (var attempt = 0; attempt < 4 && status != 'Playing'; attempt++) {
+      await session.callMethod(_playerInterface, 'Play', const []);
+      status = await _untilPlaying(session, attempts: 8);
+    }
+    if (status == 'Playing') {
+      if (!wholeFile) _sliceUntilUs = coverUs;
+      _didExtend = true;
+    }
+    print(
+      wholeFile
+          ? 'gastube: background audio full status=$status '
+              'positionMs=${_pausedAt.inMilliseconds}'
+          : 'gastube: background audio extend status=$status '
+              'positionMs=${_pausedAt.inMilliseconds} coverMs=${coverUs ~/ 1000}',
+    );
+    return status == 'Playing';
+  }
+
+  bool _coverRunningOut() {
+    final until = _sliceUntilUs;
+    if (until == null || until <= 0) return false;
+    final heard = _heardUntil.inMicroseconds;
+    if (heard <= 0) return false;
+    return until - heard <= 12000000;
+  }
+
+  /// Remembers how far the page audio actually reached, and switches to the
+  /// finished download once that file is on disk.
+  Future<void> _followArmedClock(String url, int epoch) async {
+    while (epoch == _sliceEpoch && _player.backgroundAudioArmed) {
+      await Future.delayed(const Duration(seconds: 2));
+      if (epoch != _sliceEpoch || !_player.backgroundAudioArmed) return;
+      await _enqueue(() => _noteArmedClock(url, epoch));
+    }
+  }
+
+  Future<void> _noteArmedClock(String url, int epoch) async {
+    if (epoch != _sliceEpoch || !_player.backgroundAudioArmed) return;
+    if (!_pageAudio && !_away) return;
+    final session = _session;
+    var at = await _hubPosition();
+    final untilUs = _sliceUntilUs;
+    if (session != null && untilUs != null) {
+      final status = await _playbackStatus(session);
+      if (status == 'Stopped') {
+        final until = Duration(microseconds: untilUs);
+        if (until > at && until - at < const Duration(seconds: 20)) {
+          at = until;
+        }
+      }
+    }
+    if (at > _heardUntil) _heardUntil = at;
+    if (at > _pausedAt) _pausedAt = at;
+    final bookmark = _player.systemPlayerHandoffUrl;
+    if (bookmark != null && _heardUntil > Duration.zero) {
+      await noteSystemPlayerBookmark(bookmark, _heardUntil);
+      _player.updateSystemPlayerHandoffPosition(_heardUntil);
+      print(
+        'gastube: background audio heard positionMs=${_heardUntil.inMilliseconds}',
+      );
+    }
+    final offer = _extendOffer;
+    if (offer != null &&
+        !_extendPending &&
+        !_replacedByFull &&
+        _usingSlice &&
+        (offer.finished || _coverRunningOut())) {
+      _offerArmedExtension(offer, finished: offer.finished);
+    }
+    if (_replacedByFull || !_usingSlice) return;
+    final ready = _readyLocal(url);
+    if (ready == null) return;
+    if (_heardUntil > _pausedAt) _pausedAt = _heardUntil;
+    final played = await _swapArmed(ready, epoch, 0, wholeFile: true);
+    if (!played) return;
+    _replacedByFull = true;
+    _usingSlice = false;
+    _sliceUntilUs = null;
+  }
+
+  _CoveredMedia? _coveredMedia(
+    File partial,
+    int length,
+    int mediaStart,
+    int mediaBytes,
+  ) {
+    if (mediaBytes <= 0 || length < 32) return null;
+    final handle = partial.openSync();
+    try {
+      var offset = 0;
+      final header = Uint8List(8);
+      while (offset + 8 <= length && offset < 1024 * 1024) {
+        handle.setPositionSync(offset);
+        if (handle.readIntoSync(header) < 8) return null;
+        var size = _be32(header);
+        final type = String.fromCharCodes(header.sublist(4));
+        if (size == 1) {
+          if (offset + 16 > length) return null;
+          if (handle.readIntoSync(header) < 8) return null;
+          size = _be64(header);
+        } else if (size < 8) {
+          return null;
+        }
+        if (offset + size > length) return null;
+        if (type == 'sidx') {
+          final body = Uint8List(size - 8);
+          handle.setPositionSync(offset + 8);
+          if (handle.readIntoSync(body) < body.length) return null;
+          return _coveredInSidx(body, offset + size, mediaStart, mediaBytes);
+        }
+        offset += size;
+      }
+      return null;
+    } finally {
+      handle.closeSync();
+    }
+  }
+
+  _CoveredMedia? _coveredInSidx(
+    Uint8List body,
+    int sidxEnd,
+    int mediaStart,
+    int mediaBytes,
+  ) {
+    if (body.length < 20) return null;
+    final version = body[0];
+    var cursor = 4;
+    cursor += 4;
+    final timescale = _be32At(body, cursor);
+    cursor += 4;
+    if (timescale <= 0) return null;
+    int firstOffset;
+    if (version == 0) {
+      cursor += 4;
+      firstOffset = _be32At(body, cursor);
+      cursor += 4;
+    } else if (body.length >= cursor + 16) {
+      cursor += 8;
+      firstOffset = _be64At(body, cursor);
+      cursor += 8;
+    } else {
+      return null;
+    }
+    if (cursor + 4 > body.length) return null;
+    final count = _be16At(body, cursor + 2);
+    cursor += 4;
+    var byte = sidxEnd + firstOffset;
+    var timeUs = 0;
+    final limit = mediaStart + mediaBytes;
+    int? coveredUs;
+    var coveredBytes = 0;
+    for (var i = 0; i < count; i++) {
+      if (cursor + 12 > body.length) break;
+      final size = _be32At(body, cursor) & 0x7fffffff;
+      cursor += 4;
+      final duration = _be32At(body, cursor);
+      cursor += 8;
+      final start = byte;
+      byte += size;
+      timeUs += (duration * 1000000) ~/ timescale;
+      if (byte > limit) break;
+      if (start >= mediaStart) {
+        coveredUs = timeUs;
+        coveredBytes = byte - mediaStart;
+      }
+    }
+    final endUs = coveredUs;
+    if (endUs == null || coveredBytes <= 0) return null;
+    return _CoveredMedia(endUs, coveredBytes);
+  }
+
+  /// Absolute file offset where [targetUs] has finished, from the sidx.
+  int? _fileByteAtUs(File partial, int length, int targetUs) {
+    if (targetUs <= 0 || length < 32) return null;
+    final handle = partial.openSync();
+    try {
+      var offset = 0;
+      final header = Uint8List(8);
+      while (offset + 8 <= length && offset < 1024 * 1024) {
+        handle.setPositionSync(offset);
+        if (handle.readIntoSync(header) < 8) return null;
+        var size = _be32(header);
+        final type = String.fromCharCodes(header.sublist(4));
+        if (size == 1) {
+          if (offset + 16 > length) return null;
+          if (handle.readIntoSync(header) < 8) return null;
+          size = _be64(header);
+        } else if (size < 8) {
+          return null;
+        }
+        if (offset + size > length) return null;
+        if (type == 'sidx') {
+          final body = Uint8List(size - 8);
+          handle.setPositionSync(offset + 8);
+          if (handle.readIntoSync(body) < body.length) return null;
+          return _byteAtUsInSidx(body, offset + size, targetUs);
+        }
+        offset += size;
+      }
+      return null;
+    } finally {
+      handle.closeSync();
+    }
+  }
+
+  int? _byteAtUsInSidx(Uint8List body, int sidxEnd, int targetUs) {
+    if (body.length < 20) return null;
+    final version = body[0];
+    var cursor = 4;
+    cursor += 4;
+    final timescale = _be32At(body, cursor);
+    cursor += 4;
+    if (timescale <= 0) return null;
+    int firstOffset;
+    if (version == 0) {
+      cursor += 4;
+      firstOffset = _be32At(body, cursor);
+      cursor += 4;
+    } else if (body.length >= cursor + 16) {
+      cursor += 8;
+      firstOffset = _be64At(body, cursor);
+      cursor += 8;
+    } else {
+      return null;
+    }
+    if (cursor + 4 > body.length) return null;
+    final count = _be16At(body, cursor + 2);
+    cursor += 4;
+    var byte = sidxEnd + firstOffset;
+    var timeUs = 0;
+    var last = byte;
+    for (var i = 0; i < count; i++) {
+      if (cursor + 12 > body.length) break;
+      final size = _be32At(body, cursor) & 0x7fffffff;
+      cursor += 4;
+      final duration = _be32At(body, cursor);
+      cursor += 8;
+      byte += size;
+      timeUs += (duration * 1000000) ~/ timescale;
+      last = byte;
+      if (timeUs >= targetUs) return byte;
+    }
+    return last;
+  }
+
+  int? _contentRangeTotal(HttpHeaders headers) {
+    final value = headers.value(HttpHeaders.contentRangeHeader);
+    if (value == null) return null;
+    final slash = value.lastIndexOf('/');
+    if (slash < 0 || slash + 1 >= value.length) return null;
+    if (value.substring(slash + 1) == '*') return null;
+    return int.tryParse(value.substring(slash + 1));
   }
 
   /// Downloads [minimum] bytes starting at [start], then a little more when
@@ -1044,6 +1810,7 @@ class MediaHubPlayer {
     bool extra = true,
     int? floor,
     Duration? maxWait,
+    bool cancelWhenDisarmed = false,
   }) async {
     if (dest.existsSync()) dest.deleteSync();
     await dest.parent.create(recursive: true);
@@ -1069,6 +1836,12 @@ class MediaHubPlayer {
         await for (final chunk in response) {
           sink.add(chunk);
           bytes += chunk.length;
+          if (cancelWhenDisarmed && !_player.backgroundAudioArmed) break;
+          if (cancelWhenDisarmed &&
+              clock.elapsed >= const Duration(seconds: 8) &&
+              bytes < (floor ?? minimum)) {
+            break;
+          }
           final haveFloor = floor == null || bytes >= floor;
           if (haveFloor && bytes >= minimum) break;
           if (maxWait != null &&
@@ -1125,9 +1898,11 @@ class MediaHubPlayer {
     await _destroySession();
     await _closeClient();
     _away = false;
+    _pageAudio = false;
   }
 
   Future<Duration> _hubPosition() async {
+    _hubKnown = false;
     final session = _session;
     if (session == null) return _pausedAt;
     try {
@@ -1140,8 +1915,10 @@ class MediaHubPlayer {
       const dayUs = 24 * 60 * 60 * 1000000;
       final nanoseconds = duration > dayUs ||
           (localUs > 0 && duration > localUs * 50) ||
-          (localUs > 0 && position > localUs * 50);
+          (localUs > 0 && position > localUs * 50) ||
+          (localUs <= 0 && duration >= 1000000000);
       final microseconds = nanoseconds ? position ~/ 1000 : position;
+      _hubKnown = true;
       print(
         'gastube: mediahub position raw=$position duration=$duration us=$microseconds',
       );
@@ -1152,9 +1929,12 @@ class MediaHubPlayer {
     }
   }
 
-  Future<String?> _untilPlaying(DBusRemoteObject session) async {
+  Future<String?> _untilPlaying(
+    DBusRemoteObject session, {
+    int attempts = 5,
+  }) async {
     String? status;
-    for (var attempt = 0; attempt < 5; attempt++) {
+    for (var attempt = 0; attempt < attempts; attempt++) {
       status = await _playbackStatus(session);
       if (status == 'Playing') return status;
       await Future<void>.delayed(const Duration(milliseconds: 80));
@@ -1460,16 +2240,53 @@ class MediaHubPlayer {
   }
 }
 
+class _ExtendOffer {
+  _ExtendOffer({
+    required this.epoch,
+    required this.path,
+    required this.partial,
+    required this.sidxOffset,
+    required this.grab,
+    required this.grabBytes,
+    required this.more,
+    required this.mediaStart,
+    required this.openedUntil,
+  });
+
+  final int epoch;
+  final String path;
+  final File partial;
+  final int sidxOffset;
+  final File grab;
+  final int grabBytes;
+  final File more;
+  final int mediaStart;
+  int openedUntil;
+  int moreBytes = 0;
+  bool finished = false;
+  bool refresh = false;
+  bool followed = false;
+}
+
+class _CoveredMedia {
+  const _CoveredMedia(this.endUs, this.mediaBytes);
+
+  final int endUs;
+  final int mediaBytes;
+}
+
 class _IndexedFragment {
   const _IndexedFragment({
     required this.start,
     required this.end,
     required this.startUs,
+    required this.endUs,
     required this.sidxOffset,
   });
 
   final int start;
   final int end;
   final int startUs;
+  final int endUs;
   final int sidxOffset;
 }
