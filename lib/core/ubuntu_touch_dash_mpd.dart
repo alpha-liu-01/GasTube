@@ -70,6 +70,19 @@ Future<String?> writeUbuntuTouchDashMpd({
     );
     return null;
   }
+  // Some googlevideo nodes serve the first minute and answer 403 for a later
+  // range. The system player then resets and buffers forever. Keep a host
+  // that can read the last segment. The caller refreshes the extract once
+  // when every host refuses.
+  final videoUrl = await _urlThatCanSeek(video.url!, videoTrack);
+  final audioUrl = await _urlThatCanSeek(audio.url!, audioSidx);
+  if (videoUrl == null || audioUrl == null) {
+    print(
+      'gastube: dash seek probe failed video=${videoUrl != null} '
+      'audio=${audioUrl != null}',
+    );
+    return null;
+  }
   final durationMs = video.approxDurationMs ?? audio.approxDurationMs ?? 0;
   final seconds = durationMs > 0 ? durationMs / 1000.0 : videoTrack.durationSeconds;
   final xml = '''
@@ -78,12 +91,12 @@ Future<String?> writeUbuntuTouchDashMpd({
   <Period>
     <AdaptationSet mimeType="${videoTrack.mimeType}" contentType="video">
       <Representation id="v" bandwidth="${video.bitrate ?? 1}" width="${video.width ?? 0}" height="${video.height ?? 0}" codecs="${_xml(video.codec ?? 'avc1')}">
-        ${_segmentList(video.url!, video.initStart!, video.initEnd!, videoTrack)}
+        ${_segmentList(videoUrl, video.initStart!, video.initEnd!, videoTrack)}
       </Representation>
     </AdaptationSet>
     <AdaptationSet mimeType="audio/mp4" contentType="audio">
       <Representation id="a" bandwidth="${audio.bitrate ?? audio.averageBitrate ?? 1}" codecs="${_xml(audio.codec ?? 'mp4a.40.2')}" audioSamplingRate="${audio.sampleRate ?? 44100}">
-        ${_segmentList(audio.url!, audio.initStart!, audio.initEnd!, audioSidx)}
+        ${_segmentList(audioUrl, audio.initStart!, audio.initEnd!, audioSidx)}
       </Representation>
     </AdaptationSet>
   </Period>
@@ -135,6 +148,71 @@ String _xml(String value) {
       .replaceAll('<', '&lt;')
       .replaceAll('>', '&gt;')
       .replaceAll('"', '&quot;');
+}
+
+/// Hosts advertised on this googlevideo URL. The first is the one in the
+/// address. The rest come from `mn` and use the same `rrN---` prefix.
+List<String> _seekHosts(Uri uri) {
+  final hosts = <String>[uri.host];
+  final mn = uri.queryParameters['mn'];
+  if (mn == null || mn.isEmpty) return hosts;
+  final prefix =
+      uri.host.contains('---') ? '${uri.host.split('---').first}---' : '';
+  for (final part in mn.split(',')) {
+    final node = part.trim();
+    if (node.isEmpty) continue;
+    final host = '$prefix$node.googlevideo.com';
+    if (!hosts.contains(host)) hosts.add(host);
+  }
+  return hosts;
+}
+
+/// A URL whose last segment answers 206. Null when every host returns 403.
+Future<String?> _urlThatCanSeek(String url, _Sidx track) async {
+  if (track.segments.isEmpty) return null;
+  final last = track.segments.last;
+  final end = last.start + 15 <= last.end ? last.start + 15 : last.end;
+  final original = Uri.parse(url);
+  for (final host in _seekHosts(original)) {
+    final candidate = original.replace(host: host).toString();
+    final status = await _probeStatus(candidate, last.start, end);
+    if (status != 206) {
+      print('gastube: dash seek probe status=$status');
+      continue;
+    }
+    if (host != original.host) {
+      print('gastube: dash seek host=${host.split('.').first}');
+    }
+    return candidate;
+  }
+  return null;
+}
+
+Future<int?> _probeStatus(String url, int start, int end) async {
+  if (end < start) return null;
+  final client = HttpClient();
+  try {
+    final request = await client.getUrl(Uri.parse(url));
+    request.headers.set(HttpHeaders.rangeHeader, 'bytes=$start-$end');
+    final response =
+        await request.close().timeout(const Duration(seconds: 12));
+    final status = response.statusCode;
+    final wanted = end - start + 1;
+    var got = 0;
+    await for (final chunk in response) {
+      got += chunk.length;
+      if (got > wanted + 64) {
+        return null;
+      }
+    }
+    if (status == 206 && got > 0) return 206;
+    return status;
+  } catch (error) {
+    print('gastube: dash seek probe failed type=${error.runtimeType}');
+    return null;
+  } finally {
+    client.close(force: true);
+  }
 }
 
 Future<Uint8List?> _fetchRange(String url, int start, int end) async {

@@ -93,6 +93,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
   Duration? _indicatorStart;
   bool _isChangingQuality = false;
   bool _streamRefreshUsed = false;
+  bool _dashSeekRetried = false;
   late BoxFit _currentFitMode;
 
   // SponsorBlock
@@ -228,6 +229,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
       _pendingPreviewFrame = null;
       _isInitialized = false;
       _isRestoringFromPip = false;
+      _dashSeekRetried = false;
 
       // Stop both local and global player for the old video. This is awaited
       // inside the async task below so the next open cannot race the previous
@@ -777,6 +779,25 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
     }());
   }
 
+  /// Ask NewPipe for a fresh googlevideo address when the one we have refuses
+  /// a later byte range. One try. The next handoff uses the new list.
+  Future<bool> _refreshDashStreams() async {
+    print('gastube: dash seek refresh id=${widget.videoId}');
+    try {
+      await NewPipeChannel.forgetStreamInfo(widget.videoId);
+      final fresh = await NewPipeChannel.getStreamInfoFast(widget.videoId);
+      if (!mounted) return false;
+      _availableQualities = _ubuntuTouchQualities(fresh);
+      _availableAudioTracks = NewPipeStreamHelper.getAvailableAudioTracks(
+        fresh.audioStreams ?? [],
+      );
+      return true;
+    } catch (error) {
+      print('gastube: dash seek refresh failed error=$error');
+      return false;
+    }
+  }
+
   /// The last 0:00 stop was a googlevideo URL answering 403. Changing quality
   /// reused that same extract. Drop it and open the video once more.
   Future<void> _refreshRejectedStream() async {
@@ -829,7 +850,17 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
           widget.watchInfo.isLive != true &&
           dashQuality != null &&
           _dashMenuEntry(dashQuality)) {
-        final handed = await _openDashInSystemPlayer(config);
+        var handed = await _openDashInSystemPlayer(config);
+        if (!handed && mounted && !_dashSeekRetried) {
+          _dashSeekRetried = true;
+          final refreshed = await _refreshDashStreams();
+          if (refreshed && mounted) {
+            final again = _resolveForThisBuild(config.qualityLabel);
+            _currentConfig = again;
+            _currentQualityLabel = again.qualityLabel;
+            handed = await _openDashInSystemPlayer(again);
+          }
+        }
         if (handed || !mounted) return;
         final muxed = _muxedHttpUrl();
         if (muxed != null) {
