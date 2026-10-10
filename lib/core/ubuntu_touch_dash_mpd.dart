@@ -5,15 +5,23 @@ import 'package:fluxtube/core/storage_paths.dart';
 import 'package:fluxtube/domain/watch/models/newpipe/newpipe_stream.dart';
 import 'package:path/path.dart' as p;
 
-/// A video-only H.264 mp4 whose DASH index the system player can use.
+/// A video-only stream whose DASH index the system player can use.
+///
+/// H.264 is an mp4 `sidx`. VP9 is a WebM `Cues` list. Both are expanded
+/// into one SegmentList and paired with the m4a track.
 bool ubuntuTouchDashVideo(NewPipeVideoStream? stream) {
   if (stream == null || !stream.hasDashInfo) return false;
   final url = stream.url;
   if (url == null || url.isEmpty) return false;
   final mime = stream.mimeType ?? '';
-  if (!mime.startsWith('video/mp4')) return false;
   final codec = (stream.codec ?? '').toLowerCase();
-  return codec.isEmpty || codec.startsWith('avc');
+  if (mime.startsWith('video/mp4')) {
+    return codec.isEmpty || codec.startsWith('avc');
+  }
+  if (mime.startsWith('video/webm')) {
+    return codec.startsWith('vp9') || codec.contains('vp09');
+  }
+  return false;
 }
 
 /// An m4a track with the same kind of index.
@@ -51,28 +59,26 @@ Future<String?> writeUbuntuTouchDashMpd({
     audio.indexStart!,
     audio.indexEnd!,
   );
-  final videoSidx = videoIndex == null
-      ? null
-      : _parseSidx(videoIndex, video.indexEnd!);
+  final videoTrack = await _videoTrack(video, videoIndex);
   final audioSidx = audioIndex == null
       ? null
       : _parseSidx(audioIndex, audio.indexEnd!);
-  if (videoSidx == null || audioSidx == null) {
+  if (videoTrack == null || audioSidx == null) {
     print(
-      'gastube: dash index missing video=${videoSidx != null} '
+      'gastube: dash index missing video=${videoTrack != null} '
       'audio=${audioSidx != null}',
     );
     return null;
   }
   final durationMs = video.approxDurationMs ?? audio.approxDurationMs ?? 0;
-  final seconds = durationMs > 0 ? durationMs / 1000.0 : videoSidx.durationSeconds;
+  final seconds = durationMs > 0 ? durationMs / 1000.0 : videoTrack.durationSeconds;
   final xml = '''
 <?xml version="1.0" encoding="UTF-8"?>
 <MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT${seconds.toStringAsFixed(3)}S" minBufferTime="PT2S" profiles="urn:mpeg:dash:profile:isoff-on-demand:2011">
   <Period>
-    <AdaptationSet mimeType="video/mp4" contentType="video">
+    <AdaptationSet mimeType="${videoTrack.mimeType}" contentType="video">
       <Representation id="v" bandwidth="${video.bitrate ?? 1}" width="${video.width ?? 0}" height="${video.height ?? 0}" codecs="${_xml(video.codec ?? 'avc1')}">
-        ${_segmentList(video.url!, video.initStart!, video.initEnd!, videoSidx)}
+        ${_segmentList(video.url!, video.initStart!, video.initEnd!, videoTrack)}
       </Representation>
     </AdaptationSet>
     <AdaptationSet mimeType="audio/mp4" contentType="audio">
@@ -93,7 +99,8 @@ Future<String?> writeUbuntuTouchDashMpd({
   await tmp.rename(file.path);
   print(
     'gastube: dash mpd height=${video.height} fps=${video.fps} '
-    'videoSegs=${videoSidx.segments.length} audioSegs=${audioSidx.segments.length}',
+    'codec=${video.codec} videoSegs=${videoTrack.segments.length} '
+    'audioSegs=${audioSidx.segments.length}',
   );
   return file.path;
 }
@@ -172,9 +179,10 @@ class _Seg {
 }
 
 class _Sidx {
-  const _Sidx(this.timescale, this.segments);
+  const _Sidx(this.timescale, this.segments, {this.mimeType = 'video/mp4'});
   final int timescale;
   final List<_Seg> segments;
+  final String mimeType;
 
   double get durationSeconds {
     var ticks = 0;
@@ -183,6 +191,201 @@ class _Sidx {
     }
     return timescale == 0 ? 0 : ticks / timescale;
   }
+}
+
+Future<_Sidx?> _videoTrack(NewPipeVideoStream video, Uint8List? index) async {
+  if (index == null) return null;
+  final sidx = _parseSidx(index, video.indexEnd!);
+  if (sidx != null) return sidx;
+  final init = await _fetchRange(video.url!, video.initStart!, video.initEnd!);
+  if (init == null) return null;
+  return _parseWebmCues(
+    init: init,
+    index: index,
+    indexEnd: video.indexEnd!,
+    contentLength: video.contentLength,
+    durationMs: video.approxDurationMs,
+  );
+}
+
+_Sidx? _parseWebmCues({
+  required Uint8List init,
+  required Uint8List index,
+  required int indexEnd,
+  required int? contentLength,
+  required int? durationMs,
+}) {
+  if (contentLength == null || contentLength <= 1) return null;
+  if (durationMs == null || durationMs <= 0) return null;
+  final payload = _segmentPayloadStart(init);
+  if (payload == null) return null;
+  final scaleNs = _timecodeScale(init, payload);
+  if (scaleNs <= 0 || 1000000000 % scaleNs != 0) return null;
+  final timescale = 1000000000 ~/ scaleNs;
+  final points = _cuePoints(index);
+  if (points == null ||
+      points.length < 2 ||
+      points.length > 10000 ||
+      points.first.time != 0) {
+    return null;
+  }
+  final totalTicks = durationMs * timescale ~/ 1000;
+  final segments = <_Seg>[];
+  for (var i = 0; i < points.length; i++) {
+    final start = payload + points[i].position;
+    final end = i + 1 < points.length
+        ? payload + points[i + 1].position - 1
+        : contentLength - 1;
+    final duration = i + 1 < points.length
+        ? points[i + 1].time - points[i].time
+        : totalTicks - points[i].time;
+    if (start <= indexEnd || end < start || duration <= 0) return null;
+    segments.add(_Seg(start, end, duration));
+  }
+  return _Sidx(timescale, segments, mimeType: 'video/webm');
+}
+
+int? _segmentPayloadStart(Uint8List data) {
+  var i = 0;
+  while (i + 2 <= data.length) {
+    final id = _readVint(data, i, keepMarker: true);
+    if (id == null) return null;
+    final size = _readVint(data, id.next, keepMarker: false);
+    if (size == null) return null;
+    if (id.value == 0x18538067) return size.next;
+    if (size.unknown || size.next + size.value > data.length) return null;
+    i = size.next + size.value;
+  }
+  return null;
+}
+
+int _timecodeScale(Uint8List data, int payload) {
+  var i = payload;
+  while (i + 2 <= data.length) {
+    final id = _readVint(data, i, keepMarker: true);
+    if (id == null) break;
+    final size = _readVint(data, id.next, keepMarker: false);
+    if (size == null ||
+        size.unknown ||
+        size.next + size.value > data.length) {
+      break;
+    }
+    if (id.value == 0x1549A966) {
+      return _uintElement(data, size.next, size.next + size.value, 0x2AD7B1) ??
+          1000000;
+    }
+    i = size.next + size.value;
+  }
+  return 1000000;
+}
+
+List<_Cue>? _cuePoints(Uint8List data) {
+  if (data.length < 4) return null;
+  final id = _readVint(data, 0, keepMarker: true);
+  if (id == null || id.value != 0x1C53BB6B) return null;
+  final size = _readVint(data, id.next, keepMarker: false);
+  if (size == null || size.unknown || size.next + size.value > data.length) {
+    return null;
+  }
+  final end = size.next + size.value;
+  final points = <_Cue>[];
+  var i = size.next;
+  while (i + 2 <= end) {
+    final pointId = _readVint(data, i, keepMarker: true);
+    if (pointId == null) return null;
+    final pointSize = _readVint(data, pointId.next, keepMarker: false);
+    if (pointSize == null ||
+        pointSize.unknown ||
+        pointSize.next + pointSize.value > end) {
+      return null;
+    }
+    if (pointId.value == 0xBB) {
+      final cue = _oneCue(data, pointSize.next, pointSize.next + pointSize.value);
+      if (cue == null) return null;
+      points.add(cue);
+    }
+    i = pointSize.next + pointSize.value;
+  }
+  return points;
+}
+
+_Cue? _oneCue(Uint8List data, int start, int end) {
+  int? time;
+  int? position;
+  var i = start;
+  while (i + 2 <= end) {
+    final id = _readVint(data, i, keepMarker: true);
+    if (id == null) return null;
+    final size = _readVint(data, id.next, keepMarker: false);
+    if (size == null || size.unknown || size.next + size.value > end) {
+      return null;
+    }
+    if (id.value == 0xB3) {
+      time = _uintBytes(data, size.next, size.value);
+    } else if (id.value == 0xB7) {
+      position = _uintElement(data, size.next, size.next + size.value, 0xF1);
+    }
+    i = size.next + size.value;
+  }
+  if (time == null || position == null) return null;
+  return _Cue(time, position);
+}
+
+int? _uintElement(Uint8List data, int start, int end, int want) {
+  var i = start;
+  while (i + 2 <= end) {
+    final id = _readVint(data, i, keepMarker: true);
+    if (id == null) return null;
+    final size = _readVint(data, id.next, keepMarker: false);
+    if (size == null || size.unknown || size.next + size.value > end) {
+      return null;
+    }
+    if (id.value == want) return _uintBytes(data, size.next, size.value);
+    i = size.next + size.value;
+  }
+  return null;
+}
+
+int? _uintBytes(Uint8List data, int offset, int length) {
+  if (length <= 0 || length > 8 || offset + length > data.length) return null;
+  var value = 0;
+  for (var i = 0; i < length; i++) {
+    value = (value << 8) | data[offset + i];
+  }
+  return value;
+}
+
+class _Vint {
+  const _Vint(this.value, this.next, this.unknown);
+  final int value;
+  final int next;
+  final bool unknown;
+}
+
+_Vint? _readVint(Uint8List data, int offset, {required bool keepMarker}) {
+  if (offset < 0 || offset >= data.length) return null;
+  final first = data[offset];
+  if (first == 0) return null;
+  var mask = 0x80;
+  var length = 1;
+  while ((first & mask) == 0) {
+    mask >>= 1;
+    length += 1;
+    if (length > 8) return null;
+  }
+  if (offset + length > data.length) return null;
+  var value = keepMarker ? first : (first & (mask - 1));
+  for (var i = 1; i < length; i++) {
+    value = (value << 8) | data[offset + i];
+  }
+  final allOnes = (1 << (7 * length)) - 1;
+  return _Vint(value, offset + length, !keepMarker && value == allOnes);
+}
+
+class _Cue {
+  const _Cue(this.time, this.position);
+  final int time;
+  final int position;
 }
 
 _Sidx? _parseSidx(Uint8List data, int indexEnd) {

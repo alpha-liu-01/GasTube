@@ -339,9 +339,10 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
       );
     }
     final qualities = _availableQualities ?? _loadQualities();
-    // A settings value such as "720p" is not a menu label. Prefer an H.264
-    // video-only stream that can go out as one MPD with its m4a. Muxed is the
-    // fallback when that index is missing. An exact menu label still wins.
+    // A settings value such as "720p" is not a menu label. Prefer a
+    // video-only H.264 or VP9 stream that can go out as one MPD with its
+    // m4a. The codec setting picks which of those. Muxed is the fallback
+    // when that index is missing. An exact menu label still wins.
     final normalized = preferredQuality.toLowerCase().trim();
     final exact = qualities.any(
       (quality) => quality.label.toLowerCase().trim() == normalized,
@@ -942,8 +943,8 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     return original.first;
   }
 
-  /// Video-only H.264 plus its m4a, as one local MPD. A failure leaves the
-  /// muxed address as the handoff.
+  /// Video-only H.264 or VP9 plus its m4a, as one local MPD. A failure
+  /// leaves the muxed address as the handoff.
   Future<bool> _openDashInSystemPlayer(PlaybackConfiguration config) async {
     final video = _qualityForLabel(config.qualityLabel)?.videoStream;
     final audio = _handoffAudio();
@@ -978,7 +979,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     final opened = await openInSystemPlayer(path: path, audioOnly: false);
     print(
       'gastube: dash handoff ok=${opened.ok} height=${video.height} '
-      'itag=${video.itag}',
+      'itag=${video.itag} codec=${video.codec}',
     );
     if (opened.ok && mounted) {
       setState(() => _systemPlayerUrl = path);
@@ -1178,8 +1179,9 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
 
     final qualities = _availableQualities!;
     // Settings such as "720p" are not a menu label. On Ubuntu Touch that
-    // search prefers an H.264 video-only stream with a DASH index. Muxed is
-    // what remains when the video has no such stream.
+    // search prefers a video-only H.264 or VP9 stream with a DASH index.
+    // The codec setting picks which. Muxed is what remains when the video
+    // has no such stream.
     final List<StreamQualityInfo> pool;
     if (!UbuntuTouch.enabled) {
       pool = qualities;
