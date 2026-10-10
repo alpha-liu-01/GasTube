@@ -14,11 +14,17 @@ class SystemPlayerPreview extends StatelessWidget {
     required this.videoId,
     this.thumbnailUrl,
     this.onPlay,
+    this.qualityLabel,
+    this.onQuality,
   });
 
   final String videoId;
   final String? thumbnailUrl;
   final VoidCallback? onPlay;
+
+  /// Label for this video only. The mini window leaves [onQuality] null.
+  final String? qualityLabel;
+  final VoidCallback? onQuality;
 
   @override
   Widget build(BuildContext context) {
@@ -89,6 +95,42 @@ class SystemPlayerPreview extends StatelessWidget {
                         color: Colors.white,
                         icon: const Icon(Icons.play_circle_fill),
                         onPressed: onPlay,
+                      ),
+                    ),
+                  if (onQuality != null &&
+                      qualityLabel != null &&
+                      qualityLabel!.isNotEmpty)
+                    Align(
+                      alignment: Alignment.bottomRight,
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: constraints.maxWidth * 0.55,
+                          ),
+                          child: Material(
+                            color: const Color(0xCC000000),
+                            borderRadius: BorderRadius.circular(4),
+                            child: InkWell(
+                              onTap: onQuality,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                child: Text(
+                                  qualityLabel!,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                 ],

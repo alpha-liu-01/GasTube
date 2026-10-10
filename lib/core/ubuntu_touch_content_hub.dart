@@ -70,14 +70,27 @@ Future<Duration?> peekSystemPlayerPosition(String url) async {
 /// When the seek helper is running, the player file is set to 0 so its
 /// Continue dialog does not call play() from the start. The helper seeks the
 /// new media-hub session after this process has been stopped.
-Future<Duration?> systemPlayerStoredPosition(String url) async {
+///
+/// [carry] is the position of the session just left. A quality change passes
+/// it so the new address does not resume its own older bookmark.
+Future<Duration?> systemPlayerStoredPosition(
+  String url, {
+  Duration? carry,
+}) async {
   final wanted = _playerSettingsKey(url);
+  final carried = carry?.inMilliseconds;
   final fromFile = await _storedMsForKey(wanted);
   final remembered = await _rememberedMs(wanted);
-  var ms = fromFile != null && fromFile >= _resumeMinMs ? fromFile : null;
-  if (ms == null && remembered != null && remembered >= _resumeMinMs) {
-    ms = remembered;
-    print('gastube: system player resume restore ms=$ms');
+  int? ms;
+  if (carried != null && carried >= _resumeMinMs) {
+    ms = carried;
+    print('gastube: system player resume carry ms=$ms');
+  } else {
+    ms = fromFile != null && fromFile >= _resumeMinMs ? fromFile : null;
+    if (ms == null && remembered != null && remembered >= _resumeMinMs) {
+      ms = remembered;
+      print('gastube: system player resume restore ms=$ms');
+    }
   }
   if (ms == null) {
     if (fromFile != null && fromFile > 0 && fromFile < _resumeMinMs) {

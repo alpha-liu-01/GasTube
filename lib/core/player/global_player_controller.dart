@@ -112,6 +112,7 @@ class GlobalPlayerController extends ChangeNotifier {
   String? _systemHandoffThumbnail;
   Uint8List? _systemHandoffFrame;
   Duration _systemHandoffPosition = Duration.zero;
+  String? _systemHandoffQuality;
 
   // Audio track and subtitle selection (persists across widget rebuilds)
   String? _currentAudioTrackId;
@@ -283,6 +284,22 @@ class GlobalPlayerController extends ChangeNotifier {
 
   String? get systemPlayerHandoffUrl => _systemHandoffUrl;
 
+  /// Menu label chosen on this video's placeholder. Null until a handoff
+  /// has resolved one. A later video does not inherit it.
+  String? systemPlayerQualityLabel(String videoId) {
+    if (!systemPlayerHandoffFor(videoId)) return null;
+    final label = _systemHandoffQuality;
+    if (label == null || label.isEmpty) return null;
+    return label;
+  }
+
+  void noteSystemPlayerQuality(String label) {
+    if (_systemHandoffVideoId == null || label.isEmpty) return;
+    if (_systemHandoffQuality == label) return;
+    _systemHandoffQuality = label;
+    _safeNotifyListeners();
+  }
+
   /// Remember that [videoId] is showing in the system player.
   ///
   /// [frame] is a picture this process already drew. Null keeps the previous
@@ -307,6 +324,7 @@ class GlobalPlayerController extends ChangeNotifier {
     } else if (!sameVideo) {
       _systemHandoffFrame = null;
     }
+    if (!sameVideo) _systemHandoffQuality = null;
     _systemHandoffPosition = position;
     _safeNotifyListeners();
   }
@@ -325,6 +343,7 @@ class GlobalPlayerController extends ChangeNotifier {
     _systemHandoffUrl = null;
     _systemHandoffThumbnail = null;
     _systemHandoffFrame = null;
+    _systemHandoffQuality = null;
     _systemHandoffPosition = Duration.zero;
     _safeNotifyListeners();
   }
@@ -800,6 +819,7 @@ class GlobalPlayerController extends ChangeNotifier {
     _systemHandoffUrl = null;
     _systemHandoffThumbnail = null;
     _systemHandoffFrame = null;
+    _systemHandoffQuality = null;
     _systemHandoffPosition = Duration.zero;
     unawaited(MediaHubPlayer.instance.stop());
     _isPipMode = false;
@@ -861,6 +881,7 @@ class GlobalPlayerController extends ChangeNotifier {
     _systemHandoffUrl = null;
     _systemHandoffThumbnail = null;
     _systemHandoffFrame = null;
+    _systemHandoffQuality = null;
     _systemHandoffPosition = Duration.zero;
     unawaited(MediaHubPlayer.instance.stop());
     _isPipMode = false;

@@ -356,7 +356,8 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
     _availableQualities = _loadQualities();
     _availableAudioTracks = NewPipeStreamHelper.getAvailableAudioTracks(
         widget.watchInfo.audioStreams ?? []);
-    _currentQualityLabel = widget.defaultQuality;
+    final preferred = _globalPlayer.systemPlayerQualityLabel(widget.videoId) ??
+        widget.defaultQuality;
     if (_availableAudioTracks != null && _availableAudioTracks!.isNotEmpty) {
       final savedTrackId = _globalPlayer.currentAudioTrackId;
       if (savedTrackId != null &&
@@ -371,7 +372,8 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
         _globalPlayer.setCurrentAudioTrackId(_currentAudioTrackId);
       }
     }
-    _currentConfig = _resolveForThisBuild(widget.defaultQuality);
+    _currentConfig = _resolveForThisBuild(preferred);
+    _currentQualityLabel = _currentConfig?.qualityLabel ?? preferred;
     _systemPlayerUrl = handoffUrl;
     _isInitialized = true;
     _isRestoringFromPip = true;
@@ -434,6 +436,11 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
       frame: frame,
       position: position,
     );
+    final quality = _currentConfig?.qualityLabel ?? _currentQualityLabel;
+    if (quality != null && quality.isNotEmpty && quality != 'Unknown') {
+      _currentQualityLabel = quality;
+      _globalPlayer.noteSystemPlayerQuality(quality);
+    }
     print(
       'gastube: system player preview frame=${frame == null ? 0 : 1} '
       'positionMs=${position.inMilliseconds}',
@@ -552,16 +559,22 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
       ));
     }
 
-    // Muxed streams share labels with video-only ones ("360p H.264").
-    // Add them first so the duplicate video-only entry is dropped. A higher
-    // video-only entry stays, and its label does not say "no audio": the
-    // handoff writes the m4a into the same MPD. `requiresMerging` is what
-    // keeps StreamQualityInfo.displayLabel from appending that suffix.
-    for (final stream in watch.videoStreams ?? const <NewPipeVideoStream>[]) {
+    // A DASH video-only stream and the muxed stream share labels such as
+    // "360p H.264". Keep the video-only one. Every quality then rewrites the
+    // same local MPD, so they resume from one position. The muxed address is
+    // only the label that has no DASH index. `requiresMerging` keeps the menu
+    // from saying "no audio": the handoff writes the m4a into that MPD.
+    final videoOnly =
+        watch.videoOnlyStreams ?? const <NewPipeVideoStream>[];
+    final muxed = watch.videoStreams ?? const <NewPipeVideoStream>[];
+    for (final stream in videoOnly) {
+      if (ubuntuTouchDashVideo(stream)) add(stream, merging: true);
+    }
+    for (final stream in muxed) {
       add(stream, merging: false);
     }
-    for (final stream in watch.videoOnlyStreams ?? const <NewPipeVideoStream>[]) {
-      add(stream, merging: true);
+    for (final stream in videoOnly) {
+      if (!ubuntuTouchDashVideo(stream)) add(stream, merging: true);
     }
     qualities.sort((a, b) {
       final byQuality = a.compareTo(b);
@@ -678,6 +691,9 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
         _currentQualityLabel = 'Auto';
         // Clear video stream qualities - will be populated by tracks listener
         _availableQualities = null;
+      } else if (UbuntuTouch.enabled &&
+          _currentConfig!.qualityLabel != 'Unknown') {
+        _currentQualityLabel = _currentConfig!.qualityLabel;
       }
 
       debugPrint('=== MediaKit Playback Debug ===');
@@ -1110,9 +1126,29 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
     return original.first;
   }
 
+  /// Position of the session on screen now. A quality change seeks here
+  /// instead of the bookmark stored for the address about to be opened.
+  Future<Duration?> _carriedSystemPlayerPosition() async {
+    final url = _systemPlayerUrl;
+    if (url != null) {
+      final peeked = await peekSystemPlayerPosition(url);
+      if (peeked != null) {
+        _globalPlayer.updateSystemPlayerHandoffPosition(peeked);
+        return peeked;
+      }
+    }
+    if (!_globalPlayer.systemPlayerHandoffFor(widget.videoId)) return null;
+    final known = _globalPlayer.systemPlayerPosition;
+    if (known < const Duration(seconds: 5)) return null;
+    return known;
+  }
+
   /// Video-only H.264 or VP9 plus its m4a, as one local MPD. A failure
   /// leaves the muxed address as the handoff.
-  Future<bool> _openDashInSystemPlayer(PlaybackConfiguration config) async {
+  Future<bool> _openDashInSystemPlayer(
+    PlaybackConfiguration config, {
+    Duration? carry,
+  }) async {
     final video = _qualityForLabel(config.qualityLabel)?.videoStream;
     final audio = _handoffAudio();
     if (!ubuntuTouchDashVideo(video) || !ubuntuTouchDashAudio(audio)) {
@@ -1144,7 +1180,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
       print('gastube: system player pause error=$error');
     }
     await MediaHubPlayer.instance.stop();
-    final stored = await systemPlayerStoredPosition(path);
+    final stored = await systemPlayerStoredPosition(path, carry: carry);
     final opened = await openInSystemPlayer(path: path, audioOnly: false);
     print(
       'gastube: dash handoff ok=${opened.ok} height=${video.height} '
@@ -1159,7 +1195,10 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
   }
 
   /// Muxed YouTube addresses play in the system player.
-  Future<bool> _openMuxedInSystemPlayer(String url) async {
+  Future<bool> _openMuxedInSystemPlayer(
+    String url, {
+    Duration? carry,
+  }) async {
     final handoffAt = _systemPlayerHandoffAt;
     if (handoffAt != null &&
         DateTime.now().difference(handoffAt) < const Duration(seconds: 4)) {
@@ -1175,7 +1214,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
       print('gastube: system player pause error=$error');
     }
     await MediaHubPlayer.instance.stop();
-    final stored = await systemPlayerStoredPosition(url);
+    final stored = await systemPlayerStoredPosition(url, carry: carry);
     final opened = await openUrlInSystemPlayer(url);
     print(
       'gastube: system player handoff ok=${opened.ok} '
@@ -1189,11 +1228,109 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
     return opened.ok;
   }
 
+  String _systemPlayerQualityCaption() {
+    final label = _currentQualityLabel;
+    if (label == null || label.isEmpty) return '';
+    return _qualityForLabel(label)?.displayLabel ?? label;
+  }
+
+  void _showSystemPlayerQualities() {
+    final qualities = _availableQualities;
+    if (qualities == null || qualities.isEmpty || !mounted) return;
+    final current = _currentQualityLabel;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF1C1C1C),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.5,
+            ),
+            child: ListView(
+            children: [
+              for (final quality in qualities)
+                ListTile(
+                  title: Text(
+                    quality.displayLabel,
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                  trailing: quality.label == current
+                      ? const Icon(Icons.check, color: Colors.white)
+                      : null,
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    unawaited(_changeSystemPlayerQuality(quality.label));
+                  },
+                ),
+            ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Rewrite this video's manifest and charge again. The choice stays on
+  /// this handoff. It is not written into the global quality setting.
+  Future<void> _changeSystemPlayerQuality(String label) async {
+    if (_systemPlayerOpening || label == _currentQualityLabel) return;
+    final listed = _availableQualities;
+    if (listed == null || !listed.any((quality) => quality.label == label)) {
+      return;
+    }
+    _systemPlayerOpening = true;
+    _systemPlayerHandoffAt = null;
+    _dashSeekRetried = false;
+    final previousLabel = _currentQualityLabel;
+    final previousConfig = _currentConfig;
+    try {
+      final carry = await _carriedSystemPlayerPosition();
+      var config = _resolveForThisBuild(label);
+      if (!config.isValid) return;
+      _currentConfig = config;
+      _currentQualityLabel = config.qualityLabel;
+      if (mounted) setState(() {});
+      print('gastube: system player quality label=${config.qualityLabel}');
+      var handed = false;
+      final dashQuality = _qualityForLabel(config.qualityLabel);
+      if (dashQuality != null && _dashMenuEntry(dashQuality)) {
+        handed = await _openDashInSystemPlayer(config, carry: carry);
+        if (!handed && mounted && !_dashSeekRetried) {
+          _dashSeekRetried = true;
+          final refreshed = await _refreshDashStreams();
+          if (refreshed && mounted) {
+            config = _resolveForThisBuild(label);
+            _currentConfig = config;
+            _currentQualityLabel = config.qualityLabel;
+            handed = await _openDashInSystemPlayer(config, carry: carry);
+          }
+        }
+        if (!handed && mounted) {
+          final muxed = _muxedHttpUrl();
+          if (muxed != null) {
+            handed = await _openMuxedInSystemPlayer(muxed, carry: carry);
+          }
+        }
+      } else if (_isHttpPlaybackUrl(config.videoUrl)) {
+        handed = await _openMuxedInSystemPlayer(config.videoUrl!, carry: carry);
+      }
+      if (!handed) {
+        _currentConfig = previousConfig;
+        _currentQualityLabel = previousLabel;
+        if (mounted) setState(() {});
+      }
+    } finally {
+      _systemPlayerOpening = false;
+    }
+  }
+
   Future<void> _reopenSystemPlayer() async {
     final url = _systemPlayerUrl;
     if (url == null || _systemPlayerOpening) return;
     _systemPlayerOpening = true;
     try {
+      final carry = await _carriedSystemPlayerPosition();
       final config = _currentConfig;
       final dashQuality = config == null
           ? null
@@ -1201,15 +1338,15 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
       if (config != null &&
           dashQuality != null &&
           _dashMenuEntry(dashQuality)) {
-        final handed = await _openDashInSystemPlayer(config);
+        final handed = await _openDashInSystemPlayer(config, carry: carry);
         if (handed) return;
         final muxed = _muxedHttpUrl();
         if (muxed != null) {
-          await _openMuxedInSystemPlayer(muxed);
+          await _openMuxedInSystemPlayer(muxed, carry: carry);
           return;
         }
       }
-      await _openMuxedInSystemPlayer(url);
+      await _openMuxedInSystemPlayer(url, carry: carry);
     } finally {
       _systemPlayerOpening = false;
     }
@@ -1748,6 +1885,11 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
               videoId: widget.videoId,
               thumbnailUrl: widget.watchInfo.thumbnailUrl,
               onPlay: _reopenSystemPlayer,
+              qualityLabel: _systemPlayerQualityCaption(),
+              onQuality: (_availableQualities ?? const <StreamQualityInfo>[])
+                      .isEmpty
+                  ? null
+                  : _showSystemPlayerQualities,
             ),
           );
         }
