@@ -38,7 +38,11 @@ Future<void> seekUbuntuTouchResume(Player player, Duration position) async {
   }
 }
 
-Future<void> selectUbuntuTouchDecoder(Player player, {String? codec}) async {
+Future<void> selectUbuntuTouchDecoder(
+  Player player, {
+  String? codec,
+  bool shorts = false,
+}) async {
   if (!UbuntuTouch.enabled) return;
   final value = (codec ?? '').toLowerCase();
   final h264 = value.startsWith('avc1') ||
@@ -49,7 +53,21 @@ Future<void> selectUbuntuTouchDecoder(Player player, {String? codec}) async {
   final vp9 = value.startsWith('vp9') || value.contains('vp09') || value == 'webm';
   final String vd;
   final String fallback;
-  if (vp9) {
+  if (shorts) {
+    // The first video/avc decoder is h264_hybris. If its configure fails,
+    // the next entry is software H.264. Software VP9 is not on this list.
+    if (vp9) {
+      if (!ubuntuTouchQcomVp9) {
+        print('gastube: shorts decoder skipped reason=software-vp9');
+        return;
+      }
+      vd = 'vp9_hybris';
+      fallback = 'no';
+    } else {
+      vd = 'h264_hybris,h264';
+      fallback = 'no';
+    }
+  } else if (vp9) {
     vd = 'vp9_hybris,-';
     fallback = 'no';
   } else if (h264) {
@@ -64,7 +82,12 @@ Future<void> selectUbuntuTouchDecoder(Player player, {String? codec}) async {
   await (player.platform as dynamic)
       .setProperty('vd-lavc-software-fallback', fallback);
   final readBack = await (player.platform as dynamic).getProperty('vd');
-  print('gastube: vd-set=$vd vd-read=$readBack fallback=$fallback codec=$codec');
+  print(
+    shorts
+        ? 'gastube: shorts decoder codec=$codec vd=$vd '
+            'qcom=$ubuntuTouchQcomVp9 read=$readBack'
+        : 'gastube: vd-set=$vd vd-read=$readBack fallback=$fallback codec=$codec',
+  );
 }
 
 /// Global player controller singleton that persists across navigation

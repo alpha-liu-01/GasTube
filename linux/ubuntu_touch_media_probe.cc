@@ -1,6 +1,8 @@
 #include <dlfcn.h>
 
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <sys/types.h>
 
 // The phone already has libhybris libmedia.so.1. This probe asks which
@@ -46,6 +48,7 @@ extern "C" void gastube_ut_probe_media_codec() {
 
   const char* vp9_mimes[] = {"video/x-vnd.on2.vp9", "video/vp9"};
   bool vp9_named = false;
+  bool vp9_qcom = false;
   for (const char* mime : vp9_mimes) {
     size_t start = 0;
     bool mime_named = false;
@@ -65,13 +68,20 @@ extern "C" void gastube_ut_probe_media_codec() {
                    codec != nullptr ? codec : "(null)");
       mime_named = codec != nullptr && codec[0] != '\0';
       vp9_named = vp9_named || mime_named;
+      if (codec != nullptr && std::strstr(codec, "qcom") != nullptr) {
+        vp9_qcom = true;
+      }
       start = static_cast<size_t>(index) + 1;
     }
     if (vp9_named) {
       break;
     }
   }
-  if (!vp9_named) {
+  if (vp9_qcom) {
+    setenv("GASTUBE_VP9_QCOM", "1", 1);
+    std::fprintf(stderr, "gastube: vp9-hw=qcom\n");
+  } else {
+    setenv("GASTUBE_VP9_QCOM", "0", 1);
     std::fprintf(stderr, "gastube: vp9-hw=absent\n");
   }
 }

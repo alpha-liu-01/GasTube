@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluxtube/application/application.dart';
 import 'package:fluxtube/core/colors.dart';
+import 'package:fluxtube/core/settings.dart';
 import 'package:fluxtube/core/services/ubuntu_touch_display.dart';
 import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:fluxtube/core/ubuntu_touch_content_hub.dart';
@@ -1358,6 +1359,7 @@ class _ShortVideoController extends ChangeNotifier {
   // Quality
   List<StreamQualityInfo>? _availableQualities;
   String? _currentQuality;
+  String? _videoCodec;
 
   // Audio URL for re-setting on loop
   String? _audioUrl;
@@ -1392,6 +1394,39 @@ class _ShortVideoController extends ChangeNotifier {
   int? get likeCount => _likeCount;
   int? get viewCount => _viewCount;
 
+  String _shortsCodecPreference(BuildContext context) {
+    if (UbuntuTouch.enabled) return defaultVideoCodecH264;
+    return context.read<SettingsBloc>().state.defaultVideoCodec;
+  }
+
+  NewPipeWatchResp _shortsStreams(NewPipeWatchResp watch) {
+    if (!UbuntuTouch.enabled) return watch;
+    final chosen = watch.forUbuntuTouchShorts(qcomVp9: ubuntuTouchQcomVp9);
+    final hasVideo = (chosen.videoStreams?.isNotEmpty ?? false) ||
+        (chosen.videoOnlyStreams?.isNotEmpty ?? false);
+    print(
+      'gastube: shorts stream videos=$hasVideo qcom=$ubuntuTouchQcomVp9',
+    );
+    return chosen;
+  }
+
+  String? _codecForUrl(NewPipeWatchResp watch, String? url) {
+    if (url == null || url.isEmpty) return null;
+    for (final stream in [
+      ...?watch.videoOnlyStreams,
+      ...?watch.videoStreams,
+    ]) {
+      if (stream.url == url) return stream.codec ?? stream.format;
+    }
+    return null;
+  }
+
+  Future<void> _selectShortsDecoder() async {
+    final player = _player;
+    if (!UbuntuTouch.enabled || player == null) return;
+    await selectUbuntuTouchDecoder(player, codec: _videoCodec, shorts: true);
+  }
+
   Future<void> initialize(String videoId, BuildContext context) async {
     if (_isInitialized || _isInitializing) return;
     _isInitializing = true;
@@ -1399,10 +1434,11 @@ class _ShortVideoController extends ChangeNotifier {
     _hasError = false;
     notifyListeners();
 
-    final preferredCodec = context.read<SettingsBloc>().state.defaultVideoCodec;
+    final preferredCodec = _shortsCodecPreference(context);
     try {
       // Fetch video info using NewPipe
       _watchResp = await NewPipeChannel.getStreamInfo(videoId);
+      final streams = _shortsStreams(_watchResp!);
 
       // Extract video metadata
       _title = _watchResp!.title;
@@ -1415,18 +1451,19 @@ class _ShortVideoController extends ChangeNotifier {
 
       // Get available qualities
       _availableQualities = NewPipeStreamHelper.getAvailableQualities(
-        _watchResp!,
+        streams,
         preferredCodec: preferredCodec,
       );
 
       // Get playable stream URL using resolver
       final resolver = NewPipePlaybackResolver();
       _currentConfig = resolver.resolve(
-        watchResp: _watchResp!,
+        watchResp: streams,
         preferredQuality: '720p',
         preferHighQuality: false,
         preferredCodec: preferredCodec,
       );
+      _videoCodec = _codecForUrl(streams, _currentConfig!.videoUrl);
 
       _currentQuality = _currentConfig!.qualityLabel;
 
@@ -1497,6 +1534,7 @@ class _ShortVideoController extends ChangeNotifier {
   }
 
   Future<void> _setupMediaSource(PlaybackConfiguration config) async {
+    await _selectShortsDecoder();
     switch (config.sourceType) {
       case MediaSourceType.progressive:
         // Muxed stream (has audio) - open without auto-play, then play if shouldPlay
@@ -1624,9 +1662,10 @@ class _ShortVideoController extends ChangeNotifier {
 
   Future<void> preload(String videoId, BuildContext context) async {
     if (_isInitialized) return;
-    final preferredCodec = context.read<SettingsBloc>().state.defaultVideoCodec;
+    final preferredCodec = _shortsCodecPreference(context);
     try {
       final watchResp = await NewPipeChannel.getStreamInfo(videoId);
+      final streams = _shortsStreams(watchResp);
       _title = watchResp.title;
       _uploaderName = watchResp.uploaderName;
       _uploaderAvatar = watchResp.uploaderAvatarUrl;
@@ -1636,7 +1675,7 @@ class _ShortVideoController extends ChangeNotifier {
       _viewCount = watchResp.viewCount;
       _watchResp = watchResp;
       _availableQualities = NewPipeStreamHelper.getAvailableQualities(
-        watchResp,
+        streams,
         preferredCodec: preferredCodec,
       );
     } catch (e) {
@@ -1659,12 +1698,15 @@ class _ShortVideoController extends ChangeNotifier {
           '[Shorts] Changing quality from $_currentQuality to $newQuality at position: ${currentPosition.inSeconds}s');
 
       // Resolve new configuration
+      final streams = _shortsStreams(_watchResp!);
       final resolver = NewPipePlaybackResolver();
       final newConfig = resolver.resolve(
-        watchResp: _watchResp!,
+        watchResp: streams,
         preferredQuality: newQuality,
         preferHighQuality: true,
+        preferredCodec: defaultVideoCodecH264,
       );
+      _videoCodec = _codecForUrl(streams, newConfig.videoUrl);
 
       if (!newConfig.isValid) {
         _isBuffering = false;
@@ -1700,6 +1742,7 @@ class _ShortVideoController extends ChangeNotifier {
 
   Future<void> _setupMediaSourceWithPosition(PlaybackConfiguration config,
       Duration seekPosition, bool shouldPlay) async {
+    await _selectShortsDecoder();
     switch (config.sourceType) {
       case MediaSourceType.progressive:
         // Muxed stream (has audio)

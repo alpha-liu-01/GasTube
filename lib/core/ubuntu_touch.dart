@@ -1,3 +1,5 @@
+import 'dart:io';
+
 /// Set only by the Ubuntu Touch release build:
 /// `--dart-define=GASTUBE_UBUNTU_TOUCH=true`.
 /// Desktop, Flatpak, deb, and rpm builds leave it false.
@@ -8,6 +10,11 @@ class UbuntuTouch {
   /// `~/.local/share/<this>/`, not under the executable name.
   static const String clickPackage = 'gastube.alphaliu01';
 }
+
+/// True when the startup probe found a VP9 decoder whose name contains
+/// `qcom`. Software VP9 and other vendors stay false.
+bool get ubuntuTouchQcomVp9 =>
+    UbuntuTouch.enabled && Platform.environment['GASTUBE_VP9_QCOM'] == '1';
 
 /// URLs Lomiri put on the command line of this process.
 class UbuntuTouchUrls {
