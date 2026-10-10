@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -23,6 +24,7 @@ import 'package:fluxtube/domain/watch/playback/newpipe_stream_helper.dart';
 import 'package:fluxtube/domain/watch/playback/video_codec.dart';
 import 'package:fluxtube/presentation/watch/queue_playback.dart';
 import 'package:fluxtube/presentation/watch/widgets/player/player_controls_overlay.dart';
+import 'package:fluxtube/presentation/watch/widgets/system_player_preview.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
@@ -69,7 +71,8 @@ class NewPipeMediaKitPlayer extends StatefulWidget {
   State<NewPipeMediaKitPlayer> createState() => _NewPipeMediaKitPlayerState();
 }
 
-class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
+class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
+    with WidgetsBindingObserver {
   // Use global player controller for persistence across navigation
   final GlobalPlayerController _globalPlayer = GlobalPlayerController();
 
@@ -83,6 +86,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
   String? _systemPlayerUrl;
   bool _systemPlayerOpening = false;
   DateTime? _systemPlayerHandoffAt;
+  Uint8List? _pendingPreviewFrame;
   bool _isInitialized = false;
   bool _isInitializing = false; // Guard against concurrent initializations
   bool _isRestoringFromPip = false;
@@ -127,6 +131,11 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     _watchBloc = BlocProvider.of<WatchBloc>(context);
     _resolver = NewPipePlaybackResolver();
     _currentFitMode = _getBoxFit(widget.videoFitMode);
+    WidgetsBinding.instance.addObserver(this);
+    if (UbuntuTouch.enabled &&
+        _globalPlayer.systemPlayerHandoffFor(widget.videoId)) {
+      _applySystemPlayerPlaceholder();
+    }
 
     // Defer initialization to next frame to handle async operations properly
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -145,6 +154,15 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     }
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        UbuntuTouch.enabled &&
+        _systemPlayerUrl != null) {
+      unawaited(_refreshHandoffPosition());
+    }
+  }
+
   /// Async initialization - matches pattern used by other player widgets
   Future<void> _initializeAsync() async {
     // CRITICAL: Prevent concurrent initializations
@@ -157,6 +175,22 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     _isInitializing = true;
 
     try {
+      // A handed-off video keeps its picture on the global player. Coming
+      // back from the mini window must not charge the system player again,
+      // and must not treat the empty mpv picture as an in-app restore.
+      if (UbuntuTouch.enabled &&
+          _globalPlayer.systemPlayerHandoffFor(widget.videoId)) {
+        _applySystemPlayerPlaceholder();
+        if (mounted) setState(() {});
+        await _refreshHandoffPosition();
+        _globalPlayer.exitPipMode();
+        _setupHistoryListener();
+        _setupSponsorBlockListener();
+        _setupTracksListener();
+        _setupPlayingStateListener();
+        print('gastube: system player preview restore');
+        return;
+      }
       // Check if we're returning from PiP for the same video
       // Only restore if the player is actually in a stable playing state for this video
       _isRestoringFromPip = _globalPlayer.isPlayingVideo(widget.videoId);
@@ -189,6 +223,11 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
       debugPrint(
           '[NewPipePlayer] CRITICAL: Video ID changed from ${oldWidget.videoId} to ${widget.videoId}');
       debugPrint('[NewPipePlayer] IMMEDIATELY stopping old video');
+      _systemPlayerUrl = null;
+      _systemPlayerHandoffAt = null;
+      _pendingPreviewFrame = null;
+      _isInitialized = false;
+      _isRestoringFromPip = false;
 
       // Stop both local and global player for the old video. This is awaited
       // inside the async task below so the next open cannot race the previous
@@ -307,6 +346,99 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     _globalPlayer.exitPipMode();
 
     debugPrint('[NewPipePlayer] Restored from PiP successfully (sync)');
+  }
+
+  void _applySystemPlayerPlaceholder() {
+    final handoffUrl = _globalPlayer.systemPlayerHandoffUrl;
+    if (handoffUrl == null || handoffUrl.isEmpty) return;
+    _availableQualities = _loadQualities();
+    _availableAudioTracks = NewPipeStreamHelper.getAvailableAudioTracks(
+        widget.watchInfo.audioStreams ?? []);
+    _currentQualityLabel = widget.defaultQuality;
+    if (_availableAudioTracks != null && _availableAudioTracks!.isNotEmpty) {
+      final savedTrackId = _globalPlayer.currentAudioTrackId;
+      if (savedTrackId != null &&
+          _availableAudioTracks!.any((t) => t.trackId == savedTrackId)) {
+        _currentAudioTrackId = savedTrackId;
+      } else {
+        final originalTrack = _availableAudioTracks!.firstWhere(
+          (t) => t.isOriginal && !t.isDubbed && !t.isDescriptive,
+          orElse: () => _availableAudioTracks!.first,
+        );
+        _currentAudioTrackId = originalTrack.trackId;
+        _globalPlayer.setCurrentAudioTrackId(_currentAudioTrackId);
+      }
+    }
+    _currentConfig = _resolveForThisBuild(widget.defaultQuality);
+    _systemPlayerUrl = handoffUrl;
+    _isInitialized = true;
+    _isRestoringFromPip = true;
+  }
+
+  Future<void> _refreshHandoffPosition() async {
+    final url = _systemPlayerUrl;
+    if (url == null) return;
+    final position = await peekSystemPlayerPosition(url);
+    if (!mounted || _systemPlayerUrl != url) return;
+    if (position != null) {
+      _globalPlayer.updateSystemPlayerHandoffPosition(position);
+      print(
+        'gastube: system player preview positionMs=${position.inMilliseconds}',
+      );
+    }
+    // The system player writes its position when it pauses, which can land
+    // just after this process resumes. Read once more without seeking.
+    await Future.delayed(const Duration(milliseconds: 700));
+    if (!mounted || _systemPlayerUrl != url) return;
+    final again = await peekSystemPlayerPosition(url);
+    if (!mounted || again == null || again == position) return;
+    _globalPlayer.updateSystemPlayerHandoffPosition(again);
+    print(
+      'gastube: system player preview positionMs=${again.inMilliseconds}',
+    );
+  }
+
+  /// A frame mpv has already drawn. The first handoff never opens the
+  /// in-app decoder, so this stays null and the cover is used instead.
+  Future<Uint8List?> _capturedFrame() async {
+    final params = _player.state.videoParams;
+    final width = params.dw ?? params.w ?? 0;
+    final height = params.dh ?? params.h ?? 0;
+    if (width <= 0 || height <= 0) return null;
+    try {
+      final bytes = await _player.screenshot();
+      if (bytes == null || bytes.isEmpty) return null;
+      return bytes;
+    } catch (error) {
+      print('gastube: system player frame failed error=$error');
+      return null;
+    }
+  }
+
+  void _rememberSystemPlayerPreview(String url, Duration? stored) {
+    final frame = _pendingPreviewFrame;
+    _pendingPreviewFrame = null;
+    var position = stored ?? Duration.zero;
+    if (position <= Duration.zero) {
+      final playing = _player.state.position;
+      if (playing > Duration.zero) position = playing;
+    }
+    _globalPlayer.noteSystemPlayerHandoff(
+      videoId: widget.videoId,
+      url: url,
+      thumbnailUrl: widget.watchInfo.thumbnailUrl,
+      frame: frame,
+      position: position,
+    );
+    print(
+      'gastube: system player preview frame=${frame == null ? 0 : 1} '
+      'positionMs=${position.inMilliseconds}',
+    );
+    if (mounted) {
+      setState(() => _systemPlayerUrl = url);
+    } else {
+      _systemPlayerUrl = url;
+    }
   }
 
   List<StreamQualityInfo> _loadQualities() {
@@ -714,6 +846,8 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
       if (mounted && _systemPlayerUrl != null) {
         setState(() => _systemPlayerUrl = null);
       }
+      _globalPlayer.clearSystemPlayerHandoff();
+      _pendingPreviewFrame = null;
       if (UbuntuTouch.enabled) {
         await (_player.platform as dynamic).setProperty('ao', 'pulse');
         await selectUbuntuTouchDecoder(
@@ -958,6 +1092,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
       return true;
     }
     _systemPlayerHandoffAt = DateTime.now();
+    _pendingPreviewFrame = await _capturedFrame();
     final path = await writeUbuntuTouchDashMpd(
       videoId: widget.videoId,
       video: video!,
@@ -965,6 +1100,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     );
     if (path == null) {
       _systemPlayerHandoffAt = null;
+      _pendingPreviewFrame = null;
       print('gastube: dash handoff failed reason=mpd');
       return false;
     }
@@ -975,14 +1111,16 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
       print('gastube: system player pause error=$error');
     }
     await MediaHubPlayer.instance.stop();
-    await systemPlayerStoredPosition(path);
+    final stored = await systemPlayerStoredPosition(path);
     final opened = await openInSystemPlayer(path: path, audioOnly: false);
     print(
       'gastube: dash handoff ok=${opened.ok} height=${video.height} '
       'itag=${video.itag} codec=${video.codec}',
     );
-    if (opened.ok && mounted) {
-      setState(() => _systemPlayerUrl = path);
+    if (opened.ok) {
+      _rememberSystemPlayerPreview(path, stored);
+    } else {
+      _pendingPreviewFrame = null;
     }
     return opened.ok;
   }
@@ -996,6 +1134,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
       return true;
     }
     _systemPlayerHandoffAt = DateTime.now();
+    _pendingPreviewFrame = await _capturedFrame();
     _globalPlayer.forgetBackgroundAudio();
     try {
       await _player.pause();
@@ -1003,14 +1142,16 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
       print('gastube: system player pause error=$error');
     }
     await MediaHubPlayer.instance.stop();
-    await systemPlayerStoredPosition(url);
+    final stored = await systemPlayerStoredPosition(url);
     final opened = await openUrlInSystemPlayer(url);
     print(
       'gastube: system player handoff ok=${opened.ok} '
       'message=${opened.message}',
     );
-    if (opened.ok && mounted) {
-      setState(() => _systemPlayerUrl = url);
+    if (opened.ok) {
+      _rememberSystemPlayerPreview(url, stored);
+    } else {
+      _pendingPreviewFrame = null;
     }
     return opened.ok;
   }
@@ -1519,12 +1660,15 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     MediaHubPlayer.instance.unbindIndicatorReturn(_indicatorReturn);
     _sponsorBlockSubscription?.cancel();
     _historySubscription?.cancel();
     _tracksSubscription?.cancel();
     _playingSubscription?.cancel();
-    _updateVideoHistory();
+    if (_systemPlayerUrl == null) {
+      _updateVideoHistory();
+    }
     // Don't dispose the global player - save state for PiP transition
     // The player will persist and can be restored when returning from PiP
     _globalPlayer.savePlaybackState();
@@ -1551,6 +1695,18 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
                 widget.videoId &&
             (duration.inSeconds > 0 || _player.state.position.inSeconds > 0);
 
+        if (_systemPlayerUrl != null ||
+            _globalPlayer.systemPlayerHandoffFor(widget.videoId)) {
+          return AspectRatio(
+            aspectRatio: _getAspectRatio(),
+            child: SystemPlayerPreview(
+              videoId: widget.videoId,
+              thumbnailUrl: widget.watchInfo.thumbnailUrl,
+              onPlay: _reopenSystemPlayer,
+            ),
+          );
+        }
+
         if (!_isInitialized && !playerIsReady) {
           return AspectRatio(
             aspectRatio: 16 / 9,
@@ -1571,23 +1727,6 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
               color: Colors.black,
               child: const Center(
                 child: CircularProgressIndicator(color: Colors.white),
-              ),
-            ),
-          );
-        }
-
-        if (_systemPlayerUrl != null) {
-          return AspectRatio(
-            aspectRatio: _getAspectRatio(),
-            child: ColoredBox(
-              color: Colors.black,
-              child: Center(
-                child: IconButton(
-                  iconSize: 72,
-                  color: Colors.white,
-                  icon: const Icon(Icons.play_circle_fill),
-                  onPressed: _reopenSystemPlayer,
-                ),
               ),
             ),
           );

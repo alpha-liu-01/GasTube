@@ -42,6 +42,24 @@ Future<({bool ok, String message})> openUrlInSystemPlayer(String url) async {
   }
 }
 
+/// Position stored for [url], without writing a seek or clearing the file.
+///
+/// The player file wins when it is at least five seconds. Otherwise the copy
+/// written before the last handoff is used. Looking at the placeholder must
+/// not ask the helper to seek.
+Future<Duration?> peekSystemPlayerPosition(String url) async {
+  final wanted = _playerSettingsKey(url);
+  final fromFile = await _storedMsForKey(wanted);
+  if (fromFile != null && fromFile >= _resumeMinMs) {
+    return Duration(milliseconds: fromFile);
+  }
+  final remembered = await _rememberedMs(wanted);
+  if (remembered != null && remembered >= _resumeMinMs) {
+    return Duration(milliseconds: remembered);
+  }
+  return null;
+}
+
 /// Milliseconds the system player stored for [url].
 ///
 /// The player keeps the part after the last `/`, and percent-encodes it in

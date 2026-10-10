@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:developer';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -102,6 +103,15 @@ class GlobalPlayerController extends ChangeNotifier {
   /// audio stream wins over the video URL. Empty means there is nothing to hand off.
   String? _backgroundAudioUrl;
   Map<String, String> _backgroundAudioHeaders = const {};
+
+  /// Long video already given to the system player. The watch page that
+  /// started it is gone after a swipe into the mini window, so the picture
+  /// and the "do not charge again" flag live here.
+  String? _systemHandoffVideoId;
+  String? _systemHandoffUrl;
+  String? _systemHandoffThumbnail;
+  Uint8List? _systemHandoffFrame;
+  Duration _systemHandoffPosition = Duration.zero;
 
   // Audio track and subtitle selection (persists across widget rebuilds)
   String? _currentAudioTrackId;
@@ -258,6 +268,65 @@ class GlobalPlayerController extends ChangeNotifier {
   void forgetBackgroundAudio() {
     _backgroundAudioUrl = null;
     _backgroundAudioHeaders = const {};
+  }
+
+  bool systemPlayerHandoffFor(String videoId) {
+    final url = _systemHandoffUrl;
+    return _systemHandoffVideoId == videoId && url != null && url.isNotEmpty;
+  }
+
+  Uint8List? get systemPlayerFrame => _systemHandoffFrame;
+
+  String? get systemPlayerThumbnail => _systemHandoffThumbnail;
+
+  Duration get systemPlayerPosition => _systemHandoffPosition;
+
+  String? get systemPlayerHandoffUrl => _systemHandoffUrl;
+
+  /// Remember that [videoId] is showing in the system player.
+  ///
+  /// [frame] is a picture this process already drew. Null keeps the previous
+  /// frame when [videoId] did not change, and drops it when the video did.
+  void noteSystemPlayerHandoff({
+    required String videoId,
+    required String url,
+    String? thumbnailUrl,
+    Uint8List? frame,
+    Duration position = Duration.zero,
+  }) {
+    final sameVideo = _systemHandoffVideoId == videoId;
+    _systemHandoffVideoId = videoId;
+    _systemHandoffUrl = url;
+    if (thumbnailUrl != null && thumbnailUrl.isNotEmpty) {
+      _systemHandoffThumbnail = thumbnailUrl;
+    } else if (!sameVideo) {
+      _systemHandoffThumbnail = null;
+    }
+    if (frame != null && frame.isNotEmpty) {
+      _systemHandoffFrame = frame;
+    } else if (!sameVideo) {
+      _systemHandoffFrame = null;
+    }
+    _systemHandoffPosition = position;
+    _safeNotifyListeners();
+  }
+
+  void updateSystemPlayerHandoffPosition(Duration position) {
+    if (_systemHandoffVideoId == null || _systemHandoffPosition == position) {
+      return;
+    }
+    _systemHandoffPosition = position;
+    _safeNotifyListeners();
+  }
+
+  void clearSystemPlayerHandoff() {
+    if (_systemHandoffVideoId == null && _systemHandoffUrl == null) return;
+    _systemHandoffVideoId = null;
+    _systemHandoffUrl = null;
+    _systemHandoffThumbnail = null;
+    _systemHandoffFrame = null;
+    _systemHandoffPosition = Duration.zero;
+    _safeNotifyListeners();
   }
   bool get isPipMode => _isPipMode;
   bool get isSystemPipMode => _isSystemPipMode;
@@ -727,6 +796,11 @@ class GlobalPlayerController extends ChangeNotifier {
     _currentVideoId = null;
     _currentVideoUrl = null;
     _backgroundAudioUrl = null;
+    _systemHandoffVideoId = null;
+    _systemHandoffUrl = null;
+    _systemHandoffThumbnail = null;
+    _systemHandoffFrame = null;
+    _systemHandoffPosition = Duration.zero;
     unawaited(MediaHubPlayer.instance.stop());
     _isPipMode = false;
     _lastPosition = Duration.zero;
@@ -783,6 +857,11 @@ class GlobalPlayerController extends ChangeNotifier {
     _currentVideoId = null;
     _currentVideoUrl = null;
     _backgroundAudioUrl = null;
+    _systemHandoffVideoId = null;
+    _systemHandoffUrl = null;
+    _systemHandoffThumbnail = null;
+    _systemHandoffFrame = null;
+    _systemHandoffPosition = Duration.zero;
     unawaited(MediaHubPlayer.instance.stop());
     _isPipMode = false;
     _lastPosition = Duration.zero;
