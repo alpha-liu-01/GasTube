@@ -9,6 +9,7 @@ import 'package:fluxtube/core/player/playback_queue.dart';
 import 'package:fluxtube/core/services/media_hub_player.dart';
 import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:fluxtube/core/ubuntu_touch_content_hub.dart';
+import 'package:fluxtube/core/ubuntu_touch_dash_mpd.dart';
 import 'package:fluxtube/domain/saved/models/local_store.dart';
 import 'package:fluxtube/domain/sponsorblock/models/sponsor_segment.dart';
 import 'package:fluxtube/domain/watch/models/newpipe/newpipe_stream.dart';
@@ -338,16 +339,19 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
       );
     }
     final qualities = _availableQualities ?? _loadQualities();
-    // A settings value such as "720p" is not a menu label. Prefer the muxed
-    // stream so the system player gets picture and sound together. An exact
-    // menu label, including a video-only entry, still selects that entry.
+    // A settings value such as "720p" is not a menu label. Prefer an H.264
+    // video-only stream that can go out as one MPD with its m4a. Muxed is the
+    // fallback when that index is missing. An exact menu label still wins.
     final normalized = preferredQuality.toLowerCase().trim();
     final exact = qualities.any(
       (quality) => quality.label.toLowerCase().trim() == normalized,
     );
+    final dash = qualities.where(_dashMenuEntry).toList();
     final muxed =
         qualities.where((quality) => !quality.requiresMerging).toList();
-    final pool = exact || muxed.isEmpty ? qualities : muxed;
+    final pool = exact
+        ? qualities
+        : (dash.isNotEmpty ? dash : (muxed.isEmpty ? qualities : muxed));
     final match = NewPipeStreamHelper.findBestMatchingQuality(
       pool,
       preferredQuality,
@@ -412,9 +416,10 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     }
 
     // Muxed streams share labels with video-only ones ("360p H.264").
-    // Add them first so the duplicate video-only entry is dropped. Otherwise
-    // the menu's 360p H.264 is video-only, stays in this page, and still has
-    // a separate audio track.
+    // Add them first so the duplicate video-only entry is dropped. A higher
+    // video-only entry stays, and its label does not say "no audio": the
+    // handoff writes the m4a into the same MPD. `requiresMerging` is what
+    // keeps StreamQualityInfo.displayLabel from appending that suffix.
     for (final stream in watch.videoStreams ?? const <NewPipeVideoStream>[]) {
       add(stream, merging: false);
     }
@@ -686,6 +691,19 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     bool fastSwitch = false,
   }) async {
     try {
+      final dashQuality = _qualityForLabel(config.qualityLabel);
+      if (UbuntuTouch.enabled &&
+          widget.watchInfo.isLive != true &&
+          dashQuality != null &&
+          _dashMenuEntry(dashQuality)) {
+        final handed = await _openDashInSystemPlayer(config);
+        if (handed || !mounted) return;
+        final muxed = _muxedHttpUrl();
+        if (muxed != null) {
+          final handedMuxed = await _openMuxedInSystemPlayer(muxed);
+          if (handedMuxed || !mounted) return;
+        }
+      }
       if (UbuntuTouch.enabled &&
           config.sourceType == MediaSourceType.progressive &&
           _isHttpPlaybackUrl(config.videoUrl)) {
@@ -871,8 +889,104 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     return uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
   }
 
-  /// Muxed YouTube addresses play in the system player. Video-only streams
-  /// stay in this page because that player would have no sound.
+  bool _dashMenuEntry(StreamQualityInfo quality) {
+    return quality.requiresMerging &&
+        ubuntuTouchDashVideo(quality.videoStream);
+  }
+
+  StreamQualityInfo? _qualityForLabel(String label) {
+    for (final quality in _availableQualities ?? const <StreamQualityInfo>[]) {
+      if (quality.label == label) return quality;
+    }
+    return null;
+  }
+
+  String? _muxedHttpUrl() {
+    for (final quality in _availableQualities ?? const <StreamQualityInfo>[]) {
+      if (quality.requiresMerging) continue;
+      final url = quality.videoStream?.url;
+      if (_isHttpPlaybackUrl(url)) return url;
+    }
+    return null;
+  }
+
+  NewPipeAudioStream? _handoffAudio() {
+    final tracks = _availableAudioTracks;
+    final trackId = _currentAudioTrackId;
+    if (tracks != null && trackId != null) {
+      for (final track in tracks) {
+        if (track.trackId != trackId) continue;
+        final ready = track.streams.where(ubuntuTouchDashAudio).toList();
+        if (ready.isEmpty) break;
+        ready.sort(
+          (a, b) => (b.averageBitrate ?? b.bitrate ?? 0)
+              .compareTo(a.averageBitrate ?? a.bitrate ?? 0),
+        );
+        return ready.first;
+      }
+    }
+    final original = (widget.watchInfo.audioStreams ?? const <NewPipeAudioStream>[])
+        .where(
+          (stream) =>
+              ubuntuTouchDashAudio(stream) &&
+              stream.isOriginal &&
+              !stream.isDubbed &&
+              !stream.isDescriptive,
+        )
+        .toList();
+    if (original.isEmpty) return null;
+    original.sort(
+      (a, b) => (b.averageBitrate ?? b.bitrate ?? 0)
+          .compareTo(a.averageBitrate ?? a.bitrate ?? 0),
+    );
+    return original.first;
+  }
+
+  /// Video-only H.264 plus its m4a, as one local MPD. A failure leaves the
+  /// muxed address as the handoff.
+  Future<bool> _openDashInSystemPlayer(PlaybackConfiguration config) async {
+    final video = _qualityForLabel(config.qualityLabel)?.videoStream;
+    final audio = _handoffAudio();
+    if (!ubuntuTouchDashVideo(video) || !ubuntuTouchDashAudio(audio)) {
+      return false;
+    }
+    final handoffAt = _systemPlayerHandoffAt;
+    if (handoffAt != null &&
+        DateTime.now().difference(handoffAt) < const Duration(seconds: 4)) {
+      print('gastube: system player handoff skipped reason=recent');
+      return true;
+    }
+    _systemPlayerHandoffAt = DateTime.now();
+    final path = await writeUbuntuTouchDashMpd(
+      videoId: widget.videoId,
+      video: video!,
+      audio: audio!,
+    );
+    if (path == null) {
+      _systemPlayerHandoffAt = null;
+      print('gastube: dash handoff failed reason=mpd');
+      return false;
+    }
+    _globalPlayer.forgetBackgroundAudio();
+    try {
+      await _player.pause();
+    } catch (error) {
+      print('gastube: system player pause error=$error');
+    }
+    await MediaHubPlayer.instance.stop();
+    await systemPlayerStoredPosition(path);
+    final opened = await openInSystemPlayer(path: path, audioOnly: false);
+    print(
+      'gastube: dash handoff ok=${opened.ok} height=${video.height} '
+      'itag=${video.itag}',
+    );
+    if (opened.ok && mounted) {
+      setState(() => _systemPlayerUrl = path);
+    }
+    return opened.ok;
+  }
+
+  /// Muxed YouTube addresses play in the system player.
   Future<bool> _openMuxedInSystemPlayer(String url) async {
     final handoffAt = _systemPlayerHandoffAt;
     if (handoffAt != null &&
@@ -905,6 +1019,21 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     if (url == null || _systemPlayerOpening) return;
     _systemPlayerOpening = true;
     try {
+      final config = _currentConfig;
+      final dashQuality = config == null
+          ? null
+          : _qualityForLabel(config.qualityLabel);
+      if (config != null &&
+          dashQuality != null &&
+          _dashMenuEntry(dashQuality)) {
+        final handed = await _openDashInSystemPlayer(config);
+        if (handed) return;
+        final muxed = _muxedHttpUrl();
+        if (muxed != null) {
+          await _openMuxedInSystemPlayer(muxed);
+          return;
+        }
+      }
       await _openMuxedInSystemPlayer(url);
     } finally {
       _systemPlayerOpening = false;
@@ -1049,13 +1178,21 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
 
     final qualities = _availableQualities!;
     // Settings such as "720p" are not a menu label. On Ubuntu Touch that
-    // search must stay on muxed streams. Matching the whole list picks a
-    // video-only 720p, and the later exact-label check then keeps it.
-    final muxed = UbuntuTouch.enabled
-        ? qualities.where((quality) => !quality.requiresMerging).toList()
-        : qualities;
+    // search prefers an H.264 video-only stream with a DASH index. Muxed is
+    // what remains when the video has no such stream.
+    final List<StreamQualityInfo> pool;
+    if (!UbuntuTouch.enabled) {
+      pool = qualities;
+    } else {
+      final dash = qualities.where(_dashMenuEntry).toList();
+      final muxed =
+          qualities.where((quality) => !quality.requiresMerging).toList();
+      pool = dash.isNotEmpty
+          ? dash
+          : (muxed.isEmpty ? qualities : muxed);
+    }
     return NewPipeStreamHelper.findBestMatchingQuality(
-          muxed.isEmpty ? qualities : muxed,
+          pool,
           targetQuality,
           preferredCodec: widget.defaultVideoCodec,
         )?.label ??
