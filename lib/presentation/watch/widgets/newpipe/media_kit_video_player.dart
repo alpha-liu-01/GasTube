@@ -24,6 +24,7 @@ import 'package:fluxtube/domain/watch/playback/newpipe_stream_helper.dart';
 import 'package:fluxtube/domain/watch/playback/video_codec.dart';
 import 'package:fluxtube/presentation/watch/queue_playback.dart';
 import 'package:fluxtube/presentation/watch/widgets/player/player_controls_overlay.dart';
+import 'package:fluxtube/presentation/watch/widgets/queue_sheet.dart';
 import 'package:fluxtube/presentation/watch/widgets/system_player_preview.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -85,6 +86,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
   String? _currentQualityLabel;
   String? _systemPlayerUrl;
   bool _systemPlayerOpening = false;
+  bool _systemPlayerEnded = false;
   DateTime? _systemPlayerHandoffAt;
   Uint8List? _pendingPreviewFrame;
   bool _isInitialized = false;
@@ -225,6 +227,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
           '[NewPipePlayer] CRITICAL: Video ID changed from ${oldWidget.videoId} to ${widget.videoId}');
       debugPrint('[NewPipePlayer] IMMEDIATELY stopping old video');
       _systemPlayerUrl = null;
+      _systemPlayerEnded = false;
       _systemPlayerHandoffAt = null;
       _pendingPreviewFrame = null;
       _isInitialized = false;
@@ -382,25 +385,38 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
   Future<void> _refreshHandoffPosition() async {
     final url = _systemPlayerUrl;
     if (url == null) return;
-    final position = await peekSystemPlayerPosition(url);
-    if (!mounted || _systemPlayerUrl != url) return;
-    if (position != null) {
-      _globalPlayer.updateSystemPlayerHandoffPosition(position);
-      _updateVideoHistory(position: position);
-      print(
-        'gastube: system player preview positionMs=${position.inMilliseconds}',
-      );
-    }
+    await _readHandoffPosition(url);
     // The system player writes its position when it pauses, which can land
     // just after this process resumes. Read once more without seeking.
     await Future.delayed(const Duration(milliseconds: 700));
     if (!mounted || _systemPlayerUrl != url) return;
-    final again = await peekSystemPlayerPosition(url);
-    if (!mounted || again == null || again == position) return;
-    _globalPlayer.updateSystemPlayerHandoffPosition(again);
-    _updateVideoHistory(position: again);
+    await _readHandoffPosition(url);
+  }
+
+  Future<void> _readHandoffPosition(String url) async {
+    if (await systemPlayerReachedEnd(url)) {
+      if (!mounted || _systemPlayerUrl != url) return;
+      final seconds = widget.watchInfo.duration ?? 0;
+      if (seconds > 0) {
+        final end = Duration(seconds: seconds);
+        _globalPlayer.updateSystemPlayerHandoffPosition(end);
+        _updateVideoHistory(position: end);
+      }
+      if (!_systemPlayerEnded && mounted) {
+        setState(() => _systemPlayerEnded = true);
+        print('gastube: system player ended id=${widget.videoId}');
+      }
+      return;
+    }
+    if (_systemPlayerEnded && mounted && _systemPlayerUrl == url) {
+      setState(() => _systemPlayerEnded = false);
+    }
+    final position = await peekSystemPlayerPosition(url);
+    if (!mounted || _systemPlayerUrl != url || position == null) return;
+    _globalPlayer.updateSystemPlayerHandoffPosition(position);
+    _updateVideoHistory(position: position);
     print(
-      'gastube: system player preview positionMs=${again.inMilliseconds}',
+      'gastube: system player preview positionMs=${position.inMilliseconds}',
     );
   }
 
@@ -1325,12 +1341,20 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
     }
   }
 
-  Future<void> _reopenSystemPlayer() async {
+  Future<void> _reopenSystemPlayer({bool fromStart = false}) async {
     final url = _systemPlayerUrl;
     if (url == null || _systemPlayerOpening) return;
     _systemPlayerOpening = true;
+    if (fromStart) _systemPlayerHandoffAt = null;
     try {
-      final carry = await _carriedSystemPlayerPosition();
+      if (fromStart) {
+        await forgetSystemPlayerResume(url);
+        _globalPlayer.updateSystemPlayerHandoffPosition(Duration.zero);
+        if (mounted) setState(() => _systemPlayerEnded = false);
+        print('gastube: system player replay id=${widget.videoId}');
+      }
+      final carry =
+          fromStart ? null : await _carriedSystemPlayerPosition();
       final config = _currentConfig;
       final dashQuality = config == null
           ? null
@@ -1879,18 +1903,27 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
 
         if (_systemPlayerUrl != null ||
             _globalPlayer.systemPlayerHandoffFor(widget.videoId)) {
-          return AspectRatio(
-            aspectRatio: _getAspectRatio(),
-            child: SystemPlayerPreview(
-              videoId: widget.videoId,
-              thumbnailUrl: widget.watchInfo.thumbnailUrl,
-              onPlay: _reopenSystemPlayer,
-              qualityLabel: _systemPlayerQualityCaption(),
-              onQuality: (_availableQualities ?? const <StreamQualityInfo>[])
-                      .isEmpty
-                  ? null
-                  : _showSystemPlayerQualities,
-            ),
+          return Column(
+            children: [
+              AspectRatio(
+                aspectRatio: _getAspectRatio(),
+                child: SystemPlayerPreview(
+                  videoId: widget.videoId,
+                  thumbnailUrl: widget.watchInfo.thumbnailUrl,
+                  finished: _systemPlayerEnded,
+                  onPlay: () => _reopenSystemPlayer(
+                    fromStart: _systemPlayerEnded,
+                  ),
+                  qualityLabel: _systemPlayerQualityCaption(),
+                  onQuality: (_availableQualities ??
+                              const <StreamQualityInfo>[])
+                          .isEmpty
+                      ? null
+                      : _showSystemPlayerQualities,
+                ),
+              ),
+              const WatchQueuePanel(),
+            ],
           );
         }
 

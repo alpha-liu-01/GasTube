@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:fluxtube/core/operations/math_operations.dart';
 import 'package:fluxtube/core/player/global_player_controller.dart';
+import 'package:fluxtube/core/player/playback_queue.dart';
+import 'package:fluxtube/presentation/watch/queue_playback.dart';
 import 'package:fluxtube/widgets/thumbnail_image.dart';
 
 /// Still picture for a video that is already in the system player.
@@ -14,6 +16,7 @@ class SystemPlayerPreview extends StatelessWidget {
     required this.videoId,
     this.thumbnailUrl,
     this.onPlay,
+    this.finished = false,
     this.qualityLabel,
     this.onQuality,
   });
@@ -21,6 +24,9 @@ class SystemPlayerPreview extends StatelessWidget {
   final String videoId;
   final String? thumbnailUrl;
   final VoidCallback? onPlay;
+
+  /// The system player reached the end, so [onPlay] starts this video again.
+  final bool finished;
 
   /// Label for this video only. The mini window leaves [onQuality] null.
   final String? qualityLabel;
@@ -90,11 +96,52 @@ class SystemPlayerPreview extends StatelessWidget {
                     ),
                   if (onPlay != null)
                     Center(
-                      child: IconButton(
-                        iconSize: 72,
-                        color: Colors.white,
-                        icon: const Icon(Icons.play_circle_fill),
-                        onPressed: onPlay,
+                      child: ListenableBuilder(
+                        listenable: PlaybackQueue(),
+                        builder: (context, _) {
+                          final queue = PlaybackQueue();
+                          final previous = queue.previousAfter(videoId);
+                          final next = queue.nextAfter(videoId);
+                          return Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _QueueStepButton(
+                                icon: Icons.skip_previous,
+                                onPressed: previous == null
+                                    ? null
+                                    : () {
+                                        playQueueNeighbor(
+                                          context,
+                                          next: false,
+                                          currentId: videoId,
+                                        );
+                                      },
+                              ),
+                              IconButton(
+                                iconSize: 72,
+                                color: Colors.white,
+                                icon: Icon(
+                                  finished
+                                      ? Icons.replay
+                                      : Icons.play_circle_fill,
+                                ),
+                                onPressed: onPlay,
+                              ),
+                              _QueueStepButton(
+                                icon: Icons.skip_next,
+                                onPressed: next == null
+                                    ? null
+                                    : () {
+                                        playQueueNeighbor(
+                                          context,
+                                          next: true,
+                                          currentId: videoId,
+                                        );
+                                      },
+                              ),
+                            ],
+                          );
+                        },
                       ),
                     ),
                   if (onQuality != null &&
@@ -139,6 +186,29 @@ class SystemPlayerPreview extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _QueueStepButton extends StatelessWidget {
+  const _QueueStepButton({required this.icon, required this.onPressed});
+
+  final IconData icon;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 48,
+      height: 48,
+      child: IconButton(
+        padding: EdgeInsets.zero,
+        iconSize: 36,
+        color: Colors.white,
+        disabledColor: const Color(0x66FFFFFF),
+        icon: Icon(icon),
+        onPressed: onPressed,
+      ),
     );
   }
 }

@@ -50,6 +50,9 @@ Future<({bool ok, String message})> openUrlInSystemPlayer(String url) async {
 Future<Duration?> peekSystemPlayerPosition(String url) async {
   final wanted = _playerSettingsKey(url);
   final fromFile = await _storedMsForKey(wanted);
+  // -1 means the video finished. The older bookmark must not look like
+  // the position they just left.
+  if (fromFile != null && fromFile < 0) return null;
   if (fromFile != null && fromFile >= _resumeMinMs) {
     return Duration(milliseconds: fromFile);
   }
@@ -58,6 +61,29 @@ Future<Duration?> peekSystemPlayerPosition(String url) async {
     return Duration(milliseconds: remembered);
   }
   return null;
+}
+
+/// The system player writes -1 when playback reaches the end.
+///
+/// A later open that has not reached the end stores a positive position, or
+/// 0 when resume was cleared. Those are not the end.
+Future<bool> systemPlayerReachedEnd(String url) async {
+  final stored = await _storedMsForKey(_playerSettingsKey(url));
+  return stored != null && stored < 0;
+}
+
+/// Drops the resume bookmark for [url] so the next open starts at the beginning.
+Future<void> forgetSystemPlayerResume(String url) async {
+  await clearSystemPlayerStoredPosition(url);
+  final wanted = _playerSettingsKey(url);
+  final file = await _resumeDirFile('gastube-resume.txt');
+  if (file.existsSync()) {
+    final lines = file.readAsLinesSync();
+    if (lines.length >= 2 && lines[1] == wanted) {
+      await file.writeAsString('');
+    }
+  }
+  await _writePendingSeek(0, '');
 }
 
 /// Milliseconds the system player stored for [url].
@@ -85,6 +111,8 @@ Future<Duration?> systemPlayerStoredPosition(
   if (carried != null && carried >= _resumeMinMs) {
     ms = carried;
     print('gastube: system player resume carry ms=$ms');
+  } else if (fromFile != null && fromFile < 0) {
+    ms = null;
   } else {
     ms = fromFile != null && fromFile >= _resumeMinMs ? fromFile : null;
     if (ms == null && remembered != null && remembered >= _resumeMinMs) {

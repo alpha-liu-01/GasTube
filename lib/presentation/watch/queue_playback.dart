@@ -20,9 +20,17 @@ void openQueuedVideo(BuildContext context, VideoBasicInfo video) {
 }
 
 /// Opens the previous or next queued video. Returns false when there is none.
-bool playQueueNeighbor(BuildContext context, {required bool next}) {
+///
+/// [currentId] is the video on screen. The global player id can be empty
+/// after a system-player handoff, and the queue step must still leave that
+/// video rather than reopen it.
+bool playQueueNeighbor(
+  BuildContext context, {
+  required bool next,
+  String? currentId,
+}) {
   if (!context.mounted) return false;
-  final currentId = GlobalPlayerController().currentVideoId;
+  currentId ??= GlobalPlayerController().currentVideoId;
   final queue = PlaybackQueue();
   final video =
       next ? queue.nextAfter(currentId) : queue.previousAfter(currentId);
