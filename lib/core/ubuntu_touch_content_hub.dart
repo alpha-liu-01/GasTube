@@ -658,6 +658,77 @@ bool _sameTrackTail(String uri, String key) {
   }
 }
 
+/// The system player's media-hub session for [url], when one is open.
+///
+/// The match is the same track tail the resume seek uses. An audio-only
+/// session is skipped, so the m4a opened while the picture is paused is not
+/// treated as the picture.
+Future<({int id, String status, int positionUs, bool video})?>
+    systemPlayerPicture(String url) async {
+  final key = _playerSettingsKey(url);
+  if (key.isEmpty) return null;
+  final client = DBusClient.session();
+  try {
+    final ids = await _mediaHubSessionIds(client);
+    ({int id, String status, int positionUs, bool video})? paused;
+    for (final id in ids) {
+      final uri = await _mediaHubTrackKey(client, id);
+      if (uri == null || !_sameTrackTail(uri, key)) continue;
+      final video = await _mediaHubBool(client, id, 'IsVideoSource');
+      final mpd = uri.toLowerCase().contains('.mpd');
+      if (video == false && !mpd) continue;
+      final status = await _mediaHubStatus(client, id);
+      final raw = await _mediaHubPosition(client, id);
+      final duration = await _mediaHubDuration(client, id);
+      final us = _hubMicroseconds(raw, duration) ?? 0;
+      final found = (
+        id: id,
+        status: status,
+        positionUs: us,
+        video: video ?? mpd,
+      );
+      if (status == 'Playing') return found;
+      paused ??= found;
+    }
+    return paused;
+  } catch (error) {
+    print('gastube: system player picture failed error=$error');
+    return null;
+  } finally {
+    await client.close();
+  }
+}
+
+/// Seeks the system player's session. [positionMs] is absolute milliseconds.
+Future<bool> seekSystemPlayerSession(int id, int positionMs) async {
+  final client = DBusClient.session();
+  try {
+    return await _seekMediaHubSession(client, id, positionMs);
+  } finally {
+    await client.close();
+  }
+}
+
+Future<bool?> _mediaHubBool(DBusClient client, int id, String name) async {
+  try {
+    final reply = await DBusRemoteObject(
+      client,
+      name: _mediaHubDest,
+      path: DBusObjectPath('$_mediaHubSessions/$id'),
+    ).callMethod(
+      'org.freedesktop.DBus.Properties',
+      'Get',
+      [DBusString(_mprisPlayer), DBusString(name)],
+      replySignature: DBusSignature('v'),
+    );
+    final native = reply.returnValues.first.asVariant().toNative();
+    if (native is bool) return native;
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
+
 /// Opens a finished download in Media Player.
 ///
 /// The handoff is a temporary Content Hub link. It does not copy the file

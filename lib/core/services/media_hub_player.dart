@@ -56,6 +56,9 @@ class MediaHubPlayer {
 
   /// The armed m4a is already playing on this page. A rebuild must not seek it.
   bool get holdsPageAudio => _pageAudio;
+
+  /// Page audio, or the same clip kept after the page went inactive.
+  bool get holdsBackgroundAudio => _away || _pageAudio;
   Duration _pausedAt = Duration.zero;
   Future<void> _queue = Future<void>.value();
   String? _cachedUrl;

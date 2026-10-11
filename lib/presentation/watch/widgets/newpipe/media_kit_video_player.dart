@@ -96,6 +96,14 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
   bool _isChangingQuality = false;
   bool _streamRefreshUsed = false;
   int _dashSeekRetries = 0;
+  int _pictureListenGeneration = 0;
+  bool _pictureListenBusy = false;
+  bool _pictureListening = false;
+  bool _pictureSeenPlaying = false;
+  bool _pictureSeenLogged = false;
+  int? _picturePausedSession;
+  int _pictureLastUs = 0;
+  DateTime? _picturePausedAt;
   late BoxFit _currentFitMode;
 
   // SponsorBlock
@@ -229,6 +237,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
       _systemPlayerUrl = null;
       _systemPlayerEnded = false;
       _systemPlayerHandoffAt = null;
+      _cancelPictureListen();
       if (_globalPlayer.backgroundAudioArmed) {
         _globalPlayer.forgetBackgroundAudio();
         unawaited(MediaHubPlayer.instance.stop());
@@ -1193,6 +1202,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
       return true;
     }
     _systemPlayerHandoffAt = DateTime.now();
+    _cancelPictureListen();
     _pendingPreviewFrame = await _capturedFrame();
     final path = await writeUbuntuTouchDashMpd(
       videoId: widget.videoId,
@@ -1221,6 +1231,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
     if (opened.ok) {
       await forgetOtherUbuntuTouchDashMpds(path);
       _rememberSystemPlayerPreview(path, stored);
+      _armPictureListen(path);
     } else {
       cancelUbuntuTouchInProcessResumeSeek();
       _pendingPreviewFrame = null;
@@ -1240,6 +1251,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
       return true;
     }
     _systemPlayerHandoffAt = DateTime.now();
+    _cancelPictureListen();
     _pendingPreviewFrame = await _capturedFrame();
     _globalPlayer.forgetBackgroundAudio();
     try {
@@ -1256,6 +1268,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
     );
     if (opened.ok) {
       _rememberSystemPlayerPreview(url, stored);
+      _armPictureListen(url);
     } else {
       cancelUbuntuTouchInProcessResumeSeek();
       _pendingPreviewFrame = null;
@@ -1351,6 +1364,196 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
     } finally {
       _systemPlayerOpening = false;
     }
+  }
+
+  /// Starts the m4a after the system player has paused, and stops it when
+  /// that same session plays again.
+  ///
+  /// player.qml pauses itself when the phone locks or the user presses Home.
+  /// GasTube is already inactive from the handoff, so it gets no new
+  /// lifecycle event. The picture session staying Paused is the signal this
+  /// process can read. A Playing session is the picture with its own sound,
+  /// and this watch does not open the m4a then. A pause that returns to
+  /// Playing within a second is a scrub, not a lock.
+  void _armPictureListen(String trackUrl) {
+    if (!UbuntuTouch.enabled || widget.watchInfo.isLive == true) return;
+    final audioUrl = _handoffAudio()?.url;
+    if (audioUrl == null || audioUrl.isEmpty) {
+      print('gastube: system player listen skipped reason=audio-url');
+      return;
+    }
+    final generation = ++_pictureListenGeneration;
+    _pictureListenBusy = false;
+    _pictureListening = false;
+    _pictureSeenPlaying = false;
+    _pictureSeenLogged = false;
+    _picturePausedSession = null;
+    _pictureLastUs = 0;
+    _picturePausedAt = null;
+    unawaited(_watchPicturePause(generation, trackUrl, audioUrl));
+  }
+
+  void _cancelPictureListen() {
+    _pictureListenGeneration++;
+    _pictureListening = false;
+    _picturePausedAt = null;
+    _picturePausedSession = null;
+  }
+
+  Future<void> _watchPicturePause(
+    int generation,
+    String trackUrl,
+    String audioUrl,
+  ) async {
+    if (!await ubuntuTouchEnhancedMode()) {
+      print('gastube: system player listen skipped reason=enhanced');
+      return;
+    }
+    if (!mounted || generation != _pictureListenGeneration) return;
+    print('gastube: system player listen watch');
+    while (mounted && generation == _pictureListenGeneration) {
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      if (!mounted || generation != _pictureListenGeneration) return;
+      if (_pictureListenBusy) continue;
+      final picture = await systemPlayerPicture(trackUrl);
+      if (!mounted || generation != _pictureListenGeneration) return;
+      if (picture == null) continue;
+      if (!_pictureSeenLogged && picture.status == 'Playing') {
+        _pictureSeenLogged = true;
+        print(
+          'gastube: system player listen picture session=${picture.id} '
+          'video=${picture.video} status=${picture.status}',
+        );
+      }
+      if (picture.positionUs > 0) _pictureLastUs = picture.positionUs;
+      if (picture.status == 'Playing') {
+        _pictureSeenPlaying = true;
+        _picturePausedAt = null;
+        final session = _picturePausedSession;
+        final onPage = WidgetsBinding.instance.lifecycleState ==
+            AppLifecycleState.resumed;
+        if (_pictureListening &&
+            session != null &&
+            session == picture.id &&
+            !onPage) {
+          _pictureListenBusy = true;
+          try {
+            await _stopPictureListen(generation, picture.id, picture.positionUs);
+          } finally {
+            _pictureListenBusy = false;
+          }
+        }
+        continue;
+      }
+      if (picture.status != 'Paused' || !_pictureSeenPlaying) continue;
+      if (MediaHubPlayer.instance.holdsBackgroundAudio) {
+        _pictureListening = true;
+        _picturePausedSession = picture.id;
+        _picturePausedAt = null;
+        continue;
+      }
+      if (_pictureListening) _pictureListening = false;
+      if (!_globalPlayer.backgroundAudioEnabled ||
+          _systemPlayerEnded ||
+          _systemPlayerOpening) {
+        _picturePausedAt = null;
+        continue;
+      }
+      // This page owns the clip once it is in front. Lock and Home leave
+      // GasTube inactive, which is the pause player.qml already performed.
+      if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+        _picturePausedAt = null;
+        continue;
+      }
+      _picturePausedAt ??= DateTime.now();
+      if (DateTime.now().difference(_picturePausedAt!) <
+          const Duration(milliseconds: 1500)) {
+        continue;
+      }
+      final atUs =
+          picture.positionUs > 0 ? picture.positionUs : _pictureLastUs;
+      if (atUs <= 0) continue;
+      _pictureListenBusy = true;
+      try {
+        await _startPictureListen(
+          generation,
+          trackUrl,
+          audioUrl,
+          picture.id,
+          atUs,
+        );
+      } finally {
+        _pictureListenBusy = false;
+      }
+    }
+  }
+
+  Future<void> _startPictureListen(
+    int generation,
+    String trackUrl,
+    String audioUrl,
+    int sessionId,
+    int positionUs,
+  ) async {
+    if (!mounted || generation != _pictureListenGeneration) return;
+    final at = Duration(microseconds: positionUs);
+    _globalPlayer.setCurrentVideoId(widget.videoId);
+    _globalPlayer.updateSystemPlayerHandoffPosition(at);
+    _globalPlayer.armBackgroundAudio(
+      url: audioUrl,
+      headers: _newPipePlaybackHeaders,
+    );
+    print(
+      'gastube: system player listen positionMs=${at.inMilliseconds} '
+      'session=$sessionId',
+    );
+    await MediaHubPlayer.instance.handoff();
+    if (!mounted || generation != _pictureListenGeneration) {
+      _globalPlayer.forgetBackgroundAudio();
+      await MediaHubPlayer.instance.stop();
+      return;
+    }
+    if (!MediaHubPlayer.instance.holdsBackgroundAudio) {
+      print('gastube: system player listen failed');
+      _globalPlayer.forgetBackgroundAudio();
+      return;
+    }
+    _pictureListening = true;
+    _picturePausedSession = sessionId;
+    final again = await systemPlayerPicture(trackUrl);
+    if (!mounted || generation != _pictureListenGeneration) return;
+    if (again != null && again.status == 'Playing' && again.id == sessionId) {
+      await _stopPictureListen(generation, again.id, again.positionUs);
+    }
+  }
+
+  Future<void> _stopPictureListen(
+    int generation,
+    int sessionId,
+    int pictureUs,
+  ) async {
+    await MediaHubPlayer.instance.stampArmedPosition();
+    final heard = _globalPlayer.systemPlayerPosition;
+    _globalPlayer.forgetBackgroundAudio();
+    await MediaHubPlayer.instance.stop();
+    _pictureListening = false;
+    _picturePausedSession = null;
+    _picturePausedAt = null;
+    if (generation != _pictureListenGeneration) return;
+    final heardMs = heard.inMilliseconds;
+    final pictureMs = pictureUs ~/ 1000;
+    if (heardMs <= 0 || (heardMs - pictureMs).abs() < 4000) {
+      print(
+        'gastube: system player listen stop positionMs=$heardMs '
+        'seek=skipped session=$sessionId',
+      );
+      return;
+    }
+    final ok = await seekSystemPlayerSession(sessionId, heardMs);
+    print(
+      'gastube: system player listen stop positionMs=$heardMs '
+      'seek=$ok session=$sessionId',
+    );
   }
 
   void _ensureBackgroundAudio() {
@@ -1906,6 +2109,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
 
   @override
   void dispose() {
+    _cancelPictureListen();
     WidgetsBinding.instance.removeObserver(this);
     MediaHubPlayer.instance.unbindIndicatorReturn(_indicatorReturn);
     _sponsorBlockSubscription?.cancel();
