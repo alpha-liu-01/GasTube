@@ -15,10 +15,9 @@ import 'package:fluxtube/infrastructure/database/database.dart';
 ///
 /// While fullscreen, rotation stays inside the two directions of that aspect.
 /// A landscape video allows landscape left and right. A portrait video allows
-/// portrait up and down. On a phone, leaving fullscreen locks the whole app
-/// to the two portrait directions. A window whose shorter side is at least
-/// [WindowLayout.sideRailMinWidth] keeps both aspects on the main screen,
-/// the same cutoff the home page uses for two columns.
+/// portrait up and down. Leaving fullscreen follows the phone again. The main
+/// screen is not locked to portrait, including when the shorter side is under
+/// [WindowLayout.sideRailMinWidth].
 ///
 /// Android and iOS ask the system for that set. Ubuntu Touch does not honor
 /// the request, so the page itself turns when the window is in a locked-out
@@ -150,7 +149,7 @@ class FullscreenAspect {
     );
   }
 
-  /// Leave fullscreen. Phones lock to portrait. Large windows allow both.
+  /// Leave fullscreen. The main screen follows the phone in either aspect.
   static Future<void> restore() async {
     if (_session == 0) return;
     _session--;
@@ -163,24 +162,16 @@ class FullscreenAspect {
     );
   }
 
-  /// Portrait lock on a phone, free rotation on a large window.
+  /// The main screen follows the phone. A short side does not force portrait.
   static Future<void> applyIdle() async {
     if (!enabled || _session > 0) return;
     final side = _shorterLogicalSide();
     if (side <= 0) return;
-    final phone = side < WindowLayout.sideRailMinWidth;
-    _idleIsPhone = phone;
-    if (phone) {
-      _allowedLandscape = false;
-      await SystemChrome.setPreferredOrientations(_portrait);
-      _syncTurns();
-      print('gastube: fullscreen aspect idle portrait side=$side');
-      return;
-    }
+    _idleIsPhone = side < WindowLayout.sideRailMinWidth;
     _allowedLandscape = null;
     turns.value = 0;
     await SystemChrome.setPreferredOrientations(DeviceOrientation.values);
-    print('gastube: fullscreen aspect idle free side=$side');
+    print('gastube: fullscreen aspect idle follow side=$side');
   }
 
   static void onMetrics() {
