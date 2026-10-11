@@ -95,7 +95,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
   Duration? _indicatorStart;
   bool _isChangingQuality = false;
   bool _streamRefreshUsed = false;
-  bool _dashSeekRetried = false;
+  int _dashSeekRetries = 0;
   late BoxFit _currentFitMode;
 
   // SponsorBlock
@@ -236,7 +236,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
       _pendingPreviewFrame = null;
       _isInitialized = false;
       _isRestoringFromPip = false;
-      _dashSeekRetried = false;
+      _dashSeekRetries = 0;
 
       // Stop both local and global player for the old video. This is awaited
       // inside the async task below so the next open cannot race the previous
@@ -889,17 +889,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
           widget.watchInfo.isLive != true &&
           dashQuality != null &&
           _dashMenuEntry(dashQuality)) {
-        var handed = await _openDashInSystemPlayer(config);
-        if (!handed && mounted && !_dashSeekRetried) {
-          _dashSeekRetried = true;
-          final refreshed = await _refreshDashStreams();
-          if (refreshed && mounted) {
-            final again = _resolveForThisBuild(config.qualityLabel);
-            _currentConfig = again;
-            _currentQualityLabel = again.qualityLabel;
-            handed = await _openDashInSystemPlayer(again);
-          }
-        }
+        var handed = await _handoffDashRefreshing(config);
         if (handed || !mounted) return;
         final muxed = _muxedHttpUrl();
         if (muxed != null) {
@@ -1164,6 +1154,27 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
     return known;
   }
 
+  /// Opens the DASH handoff, and asks for a new extract when the address is
+  /// refused. One fresh extract can still 403. A second one is the try that
+  /// opened the player after the long probe. Further failures leave the
+  /// muxed address.
+  Future<bool> _handoffDashRefreshing(
+    PlaybackConfiguration config, {
+    Duration? carry,
+  }) async {
+    var handed = await _openDashInSystemPlayer(config, carry: carry);
+    while (!handed && mounted && _dashSeekRetries < 2) {
+      _dashSeekRetries++;
+      final refreshed = await _refreshDashStreams();
+      if (!refreshed || !mounted) break;
+      final again = _resolveForThisBuild(config.qualityLabel);
+      _currentConfig = again;
+      _currentQualityLabel = again.qualityLabel;
+      handed = await _openDashInSystemPlayer(again, carry: carry);
+    }
+    return handed;
+  }
+
   /// Video-only H.264 or VP9 plus its m4a, as one local MPD. A failure
   /// leaves the muxed address as the handoff.
   Future<bool> _openDashInSystemPlayer(
@@ -1305,7 +1316,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
     }
     _systemPlayerOpening = true;
     _systemPlayerHandoffAt = null;
-    _dashSeekRetried = false;
+    _dashSeekRetries = 0;
     final previousLabel = _currentQualityLabel;
     final previousConfig = _currentConfig;
     try {
@@ -1322,17 +1333,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
       var handed = false;
       final dashQuality = _qualityForLabel(config.qualityLabel);
       if (dashQuality != null && _dashMenuEntry(dashQuality)) {
-        handed = await _openDashInSystemPlayer(config, carry: carry);
-        if (!handed && mounted && !_dashSeekRetried) {
-          _dashSeekRetried = true;
-          final refreshed = await _refreshDashStreams();
-          if (refreshed && mounted) {
-            config = _resolveForThisBuild(label);
-            _currentConfig = config;
-            _currentQualityLabel = config.qualityLabel;
-            handed = await _openDashInSystemPlayer(config, carry: carry);
-          }
-        }
+        handed = await _handoffDashRefreshing(config, carry: carry);
         if (!handed && mounted) {
           final muxed = _muxedHttpUrl();
           if (muxed != null) {
@@ -1412,7 +1413,8 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
       if (config != null &&
           dashQuality != null &&
           _dashMenuEntry(dashQuality)) {
-        final handed = await _openDashInSystemPlayer(config, carry: carry);
+        _dashSeekRetries = 0;
+        final handed = await _handoffDashRefreshing(config, carry: carry);
         if (handed) return;
         final muxed = _muxedHttpUrl();
         if (muxed != null) {

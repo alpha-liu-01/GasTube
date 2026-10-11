@@ -72,15 +72,17 @@ Future<String?> writeUbuntuTouchDashMpd({
   }
   // Some googlevideo nodes serve the first minute and answer 403 for a later
   // range. The system player then resets and buffers forever. Keep a host
-  // that can read the last segment. The caller refreshes the extract once
-  // when every host refuses.
+  // that can read the last segment. A 403 on the address itself is a dead
+  // extract: the other nodes then hang on the handshake, so they are not
+  // tried. The caller asks for a new extract when this returns null.
   final videoUrl = await _urlThatCanSeek(video.url!, videoTrack);
+  if (videoUrl == null) {
+    print('gastube: dash seek probe failed video=false audio=skipped');
+    return null;
+  }
   final audioUrl = await _urlThatCanSeek(audio.url!, audioSidx);
-  if (videoUrl == null || audioUrl == null) {
-    print(
-      'gastube: dash seek probe failed video=${videoUrl != null} '
-      'audio=${audioUrl != null}',
-    );
+  if (audioUrl == null) {
+    print('gastube: dash seek probe failed video=true audio=false');
     return null;
   }
   final durationMs = video.approxDurationMs ?? audio.approxDurationMs ?? 0;
@@ -195,52 +197,80 @@ List<String> _seekHosts(Uri uri) {
   return hosts;
 }
 
-/// A URL whose last segment answers 206. Null when every host returns 403.
+const _probeLimit = Duration(seconds: 3);
+
+/// A URL whose last segment answers 206.
+///
+/// The advertised host is probed first. When that range is 403 and the start
+/// of the same address is also refused, the extract is dead and the other
+/// hosts are left alone. Those hosts are only asked when this address itself
+/// still answers, and they are asked together so one handshake cannot stall
+/// the rest.
 Future<String?> _urlThatCanSeek(String url, _Sidx track) async {
   if (track.segments.isEmpty) return null;
   final last = track.segments.last;
   final end = last.start + 15 <= last.end ? last.start + 15 : last.end;
   final original = Uri.parse(url);
-  for (final host in _seekHosts(original)) {
-    final candidate = original.replace(host: host).toString();
-    final status = await _probeStatus(candidate, last.start, end);
-    if (status != 206) {
-      print('gastube: dash seek probe status=$status');
-      continue;
+  final tail = await _probeStatus(url, last.start, end);
+  if (tail == 206) return url;
+  print('gastube: dash seek probe status=$tail');
+  if (tail == 403) {
+    final head = await _probeStatus(url, 0, 15);
+    if (head != 200 && head != 206) {
+      print('gastube: dash seek probe refused');
+      return null;
     }
-    if (host != original.host) {
-      print('gastube: dash seek host=${host.split('.').first}');
-    }
-    return candidate;
+  }
+  final others = [
+    for (final host in _seekHosts(original))
+      if (host != original.host) host,
+  ];
+  if (others.isEmpty) return null;
+  final results = await Future.wait([
+    for (final host in others)
+      () async {
+        final candidate = original.replace(host: host).toString();
+        final status = await _probeStatus(candidate, last.start, end);
+        return (host: host, candidate: candidate, status: status);
+      }(),
+  ]);
+  for (final result in results) {
+    if (result.status != 206) continue;
+    print('gastube: dash seek host=${result.host.split('.').first}');
+    return result.candidate;
+  }
+  for (final result in results) {
+    print('gastube: dash seek probe status=${result.status}');
   }
   return null;
 }
 
 Future<int?> _probeStatus(String url, int start, int end) async {
   if (end < start) return null;
-  final client = HttpClient();
+  final client = HttpClient()..connectionTimeout = _probeLimit;
   try {
-    final request = await client.getUrl(Uri.parse(url));
-    request.headers.set(HttpHeaders.rangeHeader, 'bytes=$start-$end');
-    final response =
-        await request.close().timeout(const Duration(seconds: 12));
-    final status = response.statusCode;
-    final wanted = end - start + 1;
-    var got = 0;
-    await for (final chunk in response) {
-      got += chunk.length;
-      if (got > wanted + 64) {
-        return null;
-      }
-    }
-    if (status == 206 && got > 0) return 206;
-    return status;
+    return await _readProbe(client, url, start, end).timeout(_probeLimit);
   } catch (error) {
     print('gastube: dash seek probe failed type=${error.runtimeType}');
     return null;
   } finally {
     client.close(force: true);
   }
+}
+
+Future<int?> _readProbe(HttpClient client, String url, int start, int end) async {
+  final request = await client.getUrl(Uri.parse(url));
+  request.headers.set(HttpHeaders.rangeHeader, 'bytes=$start-$end');
+  final response = await request.close();
+  final status = response.statusCode;
+  final wanted = end - start + 1;
+  var got = 0;
+  await for (final chunk in response) {
+    got += chunk.length;
+    if (got > wanted + 64) return null;
+  }
+  if (got <= 0) return status;
+  return status;
 }
 
 Future<Uint8List?> _fetchRange(String url, int start, int end) async {
