@@ -12,9 +12,16 @@ import 'package:go_router/go_router.dart';
 ///
 /// The in-app player used to open this list from its own controls. Those
 /// controls are not on screen after a system-player handoff, so the same
-/// list sits under the preview.
-class WatchQueuePanel extends StatelessWidget {
+/// list sits under the preview. It stays one row until the header is tapped.
+class WatchQueuePanel extends StatefulWidget {
   const WatchQueuePanel({super.key});
+
+  @override
+  State<WatchQueuePanel> createState() => _WatchQueuePanelState();
+}
+
+class _WatchQueuePanelState extends State<WatchQueuePanel> {
+  bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
@@ -33,29 +40,46 @@ class WatchQueuePanel extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Text(
-                    locals.queue,
-                    style: theme.textTheme.titleMedium,
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => setState(() => _expanded = !_expanded),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          children: [
+                            Text(
+                              locals.queue,
+                              style: theme.textTheme.titleMedium,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '(${queue.length})',
+                              style: theme.textTheme.bodySmall,
+                            ),
+                            const Spacer(),
+                            Icon(
+                              _expanded
+                                  ? Icons.expand_less
+                                  : Icons.expand_more,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '(${queue.length})',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                  const Spacer(),
-                  if (queue.length > 2)
+                  if (_expanded && queue.length > 2)
                     TextButton(
                       onPressed: playbackQueue.shuffle,
                       child: Text(locals.queueShuffle),
                     ),
-                  if (queue.isNotEmpty)
+                  if (_expanded && queue.isNotEmpty)
                     TextButton(
                       onPressed: playbackQueue.clear,
                       child: Text(locals.queueClear),
                     ),
                 ],
               ),
-              if (queue.isEmpty)
+              if (_expanded && queue.isEmpty)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   child: Text(
@@ -63,7 +87,7 @@ class WatchQueuePanel extends StatelessWidget {
                     style: theme.textTheme.bodyMedium,
                   ),
                 )
-              else
+              else if (_expanded)
                 for (var index = 0; index < queue.length; index++)
                   _QueueTile(
                     video: queue[index],
