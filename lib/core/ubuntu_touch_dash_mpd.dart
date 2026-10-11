@@ -118,6 +118,34 @@ Future<String?> writeUbuntuTouchDashMpd({
   return file.path;
 }
 
+/// Deletes every other manifest in the same directory.
+///
+/// A later video writes a new file, and the previous addresses have already
+/// expired. The file the system player was just given stays.
+Future<void> forgetOtherUbuntuTouchDashMpds(String keepPath) async {
+  final dir = Directory(p.dirname(keepPath));
+  if (!dir.existsSync()) return;
+  final keep = p.basename(keepPath);
+  var removed = 0;
+  for (final entity in dir.listSync(followLinks: false)) {
+    if (entity is! File) continue;
+    final base = p.basename(entity.path);
+    if (base == keep) continue;
+    final manifest = base.startsWith('hd-') &&
+        (base.endsWith('.mpd') || base.endsWith('.mpd.tmp'));
+    if (!manifest) continue;
+    try {
+      entity.deleteSync();
+      removed++;
+    } catch (error) {
+      print('gastube: dash mpd prune failed error=$error');
+    }
+  }
+  if (removed > 0) {
+    print('gastube: dash mpd prune removed=$removed');
+  }
+}
+
 String _segmentList(String url, int initStart, int initEnd, _Sidx sidx) {
   final timeline = StringBuffer();
   final urls = StringBuffer();

@@ -151,6 +151,7 @@ class MediaHubPlayer {
     _extendOffer = null;
     _extendRunning = false;
     _hubKnown = false;
+    _trackFiles.clear();
     final stale = _backgroundAudioFiles();
     return _enqueue(() async {
       await _dropSession();
@@ -1553,6 +1554,7 @@ class MediaHubPlayer {
     if (status == 'Playing') {
       if (!wholeFile) _sliceUntilUs = coverUs;
       _didExtend = true;
+      _dropOtherExtensions(path);
     }
     print(
       wholeFile
@@ -1562,6 +1564,31 @@ class MediaHubPlayer {
               'positionMs=${_pausedAt.inMilliseconds} coverMs=${coverUs ~/ 1000}',
     );
     return status == 'Playing';
+  }
+
+  /// One extend swap replaces the file media-hub has open. The older
+  /// `.ext-` copies are not played again, so they do not stay on disk.
+  void _dropOtherExtensions(String opened) {
+    final name = p.basename(opened);
+    final mark = name.indexOf('.ext-');
+    final stem = mark > 0 ? name.substring(0, mark) : name;
+    final dir = Directory(p.dirname(opened));
+    if (!dir.existsSync()) return;
+    var removed = 0;
+    for (final entity in dir.listSync(followLinks: false)) {
+      if (entity is! File) continue;
+      final base = p.basename(entity.path);
+      if (base == name || !base.startsWith('$stem.ext-')) continue;
+      try {
+        entity.deleteSync();
+        removed++;
+      } catch (error) {
+        print('gastube: background audio ext drop failed error=$error');
+      }
+    }
+    if (removed > 0) {
+      print('gastube: background audio ext drop removed=$removed');
+    }
   }
 
   bool _coverRunningOut() {

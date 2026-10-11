@@ -1208,6 +1208,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
       'itag=${video.itag} codec=${video.codec}',
     );
     if (opened.ok) {
+      await forgetOtherUbuntuTouchDashMpds(path);
       _rememberSystemPlayerPreview(path, stored);
     } else {
       _pendingPreviewFrame = null;

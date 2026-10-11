@@ -161,13 +161,16 @@ Future<void> clearSystemPlayerStoredPosition(String url) async {
   final file = await _systemPlayerSettingsFile();
   if (!file.existsSync()) return;
   final wanted = _playerSettingsKey(url);
-  final next = file.readAsLinesSync().map((line) {
-    final split = line.indexOf('=');
-    if (split <= 0) return line;
-    if (_unescapeIniKey(line.substring(0, split)) != wanted) return line;
-    return '${line.substring(0, split)}=0';
-  }).join('\n');
-  await file.writeAsString('$next\n');
+  final next = _withoutStaleStreamKeys(
+    file.readAsLinesSync().map((line) {
+      final split = line.indexOf('=');
+      if (split <= 0) return line;
+      if (_unescapeIniKey(line.substring(0, split)) != wanted) return line;
+      return '${line.substring(0, split)}=0';
+    }).toList(),
+    wanted,
+  );
+  await file.writeAsString('${next.join('\n')}\n');
 }
 
 /// `videoplayback?expire=...`, the key mediaplayer-app actually stores.
@@ -232,7 +235,19 @@ Future<void> _writePlayerMs(String wanted, int ms) async {
     return '${line.substring(0, split)}=$ms';
   }).toList();
   if (!found) next.add('${_escapeIniKey(wanted)}=$ms');
-  await file.writeAsString('${next.join('\n')}\n');
+  await file.writeAsString('${_withoutStaleStreamKeys(next, wanted).join('\n')}\n');
+}
+
+/// Muxed addresses put the whole query string in the key. The next extract
+/// has a new `expire`, so the old line never matches again.
+List<String> _withoutStaleStreamKeys(List<String> lines, String keep) {
+  return lines.where((line) {
+    final split = line.indexOf('=');
+    if (split <= 0) return true;
+    final key = _unescapeIniKey(line.substring(0, split));
+    if (!key.startsWith('videoplayback?')) return true;
+    return key == keep;
+  }).toList();
 }
 
 String _escapeIniKey(String key) {
