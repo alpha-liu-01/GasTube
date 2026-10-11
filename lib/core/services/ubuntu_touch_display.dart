@@ -7,8 +7,10 @@ import 'package:fluxtube/core/ubuntu_touch.dart';
 ///
 /// `org.freedesktop.ScreenSaver` on this image has no `Inhibit`. The request
 /// that repowerd honors is `com.canonical.Unity.Screen.keepDisplayOn` on the
-/// system bus. Leaving the app releases it, so background audio can still
-/// let the screen lock. Desktop builds never call this bus.
+/// system bus. Leaving the app releases the foreground cookie. A system
+/// player picture holds its own until that picture pauses for background
+/// audio, so the screen can still lock while only the audio is playing.
+/// Desktop builds never call this bus.
 class UbuntuTouchDisplay {
   static final UbuntuTouchDisplay instance = UbuntuTouchDisplay._();
 
@@ -22,6 +24,7 @@ class UbuntuTouchDisplay {
   DBusRemoteObject? _screen;
   int? _cookie;
   bool _foreground = true;
+  bool _pictureHold = false;
   Future<void> _queue = Future<void>.value();
 
   /// [source] distinguishes the main player from Shorts. Either one playing
@@ -30,6 +33,19 @@ class UbuntuTouchDisplay {
     if (!UbuntuTouch.enabled) return;
     if (_playing[source] == playing) return;
     _playing[source] = playing;
+    unawaited(_sync());
+  }
+
+  /// Holds the screen on while the system player is showing a picture.
+  ///
+  /// Leaving GasTube drops the foreground cookie, and media-hub drops its own
+  /// display lock when a Charge replaces the file. The idle timer then blanks
+  /// the screen while the new video is still playing. A paused picture
+  /// releases this so a real lock can stay off for background audio.
+  void setPictureHold(bool hold) {
+    if (!UbuntuTouch.enabled) return;
+    if (_pictureHold == hold) return;
+    _pictureHold = hold;
     unawaited(_sync());
   }
 
@@ -51,7 +67,8 @@ class UbuntuTouchDisplay {
   }
 
   Future<void> _apply() async {
-    final want = _foreground && _playing.containsValue(true);
+    final want =
+        _pictureHold || (_foreground && _playing.containsValue(true));
     if (want && _cookie != null) return;
     if (!want && _cookie == null) return;
     final screen = await _object();

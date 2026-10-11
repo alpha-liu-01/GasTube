@@ -185,6 +185,58 @@ void cancelUbuntuTouchInProcessResumeSeek() {
 
 const _resumeMinMs = 5000;
 
+/// Furthest saved minute for [videoId], across every manifest name it used.
+///
+/// A negative line is the player marking the end. It is not a resume point.
+/// Below five seconds is the opening of a later play, not a bookmark.
+Future<int?> systemPlayerResumeMs(String videoId) async {
+  final safe = videoId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '');
+  if (safe.isEmpty) return null;
+  var best = 0;
+  final file = await _systemPlayerSettingsFile();
+  if (file.existsSync()) {
+    for (final line in file.readAsLinesSync()) {
+      final split = line.indexOf('=');
+      if (split <= 0) continue;
+      final key = _unescapeIniKey(line.substring(0, split));
+      if (!_keyNamesVideo(key, safe)) continue;
+      final ms = int.tryParse(line.substring(split + 1).trim());
+      if (ms == null || ms < _resumeMinMs) continue;
+      if (ms > best) best = ms;
+    }
+  }
+  final remembered = await _resumeDirFile('gastube-resume.txt');
+  if (remembered.existsSync()) {
+    final lines = remembered.readAsLinesSync();
+    if (lines.length >= 2 && _keyNamesVideo(lines[1], safe)) {
+      final ms = int.tryParse(lines.first.trim());
+      if (ms != null && ms >= _resumeMinMs && ms > best) best = ms;
+    }
+  }
+  return best >= _resumeMinMs ? best : null;
+}
+
+bool _keyNamesVideo(String key, String safeId) {
+  final slash = key.lastIndexOf('/');
+  final name = slash < 0 ? key : key.substring(slash + 1);
+  return name.startsWith('hd-$safeId.') || name.startsWith('hd-$safeId-');
+}
+
+/// Remembers [ms] and seeks the next session there, without a Continue dialog.
+///
+/// The running player cached its settings at launch. A key it has never seen
+/// reads as 0, so playUri starts playback instead of opening the dialog.
+/// Writing 0 under that new key keeps a later sync from growing a bookmark
+/// before the seek. The seek itself is the Continue.
+Future<void> armSystemPlayerContinue(String url, int ms) async {
+  if (ms < _resumeMinMs) return;
+  final wanted = _playerSettingsKey(url);
+  await _rememberMs(wanted, ms);
+  await clearSystemPlayerStoredPosition(url);
+  await _armInProcessResumeSeek(ms, wanted);
+  print('gastube: system player next continue ms=$ms');
+}
+
 /// Writes 0 for [url] so the player starts immediately and shows no dialog.
 Future<void> clearSystemPlayerStoredPosition(String url) async {
   final file = await _systemPlayerSettingsFile();
@@ -389,6 +441,7 @@ Future<void> _watchResumeSeek({
   var sought = false;
   var soughtAt = -1;
   var recovered = false;
+  var announcedClamp = false;
   var pictureAt = -1;
   var pictureUs = 0;
   try {
@@ -417,7 +470,7 @@ Future<void> _watchResumeSeek({
       }
       var newest = -1;
       for (final id in ids) {
-        if (snapshot.contains(id) || id < newest) continue;
+        if (id < newest) continue;
         final found = await _mediaHubTrackKey(client, id);
         if (found == null || !_sameTrackTail(found, key)) continue;
         newest = id;
@@ -426,18 +479,41 @@ Future<void> _watchResumeSeek({
       if (seenId != newest) {
         seenId = newest;
         seenAt = now;
-        print('gastube: system player resume seek saw session=$newest');
+        final reused = snapshot.contains(newest);
+        print(
+          'gastube: system player resume seek saw session=$newest '
+          'reused=$reused',
+        );
       }
       final durationRaw = await _mediaHubDuration(client, newest);
       if (durationRaw <= 0) continue;
+      final durationUs = _hubMicroseconds(durationRaw, durationRaw);
+      var targetMs = ms;
+      if (durationUs != null && durationUs > 15000000) {
+        final endMs = durationUs ~/ 1000;
+        if (targetMs > endMs - 3000) {
+          targetMs = endMs - 8000;
+          if (targetMs < _resumeMinMs) {
+            print('gastube: system player resume seek skipped reason=tail');
+            return;
+          }
+          if (!announcedClamp) {
+            announcedClamp = true;
+            print(
+              'gastube: system player resume seek clamp ms=$targetMs '
+              'endMs=$endMs',
+            );
+          }
+        }
+      }
       final positionUs = _hubMicroseconds(
         await _mediaHubPosition(client, newest),
         durationRaw,
       );
-      final targetUs = ms * 1000;
+      final targetUs = targetMs * 1000;
       if (positionUs != null && (positionUs - targetUs).abs() < 4000000) {
         print(
-          'gastube: system player resume seek landed session=$newest ms=$ms',
+          'gastube: system player resume seek landed session=$newest ms=$targetMs',
         );
         return;
       }
@@ -469,10 +545,10 @@ Future<void> _watchResumeSeek({
       if (!sought) {
         sought = true;
         soughtAt = now;
-        final ok = await _seekMediaHubSession(client, newest, ms);
+        final ok = await _seekMediaHubSession(client, newest, targetMs);
         print(
           'gastube: system player resume seek once session=$newest '
-          'ms=$ms ageMs=${now - seenAt} ok=$ok',
+          'ms=$targetMs ageMs=${now - seenAt} ok=$ok',
         );
         continue;
       }
@@ -480,10 +556,10 @@ Future<void> _watchResumeSeek({
       final stillOpening = positionUs - pictureUs < 4000000;
       if (playing && stillOpening && targetUs > 15000000 && !recovered) {
         recovered = true;
-        final ok = await _seekMediaHubSession(client, newest, ms);
+        final ok = await _seekMediaHubSession(client, newest, targetMs);
         print(
           'gastube: system player resume seek recover session=$newest '
-          'ms=$ms ok=$ok',
+          'ms=$targetMs ok=$ok',
         );
         return;
       }
@@ -663,14 +739,15 @@ bool _sameTrackTail(String uri, String key) {
 /// The match is the same track tail the resume seek uses. An audio-only
 /// session is skipped, so the m4a opened while the picture is paused is not
 /// treated as the picture.
-Future<({int id, String status, int positionUs, bool video})?>
+Future<({int id, String status, int positionUs, int durationUs, bool video})?>
     systemPlayerPicture(String url) async {
   final key = _playerSettingsKey(url);
   if (key.isEmpty) return null;
   final client = DBusClient.session();
   try {
     final ids = await _mediaHubSessionIds(client);
-    ({int id, String status, int positionUs, bool video})? paused;
+    ({int id, String status, int positionUs, int durationUs, bool video})?
+        paused;
     for (final id in ids) {
       final uri = await _mediaHubTrackKey(client, id);
       if (uri == null || !_sameTrackTail(uri, key)) continue;
@@ -679,12 +756,14 @@ Future<({int id, String status, int positionUs, bool video})?>
       if (video == false && !mpd) continue;
       final status = await _mediaHubStatus(client, id);
       final raw = await _mediaHubPosition(client, id);
-      final duration = await _mediaHubDuration(client, id);
-      final us = _hubMicroseconds(raw, duration) ?? 0;
+      final durationRaw = await _mediaHubDuration(client, id);
+      final us = _hubMicroseconds(raw, durationRaw) ?? 0;
+      final durationUs = _hubMicroseconds(durationRaw, durationRaw) ?? 0;
       final found = (
         id: id,
         status: status,
         positionUs: us,
+        durationUs: durationUs,
         video: video ?? mpd,
       );
       if (status == 'Playing') return found;
@@ -694,6 +773,29 @@ Future<({int id, String status, int positionUs, bool video})?>
   } catch (error) {
     print('gastube: system player picture failed error=$error');
     return null;
+  } finally {
+    await client.close();
+  }
+}
+
+/// Video sessions currently open in media-hub, including ones this app did
+/// not start. Used to see whether a Charge replaced the finished picture.
+Future<List<({int id, String status, bool video})>>
+    systemPlayerSessions() async {
+  final client = DBusClient.session();
+  try {
+    final ids = await _mediaHubSessionIds(client);
+    final sessions = <({int id, String status, bool video})>[];
+    for (final id in ids) {
+      final video = await _mediaHubBool(client, id, 'IsVideoSource');
+      if (video != true) continue;
+      final status = await _mediaHubStatus(client, id);
+      sessions.add((id: id, status: status, video: true));
+    }
+    return sessions;
+  } catch (error) {
+    print('gastube: system player sessions failed error=$error');
+    return const [];
   } finally {
     await client.close();
   }

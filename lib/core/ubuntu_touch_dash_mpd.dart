@@ -45,6 +45,7 @@ Future<String?> writeUbuntuTouchDashMpd({
   required String videoId,
   required NewPipeVideoStream video,
   required NewPipeAudioStream audio,
+  String? fileName,
 }) async {
   if (!ubuntuTouchDashVideo(video) || !ubuntuTouchDashAudio(audio)) {
     return null;
@@ -108,7 +109,11 @@ Future<String?> writeUbuntuTouchDashMpd({
   final dir = Directory(p.join(root.path, 'dash'));
   await dir.create(recursive: true);
   final safeId = videoId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '');
-  final file = File(p.join(dir.path, 'hd-$safeId.mpd'));
+  var name = p.basename(fileName ?? 'hd-$safeId.mpd');
+  if (!RegExp(r'^hd-[A-Za-z0-9_-]+\.mpd$').hasMatch(name)) {
+    name = 'hd-$safeId.mpd';
+  }
+  final file = File(p.join(dir.path, name));
   final tmp = File('${file.path}.tmp');
   await tmp.writeAsString(xml);
   await tmp.rename(file.path);
@@ -118,6 +123,22 @@ Future<String?> writeUbuntuTouchDashMpd({
     'audioSegs=${audioSidx.segments.length}',
   );
   return file.path;
+}
+
+/// A second copy of [path], so a player that already cached the first name
+/// opens this one as a file it has not seen.
+Future<String?> copyUbuntuTouchDashMpd(String path) async {
+  final file = File(path);
+  if (!file.existsSync()) return null;
+  final stamp = DateTime.now().millisecondsSinceEpoch;
+  final next = File(
+    p.join(
+      p.dirname(path),
+      '${p.basenameWithoutExtension(path)}-$stamp.mpd',
+    ),
+  );
+  await file.copy(next.path);
+  return next.path;
 }
 
 /// Deletes every other manifest in the same directory.

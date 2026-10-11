@@ -8,6 +8,7 @@ import 'package:fluxtube/application/application.dart';
 import 'package:fluxtube/core/player/global_player_controller.dart';
 import 'package:fluxtube/core/player/playback_queue.dart';
 import 'package:fluxtube/core/services/media_hub_player.dart';
+import 'package:fluxtube/core/services/ubuntu_touch_display.dart';
 import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:fluxtube/core/ubuntu_touch_content_hub.dart';
 import 'package:fluxtube/core/ubuntu_touch_dash_mpd.dart';
@@ -103,7 +104,13 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
   bool _pictureSeenLogged = false;
   int? _picturePausedSession;
   int _pictureLastUs = 0;
+  int _pictureLastDurationUs = 0;
   DateTime? _picturePausedAt;
+  DateTime? _pictureEndAt;
+  DateTime? _pictureScrubAt;
+  bool _pictureAllowReopen = true;
+  bool _pictureNextTried = false;
+  String? _pictureQueueId;
   late BoxFit _currentFitMode;
 
   // SponsorBlock
@@ -1375,10 +1382,15 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
   /// process can read. A Playing session is the picture with its own sound,
   /// and this watch does not open the m4a then. A pause that returns to
   /// Playing within a second is a scrub, not a lock.
-  void _armPictureListen(String trackUrl) {
+  void _armPictureListen(
+    String trackUrl, {
+    String? audioUrl,
+    bool keepQueue = false,
+    bool allowReopen = true,
+  }) {
     if (!UbuntuTouch.enabled || widget.watchInfo.isLive == true) return;
-    final audioUrl = _handoffAudio()?.url;
-    if (audioUrl == null || audioUrl.isEmpty) {
+    final resolved = audioUrl ?? _handoffAudio()?.url;
+    if (resolved == null || resolved.isEmpty) {
       print('gastube: system player listen skipped reason=audio-url');
       return;
     }
@@ -1389,8 +1401,15 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
     _pictureSeenLogged = false;
     _picturePausedSession = null;
     _pictureLastUs = 0;
+    _pictureLastDurationUs = 0;
     _picturePausedAt = null;
-    unawaited(_watchPicturePause(generation, trackUrl, audioUrl));
+    _pictureEndAt = null;
+    _pictureScrubAt = null;
+    _pictureAllowReopen = allowReopen;
+    _pictureNextTried = false;
+    if (!keepQueue) _pictureQueueId = null;
+    UbuntuTouchDisplay.instance.setPictureHold(true);
+    unawaited(_watchPicturePause(generation, trackUrl, resolved));
   }
 
   void _cancelPictureListen() {
@@ -1398,6 +1417,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
     _pictureListening = false;
     _picturePausedAt = null;
     _picturePausedSession = null;
+    UbuntuTouchDisplay.instance.setPictureHold(false);
   }
 
   Future<void> _watchPicturePause(
@@ -1417,7 +1437,22 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
       if (_pictureListenBusy) continue;
       final picture = await systemPlayerPicture(trackUrl);
       if (!mounted || generation != _pictureListenGeneration) return;
-      if (picture == null) continue;
+      if (picture == null) {
+        if (_pictureSeenPlaying &&
+            !_pictureNextTried &&
+            WidgetsBinding.instance.lifecycleState !=
+                AppLifecycleState.resumed &&
+            await systemPlayerReachedEnd(trackUrl)) {
+          _pictureNextTried = true;
+          _pictureListenBusy = true;
+          try {
+            await _chargeQueueNext(generation, _picturePausedSession ?? 0);
+          } finally {
+            _pictureListenBusy = false;
+          }
+        }
+        continue;
+      }
       if (!_pictureSeenLogged && picture.status == 'Playing') {
         _pictureSeenLogged = true;
         print(
@@ -1425,10 +1460,109 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
           'video=${picture.video} status=${picture.status}',
         );
       }
+      final jumped = picture.positionUs > 0 &&
+          _pictureLastUs > 0 &&
+          (picture.positionUs - _pictureLastUs).abs() > 2500000;
+      final tail = picture.durationUs > 0
+          ? picture.durationUs
+          : _pictureLastDurationUs;
+      final jumpedToTail =
+          tail >= 5000000 && picture.positionUs >= tail - 3000000;
       if (picture.positionUs > 0) _pictureLastUs = picture.positionUs;
+      if (picture.durationUs > 0) _pictureLastDurationUs = picture.durationUs;
+      if (jumped && jumpedToTail) {
+        _pictureScrubAt = null;
+      } else if (jumped) {
+        // A drag pauses while the finger is down. Calling Play here restarts
+        // a track the player has already finished, and on a session that is
+        // still ending it aborts mediaplayer-app.
+        _picturePausedAt = null;
+        _pictureEndAt = null;
+        _pictureScrubAt = DateTime.now();
+      }
+      final scrubbing = _pictureScrubAt != null &&
+          DateTime.now().difference(_pictureScrubAt!) <
+              const Duration(seconds: 3);
+      if (scrubbing) {
+        _pictureEndAt = null;
+        _picturePausedAt = null;
+        if (picture.status == 'Playing') {
+          UbuntuTouchDisplay.instance.setPictureHold(true);
+        }
+        continue;
+      }
+      if (picture.status != 'Playing' && _nearPictureEnd(picture)) {
+        // The player stops and then pauses on the last frame. That pause
+        // used to look like a lock, so the m4a opened and the next Charge
+        // never ran. A scrub resumes within a second, so wait before charging.
+        _pictureEndAt ??= DateTime.now();
+        final held = DateTime.now().difference(_pictureEndAt!);
+        if (_pictureSeenPlaying &&
+            !_pictureNextTried &&
+            WidgetsBinding.instance.lifecycleState !=
+                AppLifecycleState.resumed &&
+            held >= const Duration(milliseconds: 1500)) {
+          final pos = picture.positionUs > 0
+              ? picture.positionUs
+              : _pictureLastUs;
+          final dur = picture.durationUs > 0
+              ? picture.durationUs
+              : _pictureLastDurationUs;
+          print(
+            'gastube: system player next end positionMs=${pos ~/ 1000} '
+            'durationMs=${dur ~/ 1000} status=${picture.status}',
+          );
+          _pictureNextTried = true;
+          _pictureListenBusy = true;
+          try {
+            await _chargeQueueNext(generation, picture.id);
+          } finally {
+            _pictureListenBusy = false;
+          }
+        }
+        continue;
+      }
+      _pictureEndAt = null;
+      if (picture.status != 'Playing' &&
+          picture.positionUs == 0 &&
+          picture.durationUs == 0 &&
+          _pictureSeenPlaying &&
+          _pictureAllowReopen &&
+          _pictureLastDurationUs >= 15000000 &&
+          _pictureLastUs > 0 &&
+          _pictureLastUs < _pictureLastDurationUs - 3000000 &&
+          WidgetsBinding.instance.lifecycleState !=
+              AppLifecycleState.resumed) {
+        // The new file was playing, then the previous video's end reached
+        // this session and reset the sink. Play() on that sink aborts the
+        // player. Open the same manifest under a new name once.
+        _pictureAllowReopen = false;
+        print(
+          'gastube: system player next reopen positionMs=${_pictureLastUs ~/ 1000} '
+          'durationMs=${_pictureLastDurationUs ~/ 1000}',
+        );
+        _pictureListenBusy = true;
+        try {
+          final again = await _reopenChargedTrack(trackUrl);
+          if (!mounted || generation != _pictureListenGeneration) return;
+          if (again != null) {
+            _armPictureListen(
+              again,
+              audioUrl: audioUrl,
+              keepQueue: true,
+              allowReopen: false,
+            );
+          }
+        } finally {
+          _pictureListenBusy = false;
+        }
+        continue;
+      }
+      if (_pictureNextTried && picture.status != 'Playing') continue;
       if (picture.status == 'Playing') {
         _pictureSeenPlaying = true;
         _picturePausedAt = null;
+        UbuntuTouchDisplay.instance.setPictureHold(true);
         final session = _picturePausedSession;
         final onPage = WidgetsBinding.instance.lifecycleState ==
             AppLifecycleState.resumed;
@@ -1470,6 +1604,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
           const Duration(milliseconds: 1500)) {
         continue;
       }
+      UbuntuTouchDisplay.instance.setPictureHold(false);
       final atUs =
           picture.positionUs > 0 ? picture.positionUs : _pictureLastUs;
       if (atUs <= 0) continue;
@@ -1554,6 +1689,199 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
       'gastube: system player listen stop positionMs=$heardMs '
       'seek=$ok session=$sessionId',
     );
+  }
+
+  /// Last reported picture position is within three seconds of its duration.
+  ///
+  /// At the end the hub position becomes unset and the status settles on
+  /// paused, so the samples taken while the picture was still moving are
+  /// the ones that count.
+  bool _nearPictureEnd(
+    ({int id, String status, int positionUs, int durationUs, bool video})
+        picture,
+  ) {
+    final pos = picture.positionUs > 0 ? picture.positionUs : _pictureLastUs;
+    final dur =
+        picture.durationUs > 0 ? picture.durationUs : _pictureLastDurationUs;
+    return dur >= 5000000 && pos >= dur - 3000000;
+  }
+
+  /// Charges the queue's next video without opening this app's page.
+  ///
+  /// The system player only stops at the end. It does not take the next
+  /// track, and this does not send one. PlaybackQueue stays the manual
+  /// previous and next on the video page until a Charge is shown to switch
+  /// the picture by itself.
+  Future<void> _chargeQueueNext(int generation, int endedSession) async {
+    if (!mounted || generation != _pictureListenGeneration) return;
+    if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+      print('gastube: system player next skipped reason=page');
+      return;
+    }
+    final cursor = _pictureQueueId ?? widget.videoId;
+    final next = PlaybackQueue().nextAfter(cursor);
+    if (next == null || next.id.isEmpty || next.id == cursor) {
+      print('gastube: system player next skipped reason=queue');
+      return;
+    }
+    final before = WidgetsBinding.instance.lifecycleState;
+    print(
+      'gastube: system player next begin id=${next.id} '
+      'after=$endedSession lifecycle=$before',
+    );
+    try {
+      if (MediaHubPlayer.instance.holdsBackgroundAudio) {
+        _globalPlayer.forgetBackgroundAudio();
+        await MediaHubPlayer.instance.stop();
+      }
+      cancelUbuntuTouchInProcessResumeSeek();
+      final info = await NewPipeChannel.getStreamInfoFast(next.id);
+      if (!mounted || generation != _pictureListenGeneration) return;
+      final opened = await _chargeExtracted(next.id, info);
+      if (!mounted || generation != _pictureListenGeneration) return;
+      final after = WidgetsBinding.instance.lifecycleState;
+      print(
+        'gastube: system player next charge id=${next.id} '
+        'ok=${opened.ok} lifecycle=$after',
+      );
+      if (before != AppLifecycleState.resumed &&
+          after == AppLifecycleState.resumed) {
+        print('gastube: system player next foreground');
+      }
+      if (!opened.ok || opened.track == null) return;
+      var track = opened.track!;
+      var ready = await _waitForChargedPicture(generation, track);
+      if (!mounted || generation != _pictureListenGeneration) return;
+      if (ready == null &&
+          WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+        print('gastube: system player next reopen id=${next.id}');
+        final again = await _reopenChargedTrack(track);
+        if (!mounted || generation != _pictureListenGeneration) return;
+        if (again != null) {
+          track = again;
+          ready = await _waitForChargedPicture(generation, track);
+          if (!mounted || generation != _pictureListenGeneration) return;
+        }
+      }
+      _pictureQueueId = next.id;
+      _armPictureListen(
+        track,
+        audioUrl: opened.audioUrl,
+        keepQueue: true,
+      );
+      if (ready == null) {
+        print('gastube: system player next missed id=${next.id}');
+      }
+    } catch (error) {
+      print('gastube: system player next failed error=$error');
+    }
+  }
+
+  Future<({int? id, String status})?> _waitForChargedPicture(
+    int generation,
+    String track,
+  ) async {
+    final deadline = DateTime.now().add(const Duration(seconds: 8));
+    while (mounted &&
+        generation == _pictureListenGeneration &&
+        DateTime.now().isBefore(deadline)) {
+      final picture = await systemPlayerPicture(track);
+      if (picture != null &&
+          picture.status == 'Playing' &&
+          picture.positionUs > 0) {
+        print(
+          'gastube: system player next ready session=${picture.id} '
+          'status=${picture.status}',
+        );
+        return (id: picture.id, status: picture.status);
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+    return null;
+  }
+
+  /// Opens [track] again under a new manifest name.
+  ///
+  /// The running player keeps the previous file's end on this session.
+  /// Play() there aborts the process. A name it has not cached starts
+  /// playback the way the first handoff does.
+  Future<String?> _reopenChargedTrack(String track) async {
+    if (track.endsWith('.mpd')) {
+      final copy = await copyUbuntuTouchDashMpd(track);
+      if (copy == null) return null;
+      final opened = await openInSystemPlayer(path: copy, audioOnly: false);
+      return opened.ok ? copy : null;
+    }
+    final opened = await openUrlInSystemPlayer(track);
+    return opened.ok ? track : null;
+  }
+
+  Future<({bool ok, String? track, String? audioUrl})> _chargeExtracted(
+    String videoId,
+    NewPipeWatchResp info,
+  ) async {
+    final qualities = NewPipeStreamHelper.getAvailableQualities(
+      info,
+      preferredCodec: widget.defaultVideoCodec,
+    );
+    final match = NewPipeStreamHelper.findBestMatchingQuality(
+      qualities,
+      widget.defaultQuality,
+      preferredCodec: widget.defaultVideoCodec,
+    );
+    StreamQualityInfo? dash = match != null &&
+            ubuntuTouchDashVideo(match.videoStream)
+        ? match
+        : null;
+    dash ??= qualities.cast<StreamQualityInfo?>().firstWhere(
+          (quality) => ubuntuTouchDashVideo(quality?.videoStream),
+          orElse: () => null,
+        );
+    final audio = _dashAudioFor(info);
+    if (dash?.videoStream != null && audio != null) {
+      final safeId = videoId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '');
+      final stamp = DateTime.now().millisecondsSinceEpoch;
+      final path = await writeUbuntuTouchDashMpd(
+        videoId: videoId,
+        video: dash!.videoStream!,
+        audio: audio,
+        fileName: 'hd-$safeId-$stamp.mpd',
+      );
+      if (path != null) {
+        final resumeMs = await systemPlayerResumeMs(videoId);
+        if (resumeMs != null) {
+          await armSystemPlayerContinue(path, resumeMs);
+        } else {
+          await clearSystemPlayerStoredPosition(path);
+        }
+        final opened = await openInSystemPlayer(path: path, audioOnly: false);
+        if (opened.ok) await forgetOtherUbuntuTouchDashMpds(path);
+        return (ok: opened.ok, track: path, audioUrl: audio.url);
+      }
+      print('gastube: system player next mpd failed id=$videoId');
+    }
+    for (final quality in qualities) {
+      if (quality.requiresMerging) continue;
+      final url = quality.videoStream?.url;
+      if (url == null || !_isHttpPlaybackUrl(url)) continue;
+      final resumeMs = await systemPlayerResumeMs(videoId);
+      if (resumeMs != null) {
+        await armSystemPlayerContinue(url, resumeMs);
+      } else {
+        await clearSystemPlayerStoredPosition(url);
+      }
+      final opened = await openUrlInSystemPlayer(url);
+      return (ok: opened.ok, track: url, audioUrl: audio?.url);
+    }
+    print('gastube: system player next skipped reason=stream id=$videoId');
+    return (ok: false, track: null, audioUrl: null);
+  }
+
+  NewPipeAudioStream? _dashAudioFor(NewPipeWatchResp info) {
+    final streams =
+        (info.audioStreams ?? const <NewPipeAudioStream>[]).where(ubuntuTouchDashAudio).toList();
+    if (streams.isEmpty) return null;
+    return NewPipeStreamHelper.getBestAudioStream(streams);
   }
 
   void _ensureBackgroundAudio() {
