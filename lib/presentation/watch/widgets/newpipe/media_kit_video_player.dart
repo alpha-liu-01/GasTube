@@ -113,6 +113,8 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
   // History tracking - throttle updates
   StreamSubscription<Duration>? _historySubscription;
   int _lastSavedPositionSeconds = -1;
+  int _historyPollGeneration = 0;
+  String? _historyPollUrl;
 
   // HLS/DASH adaptive streaming - track video tracks from player
   StreamSubscription<Tracks>? _tracksSubscription;
@@ -194,6 +196,8 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
         _applySystemPlayerPlaceholder();
         if (mounted) setState(() {});
         await _refreshHandoffPosition();
+        final handoffUrl = _systemPlayerUrl;
+        if (handoffUrl != null) _armSystemPlayerHistory(handoffUrl);
         _globalPlayer.exitPipMode();
         _setupHistoryListener();
         _setupSponsorBlockListener();
@@ -480,6 +484,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
     } else {
       _systemPlayerUrl = url;
     }
+    _armSystemPlayerHistory(url);
   }
 
   List<StreamQualityInfo> _loadQualities() {
@@ -1398,6 +1403,58 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
     _pictureListening = false;
     _picturePausedAt = null;
     _picturePausedSession = null;
+    _cancelSystemPlayerHistory();
+  }
+
+  /// Writes watch history from the system player's position while it is in
+  /// front. The page stays mounted and this process stays scheduled, so the
+  /// read does not wait for the user to come back. Coming back still reads
+  /// once in [_refreshHandoffPosition].
+  void _armSystemPlayerHistory(String url) {
+    if (!UbuntuTouch.enabled || url.isEmpty) return;
+    if (_historyPollUrl == url) return;
+    _historyPollUrl = url;
+    _lastSavedPositionSeconds = -1;
+    final generation = ++_historyPollGeneration;
+    unawaited(_pollSystemPlayerHistory(generation, url));
+  }
+
+  void _cancelSystemPlayerHistory() {
+    _historyPollUrl = null;
+    _historyPollGeneration++;
+  }
+
+  Future<void> _pollSystemPlayerHistory(int generation, String url) async {
+    while (mounted &&
+        generation == _historyPollGeneration &&
+        _systemPlayerUrl == url) {
+      await Future<void>.delayed(const Duration(seconds: 15));
+      if (!mounted ||
+          generation != _historyPollGeneration ||
+          _systemPlayerUrl != url) {
+        return;
+      }
+      final picture = await systemPlayerPicture(url);
+      if (!mounted ||
+          generation != _historyPollGeneration ||
+          picture == null ||
+          picture.positionUs <= 0) {
+        continue;
+      }
+      final seconds = picture.positionUs ~/ 1000000;
+      if (seconds <= 0) continue;
+      final last = _lastSavedPositionSeconds;
+      final forward = last < 0 ? seconds >= 15 : seconds >= last + 15;
+      final backward = last > 0 && seconds + 5 < last;
+      if (!forward && !backward) continue;
+      _lastSavedPositionSeconds = seconds;
+      final position = Duration(microseconds: picture.positionUs);
+      print(
+        'gastube: history system watch id=${widget.videoId} '
+        'positionMs=${position.inMilliseconds}',
+      );
+      _updateVideoHistory(position: position);
+    }
   }
 
   Future<void> _watchPicturePause(
@@ -1798,6 +1855,9 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
     // Update history every 15 seconds. This keeps resume position fresh without
     // doing database work too often while the decoder is already busy.
     _historySubscription = _player.stream.position.listen((position) {
+      // The in-app playhead stays where the handoff paused it. Writing that
+      // would replace the system player's position in history.
+      if (_systemPlayerUrl != null) return;
       final currentSeconds = position.inSeconds;
       // Only update when we cross the boundary AND haven't already saved this position.
       if (currentSeconds > 0 &&
