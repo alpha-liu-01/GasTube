@@ -814,6 +814,14 @@
   "@fullscreenAspectRotateDescription": {
     "description": "Explains fullscreen aspect rotation"
   },
+  "ubuntuTouchEnhanced": "UT Tweak Tool enhancements",
+  "@ubuntuTouchEnhanced": {
+    "description": "Master switch for Ubuntu Touch behavior that needs Prevent app suspension"
+  },
+  "ubuntuTouchEnhancedDescription": "Stops the resume helper this app starts. Turn this on when Prevent app suspension is enabled for GasTube.",
+  "@ubuntuTouchEnhancedDescription": {
+    "description": "Explains the Ubuntu Touch enhancement switch"
+  },
   "exportChooseFolder": "The file manager is open. Choose where to save {name}.",
   "@exportChooseFolder": {
     "description": "Ubuntu Touch export handed to the file manager",

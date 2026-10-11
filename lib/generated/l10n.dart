@@ -2735,6 +2735,27 @@ class S {
     );
   }
 
+  /// `UT Tweak Tool enhancements`
+  String get ubuntuTouchEnhanced {
+    return Intl.message(
+      'UT Tweak Tool enhancements',
+      name: 'ubuntuTouchEnhanced',
+      desc:
+          'Master switch for Ubuntu Touch behavior that needs Prevent app suspension',
+      args: [],
+    );
+  }
+
+  /// `Stops the resume helper this app starts. Turn this on when Prevent app suspension is enabled for GasTube.`
+  String get ubuntuTouchEnhancedDescription {
+    return Intl.message(
+      'Stops the resume helper this app starts. Turn this on when Prevent app suspension is enabled for GasTube.',
+      name: 'ubuntuTouchEnhancedDescription',
+      desc: 'Explains the Ubuntu Touch enhancement switch',
+      args: [],
+    );
+  }
+
   /// `The file manager is open. Choose where to save {name}.`
   String exportChooseFolder(String name) {
     return Intl.message(

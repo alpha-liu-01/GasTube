@@ -107,7 +107,18 @@ Future<void> forgetSystemPlayerResume(String url) async {
 ///
 /// When the seek helper is running, the player file is set to 0 so its
 /// Continue dialog does not call play() from the start. The helper seeks the
-/// new media-hub session after this process has been stopped.
+/// new media-hub session after this process has been stopped. This click does
+/// not seek as well.
+///
+/// When the helper is not running, the player file keeps the minutes, which
+/// is the path used if Lomiri stops this process. If the process stays
+/// scheduled, a later wait seeks the new session once. A monotonic gap means
+/// the wait was frozen, and that seek is skipped.
+///
+/// The enhancement switch means this process is not stopped. The player file
+/// is set to 0 so Continue does not seek in the same moment the picture
+/// surface is created. That early seek leaves the surface at 0×0. Playback
+/// starts at the beginning, and the wait seeks after the opening frames.
 ///
 /// [carry] is the position of the session just left. A quality change passes
 /// it so the new address does not resume its own older bookmark.
@@ -145,13 +156,31 @@ Future<Duration?> systemPlayerStoredPosition(
     await _writePendingSeek(ms, wanted);
     await clearSystemPlayerStoredPosition(url);
     print('gastube: system player resume stored ms=$ms helper=up');
+    print('gastube: system player resume seek skipped reason=helper');
+  } else if (await ubuntuTouchEnhancedMode()) {
+    // Continue calls seek() then play() while the Hybris surface is still
+    // 0×0. The 1920×1088 setup never runs, and the picture stays black.
+    // Start at the beginning so that setup runs, then seek once.
+    await clearSystemPlayerStoredPosition(url);
+    print(
+      'gastube: system player resume stored ms=$ms helper=down surface=start',
+    );
+    await _armInProcessResumeSeek(ms, wanted);
   } else {
-    if (fromFile == null || fromFile < _resumeMinMs) {
-      await _writePlayerMs(wanted, ms);
-    }
+    // The dialog seeks whatever this file holds. A carry must replace an
+    // older bookmark, or Continue resumes the previous visit.
+    await _writePlayerMs(wanted, ms);
     print('gastube: system player resume stored ms=$ms helper=down');
+    await _armInProcessResumeSeek(ms, wanted);
   }
   return Duration(milliseconds: ms);
+}
+
+/// Stops a resume seek that has not fired yet.
+///
+/// A failed handoff must not seek a session opened later.
+void cancelUbuntuTouchInProcessResumeSeek() {
+  _resumeSeekGeneration++;
 }
 
 const _resumeMinMs = 5000;
@@ -298,6 +327,335 @@ Future<bool> _seekHelperAlive() async {
   if (!file.existsSync()) return false;
   final age = DateTime.now().difference(file.lastModifiedSync());
   return age < const Duration(seconds: 3);
+}
+
+int _resumeSeekGeneration = 0;
+
+const _mediaHubDest = 'com.lomiri.MediaHub.Service';
+const _mediaHubSessions = '/com/lomiri/MediaHub/Service/sessions';
+const _mprisPlayer = 'org.mpris.MediaPlayer2.Player';
+const _mprisTracks = 'org.mpris.MediaPlayer2.TrackList';
+
+/// Snapshots media-hub sessions, then waits for the one this handoff opens.
+///
+/// The snapshot finishes before the caller charges Content Hub. The watch
+/// itself continues afterwards. It seeks once, after the new session reports
+/// a duration and playback has moved 1.5s past the first sample. Those
+/// opening frames are what size the picture surface. Seeking earlier leaves
+/// it at 0×0. If the position is already at the stored minute, it does not
+/// seek again. If the first seek is still at the beginning, one more seek
+/// puts the playhead back. [Stopwatch] is monotonic: if a wait returns much
+/// later than it was asked to, this process was stopped and the seek is
+/// dropped. Choosing "From start" stores a negative position and cancels
+/// the watch.
+Future<void> _armInProcessResumeSeek(int ms, String key) async {
+  final generation = ++_resumeSeekGeneration;
+  final client = DBusClient.session();
+  List<int> snapshot;
+  try {
+    snapshot = await _mediaHubSessionIds(client);
+  } catch (error) {
+    print('gastube: system player resume seek failed error=$error');
+    await client.close();
+    return;
+  }
+  print(
+    'gastube: system player resume seek arm ms=$ms sessions=${snapshot.length}',
+  );
+  unawaited(
+    _watchResumeSeek(
+      client: client,
+      generation: generation,
+      ms: ms,
+      key: key,
+      snapshot: snapshot,
+    ),
+  );
+}
+
+Future<void> _watchResumeSeek({
+  required DBusClient client,
+  required int generation,
+  required int ms,
+  required String key,
+  required List<int> snapshot,
+}) async {
+  final clock = Stopwatch()..start();
+  var last = clock.elapsedMilliseconds;
+  var seenId = -1;
+  var seenAt = 0;
+  var loggedBus = false;
+  var loggedSurface = false;
+  var sought = false;
+  var soughtAt = -1;
+  var recovered = false;
+  var pictureAt = -1;
+  var pictureUs = 0;
+  try {
+    while (generation == _resumeSeekGeneration &&
+        clock.elapsedMilliseconds < 20000) {
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      if (generation != _resumeSeekGeneration) return;
+      final now = clock.elapsedMilliseconds;
+      final gap = now - last;
+      last = now;
+      if (gap > 1500) {
+        print(
+          'gastube: system player resume seek skipped reason=frozen gapMs=$gap',
+        );
+        return;
+      }
+      List<int> ids;
+      try {
+        ids = await _mediaHubSessionIds(client);
+      } catch (error) {
+        if (!loggedBus) {
+          loggedBus = true;
+          print('gastube: system player resume seek failed error=$error');
+        }
+        continue;
+      }
+      var newest = -1;
+      for (final id in ids) {
+        if (snapshot.contains(id) || id < newest) continue;
+        final found = await _mediaHubTrackKey(client, id);
+        if (found == null || !_sameTrackTail(found, key)) continue;
+        newest = id;
+      }
+      if (newest < 0) continue;
+      if (seenId != newest) {
+        seenId = newest;
+        seenAt = now;
+        print('gastube: system player resume seek saw session=$newest');
+      }
+      final durationRaw = await _mediaHubDuration(client, newest);
+      if (durationRaw <= 0) continue;
+      final positionUs = _hubMicroseconds(
+        await _mediaHubPosition(client, newest),
+        durationRaw,
+      );
+      final targetUs = ms * 1000;
+      if (positionUs != null && (positionUs - targetUs).abs() < 4000000) {
+        print(
+          'gastube: system player resume seek landed session=$newest ms=$ms',
+        );
+        return;
+      }
+      final storedNow = await _storedMsForKey(key);
+      if (storedNow != null && storedNow < 0) {
+        print('gastube: system player resume seek skipped reason=restart');
+        return;
+      }
+      final playing = await _mediaHubStatus(client, newest) == 'Playing';
+      if (playing && positionUs != null && pictureAt < 0) {
+        pictureAt = now;
+        pictureUs = positionUs;
+      }
+      // First frames at the start of the file size the Hybris surface.
+      // A Seek before that leaves height and width at 0.
+      final pictureReady = pictureAt >= 0 &&
+          positionUs != null &&
+          positionUs - pictureUs >= 1500000;
+      if (!pictureReady) {
+        if (!loggedSurface && pictureAt >= 0) {
+          loggedSurface = true;
+          print(
+            'gastube: system player resume seek wait reason=surface '
+            'session=$newest',
+          );
+        }
+        continue;
+      }
+      if (!sought) {
+        sought = true;
+        soughtAt = now;
+        final ok = await _seekMediaHubSession(client, newest, ms);
+        print(
+          'gastube: system player resume seek once session=$newest '
+          'ms=$ms ageMs=${now - seenAt} ok=$ok',
+        );
+        continue;
+      }
+      if (now - soughtAt < 1500) continue;
+      final stillOpening = positionUs - pictureUs < 4000000;
+      if (playing && stillOpening && targetUs > 15000000 && !recovered) {
+        recovered = true;
+        final ok = await _seekMediaHubSession(client, newest, ms);
+        print(
+          'gastube: system player resume seek recover session=$newest '
+          'ms=$ms ok=$ok',
+        );
+        return;
+      }
+    }
+    if (generation == _resumeSeekGeneration) {
+      print('gastube: system player resume seek gave up ms=$ms');
+    }
+  } catch (error) {
+    print('gastube: system player resume seek failed error=$error');
+  } finally {
+    await client.close();
+  }
+}
+
+Future<List<int>> _mediaHubSessionIds(DBusClient client) async {
+  final reply = await DBusRemoteObject(
+    client,
+    name: _mediaHubDest,
+    path: DBusObjectPath(_mediaHubSessions),
+  ).callMethod(
+    'org.freedesktop.DBus.Introspectable',
+    'Introspect',
+    const [],
+    replySignature: DBusSignature('s'),
+  );
+  final xml = reply.returnValues.first.asString();
+  final ids = <int>[];
+  for (final match in RegExp(r'name="(\d+)"').allMatches(xml)) {
+    final id = int.tryParse(match.group(1)!);
+    if (id != null) ids.add(id);
+  }
+  return ids;
+}
+
+Future<String?> _mediaHubTrackKey(DBusClient client, int id) async {
+  try {
+    final list = DBusRemoteObject(
+      client,
+      name: _mediaHubDest,
+      path: DBusObjectPath('$_mediaHubSessions/$id/TrackList'),
+    );
+    final tracks = await list.callMethod(
+      'org.freedesktop.DBus.Properties',
+      'Get',
+      [const DBusString(_mprisTracks), const DBusString('Tracks')],
+      replySignature: DBusSignature('v'),
+    );
+    // DBusArray.toNative() is an Iterable, not a List. An object path's
+    // toNative() is the path object itself.
+    final native = tracks.returnValues.first.asVariant().toNative();
+    if (native is String || native is! Iterable) return null;
+    String? trackId;
+    for (final value in native) {
+      trackId = _dbusText(value);
+      if (trackId != null) break;
+    }
+    if (trackId == null) return null;
+    final reply = await list.callMethod(
+      _mprisTracks,
+      'GetTracksUri',
+      [DBusString(trackId)],
+      replySignature: DBusSignature('s'),
+    );
+    final uri = reply.returnValues.first.asString();
+    if (uri.isEmpty) return null;
+    return uri;
+  } catch (_) {
+    return null;
+  }
+}
+
+String? _dbusText(Object? value) {
+  if (value is String && value.isNotEmpty) return value;
+  if (value is DBusObjectPath && value.value.isNotEmpty) return value.value;
+  if (value is DBusString && value.value.isNotEmpty) return value.value;
+  return null;
+}
+
+Future<int> _mediaHubPosition(DBusClient client, int id) async {
+  try {
+    final reply = await DBusRemoteObject(
+      client,
+      name: _mediaHubDest,
+      path: DBusObjectPath('$_mediaHubSessions/$id'),
+    ).callMethod(
+      'org.freedesktop.DBus.Properties',
+      'Get',
+      [const DBusString(_mprisPlayer), const DBusString('Position')],
+      replySignature: DBusSignature('v'),
+    );
+    final native = reply.returnValues.first.asVariant().toNative();
+    if (native is int) return native;
+    return -1;
+  } catch (_) {
+    return -1;
+  }
+}
+
+Future<String> _mediaHubStatus(DBusClient client, int id) async {
+  try {
+    final reply = await DBusRemoteObject(
+      client,
+      name: _mediaHubDest,
+      path: DBusObjectPath('$_mediaHubSessions/$id'),
+    ).callMethod(
+      'org.freedesktop.DBus.Properties',
+      'Get',
+      [const DBusString(_mprisPlayer), const DBusString('PlaybackStatus')],
+      replySignature: DBusSignature('v'),
+    );
+    final native = reply.returnValues.first.asVariant().toNative();
+    return native is String ? native : '';
+  } catch (_) {
+    return '';
+  }
+}
+
+/// media-hub reports nanoseconds once the value passes one second.
+int? _hubMicroseconds(int raw, int durationRaw) {
+  if (raw < 0) return null;
+  final nanoseconds = durationRaw >= 1000000000 || raw >= 1000000000;
+  return nanoseconds ? raw ~/ 1000 : raw;
+}
+
+Future<int> _mediaHubDuration(DBusClient client, int id) async {
+  try {
+    final reply = await DBusRemoteObject(
+      client,
+      name: _mediaHubDest,
+      path: DBusObjectPath('$_mediaHubSessions/$id'),
+    ).callMethod(
+      'org.freedesktop.DBus.Properties',
+      'Get',
+      [const DBusString(_mprisPlayer), const DBusString('Duration')],
+      replySignature: DBusSignature('v'),
+    );
+    final native = reply.returnValues.first.asVariant().toNative();
+    if (native is int) return native;
+    return -1;
+  } catch (_) {
+    return -1;
+  }
+}
+
+Future<bool> _seekMediaHubSession(DBusClient client, int id, int ms) async {
+  try {
+    await DBusRemoteObject(
+      client,
+      name: _mediaHubDest,
+      path: DBusObjectPath('$_mediaHubSessions/$id'),
+    ).callMethod(
+      _mprisPlayer,
+      'Seek',
+      [DBusUint64(ms * 1000)],
+    );
+    return true;
+  } catch (error) {
+    print('gastube: system player resume seek failed error=$error');
+    return false;
+  }
+}
+
+bool _sameTrackTail(String uri, String key) {
+  if (key.isEmpty) return false;
+  final slash = uri.lastIndexOf('/');
+  final tail = slash < 0 ? uri : uri.substring(slash + 1);
+  if (tail == key) return true;
+  try {
+    return Uri.decodeComponent(tail) == key;
+  } catch (_) {
+    return false;
+  }
 }
 
 /// Opens a finished download in Media Player.
@@ -575,28 +933,128 @@ Future<({bool ok, String message})> shareText(String text) async {
   }
 }
 
+/// Whether the UT Tweak Tool enhancement path is on.
+///
+/// The switch lives in Settings. While it is on, this app does not start
+/// `gastube-seek`, and a running copy is stopped.
+Future<bool> ubuntuTouchEnhancedMode() async {
+  if (!UbuntuTouch.enabled) return false;
+  final file = await _resumeDirFile('enhanced-mode');
+  if (!file.existsSync()) return false;
+  return file.readAsStringSync().trim() == '1';
+}
+
+/// Remembers [enabled] and starts or stops the resume helper to match.
+Future<void> setUbuntuTouchEnhancedMode(bool enabled) async {
+  final file = await _resumeDirFile('enhanced-mode');
+  await file.parent.create(recursive: true);
+  await file.writeAsString(enabled ? '1\n' : '0\n');
+  if (enabled) {
+    await stopUbuntuTouchSeekHelper();
+  } else {
+    await startUbuntuTouchSeekHelper();
+  }
+  print('gastube: enhanced mode enabled=$enabled');
+}
+
 /// Starts the resume helper that ships inside the click.
 ///
 /// Lomiri stops this process group when the system player is in front.
 /// The helper calls setsid, so it is not in that group and can seek after
-/// the player is ready.
+/// the player is ready. The enhancement switch leaves this stopped.
 Future<void> startUbuntuTouchSeekHelper() async {
   if (!UbuntuTouch.enabled) return;
+  if (await ubuntuTouchEnhancedMode()) {
+    print('gastube: seek helper skipped reason=enhanced');
+    await stopUbuntuTouchSeekHelper();
+    return;
+  }
   final helper = p.join(p.dirname(Platform.resolvedExecutable), 'gastube-seek');
   if (!File(helper).existsSync()) {
     print('gastube: seek helper missing');
     return;
   }
   try {
-    await Process.start(
+    final process = await Process.start(
       helper,
       const [],
       mode: ProcessStartMode.detached,
     );
-    print('gastube: seek helper started');
+    final pidFile = await _resumeDirFile('seek-helper.pid');
+    await pidFile.writeAsString('${process.pid}\n');
+    print('gastube: seek helper started pid=${process.pid}');
   } catch (error) {
     print('gastube: seek helper start error=$error');
   }
+}
+
+/// Stops every `gastube-seek` this app can see.
+///
+/// The user service and the copy started at launch are the same program.
+/// Stopping the service leaves the copy inside this app's cgroup running.
+Future<void> stopUbuntuTouchSeekHelper() async {
+  final pids = _seekHelperPids();
+  for (final pid in pids) {
+    final ok = Process.killPid(pid, ProcessSignal.sigterm);
+    print('gastube: seek helper stop pid=$pid ok=$ok signal=term');
+  }
+  await Future<void>.delayed(const Duration(milliseconds: 300));
+  for (final pid in _seekHelperPids()) {
+    final ok = Process.killPid(pid, ProcessSignal.sigkill);
+    print('gastube: seek helper stop pid=$pid ok=$ok signal=kill');
+  }
+  try {
+    final unit = await Process.run(
+      'systemctl',
+      ['--user', 'stop', 'gastube-seek.service'],
+    );
+    print('gastube: seek helper unit stop code=${unit.exitCode}');
+  } catch (error) {
+    print('gastube: seek helper unit stop error=$error');
+  }
+  final beat = await _resumeDirFile('seek-helper.heartbeat');
+  if (beat.existsSync()) await beat.delete();
+  final pidFile = await _resumeDirFile('seek-helper.pid');
+  if (pidFile.existsSync()) await pidFile.delete();
+  await _writePendingSeek(0, '');
+}
+
+Set<int> _seekHelperPids() {
+  final pids = <int>{};
+  final recorded = _resumeDirFileSync('seek-helper.pid');
+  if (recorded != null && recorded.existsSync()) {
+    final pid = int.tryParse(recorded.readAsStringSync().trim());
+    if (pid != null && pid > 0) pids.add(pid);
+  }
+  final proc = Directory('/proc');
+  if (!proc.existsSync()) return pids;
+  try {
+    for (final entity in proc.listSync()) {
+      final pid = int.tryParse(p.basename(entity.path));
+      if (pid == null || pid <= 0) continue;
+      try {
+        final raw = File('/proc/$pid/cmdline').readAsBytesSync();
+        final text = String.fromCharCodes(raw.where((byte) => byte != 0));
+        if (!text.contains('/gastube-seek')) continue;
+        pids.add(pid);
+      } catch (_) {}
+    }
+  } catch (error) {
+    print('gastube: seek helper pids error=$error');
+  }
+  return pids;
+}
+
+File? _resumeDirFileSync(String name) {
+  final home = Platform.environment['HOME'];
+  if (home == null || home.isEmpty) return null;
+  final data = Platform.environment['XDG_DATA_HOME'];
+  final root = (data != null && data.isNotEmpty)
+      ? data
+      : p.join(home, '.local', 'share');
+  return File(
+    p.join(root, UbuntuTouch.clickPackage, 'player-resume', name),
+  );
 }
 
 /// Listens for a shared link or an imported document while the process lives.

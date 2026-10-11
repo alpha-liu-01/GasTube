@@ -1211,6 +1211,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
       await forgetOtherUbuntuTouchDashMpds(path);
       _rememberSystemPlayerPreview(path, stored);
     } else {
+      cancelUbuntuTouchInProcessResumeSeek();
       _pendingPreviewFrame = null;
     }
     return opened.ok;
@@ -1245,6 +1246,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
     if (opened.ok) {
       _rememberSystemPlayerPreview(url, stored);
     } else {
+      cancelUbuntuTouchInProcessResumeSeek();
       _pendingPreviewFrame = null;
     }
     return opened.ok;

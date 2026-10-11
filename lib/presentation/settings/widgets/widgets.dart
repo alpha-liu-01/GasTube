@@ -5,5 +5,6 @@ export 'distraction_section.dart';
 export 'playback_section.dart';
 export 'profiles_section.dart';
 export 'sponsorblock_section.dart';
+export 'ubuntu_touch_enhanced_tile.dart';
 export 'sub_setting_app_bar.dart';
 export 'video_settings_section.dart';
