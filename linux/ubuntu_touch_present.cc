@@ -1,4 +1,9 @@
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include <gdk/gdk.h>
+#include <gdk/gdkwayland.h>
 #include <gtk/gtk.h>
 
 #include <EGL/egl.h>
@@ -6,6 +11,11 @@
 
 #include <dlfcn.h>
 #include <pthread.h>
+#include <sys/mman.h>
+#include <unistd.h>
+
+#include <cstdlib>
+#include <vector>
 
 #include <algorithm>
 #include <atomic>
@@ -23,6 +33,28 @@
 // so it does not free the buffer finishSwap is still using. The apply must
 // not re-enter this hook: hybris can dispatch another configure from inside
 // the resize, and that would call the hook again.
+// Set by the media probe when the Android layer is absent. The phone keeps
+// the hybris swap. A Mesa guest shows the GTK draw instead.
+bool shm_present_enabled() {
+  static int enabled = -1;
+  if (enabled < 0) {
+    const char* value = std::getenv("GASTUBE_SHM_PRESENT");
+    enabled = value != nullptr && value[0] == '1' ? 1 : 0;
+  }
+  return enabled == 1;
+}
+
+void finish_gl() {
+  using GlFinishFn = void (*)();
+  static GlFinishFn finish = nullptr;
+  static bool looked = false;
+  if (!looked) {
+    looked = true;
+    finish = reinterpret_cast<GlFinishFn>(dlsym(RTLD_DEFAULT, "glFinish"));
+  }
+  if (finish != nullptr) finish();
+}
+
 struct wl_egl_window;
 using WlEglResizeFn = void (*)(struct wl_egl_window*, int, int, int, int);
 
@@ -208,6 +240,198 @@ void unlock_hybris_window() {
 // libflutter calls gdk_cairo_draw_from_gl, so this executable can interpose
 // it. epoxy_eglQuerySurface is a function pointer. Do not define it.
 
+// Mesa's wl_egl_window starts with the wl_surface pointer, then the size.
+// The phone's hybris window starts with the word 3 and is left alone.
+bool skip_shm(const char* why) {
+  static bool logged = false;
+  if (!logged) {
+    logged = true;
+    g_message("present: shared-memory frame skipped: %s", why);
+  }
+  return false;
+}
+
+bool publish_shm_frame(EGLDisplay egl_display, EGLSurface egl_surface) {
+  if (g_egl_window_count <= 0) return skip_shm("no egl window");
+  struct wl_egl_window* window = g_egl_windows[g_egl_window_count - 1];
+  if (window == nullptr) return skip_shm("null egl window");
+  // wayland 1.22 stores version 3 at the start and the wl_surface at +56.
+  if (*reinterpret_cast<uintptr_t*>(window) != 3) return skip_shm("unknown egl window");
+
+  using QueryFn = EGLBoolean (*)(EGLDisplay, EGLSurface, EGLint, EGLint*);
+  static QueryFn query = nullptr;
+  if (query == nullptr) {
+    query = reinterpret_cast<QueryFn>(dlsym(RTLD_DEFAULT, "eglQuerySurface"));
+  }
+  if (query == nullptr) return skip_shm("eglQuerySurface missing");
+  EGLint width = 0;
+  EGLint height = 0;
+  if (query(egl_display, egl_surface, EGL_WIDTH, &width) != EGL_TRUE ||
+      query(egl_display, egl_surface, EGL_HEIGHT, &height) != EGL_TRUE ||
+      width <= 0 || height <= 0 || width > 10000 || height > 10000) {
+    return skip_shm("surface size");
+  }
+  int native_width =
+      *reinterpret_cast<int*>(reinterpret_cast<char*>(window) + 8);
+  int native_height =
+      *reinterpret_cast<int*>(reinterpret_cast<char*>(window) + 12);
+  // Buffer scale makes the EGL surface a multiple of the wl_egl_window size.
+  if (native_width <= 0 || native_height <= 0 || native_width > 10000 ||
+      native_height > 10000) {
+    return skip_shm("window size");
+  }
+
+  using ReadFn = void (*)(int, int, int, int, unsigned int, unsigned int, void*);
+  static ReadFn read_pixels = nullptr;
+  if (read_pixels == nullptr) {
+    void* gles = dlopen("libGLESv2.so.2", RTLD_NOW | RTLD_NOLOAD);
+    if (gles == nullptr) gles = dlopen("libGLESv2.so.2", RTLD_NOW);
+    if (gles != nullptr) {
+      read_pixels = reinterpret_cast<ReadFn>(dlsym(gles, "glReadPixels"));
+    }
+  }
+  if (read_pixels == nullptr) return skip_shm("glReadPixels missing");
+
+  static struct wl_shm* shm = nullptr;
+  static bool shm_tried = false;
+  if (!shm_tried) {
+    shm_tried = true;
+    GdkDisplay* gdk_display = gdk_display_get_default();
+    if (gdk_display != nullptr && GDK_IS_WAYLAND_DISPLAY(gdk_display)) {
+      struct wl_display* wl = gdk_wayland_display_get_wl_display(gdk_display);
+      struct wl_registry* registry = wl_display_get_registry(wl);
+      auto on_global = [](void* data, struct wl_registry* registry,
+                          uint32_t name, const char* interface,
+                          uint32_t) {
+        if (std::strcmp(interface, wl_shm_interface.name) != 0) return;
+        auto* slot = static_cast<struct wl_shm**>(data);
+        if (*slot != nullptr) return;
+        *slot = static_cast<struct wl_shm*>(
+            wl_registry_bind(registry, name, &wl_shm_interface, 1));
+      };
+      auto on_remove = [](void*, struct wl_registry*, uint32_t) {};
+      const wl_registry_listener listener{on_global, on_remove};
+      wl_registry_add_listener(registry, &listener, &shm);
+      wl_display_roundtrip(wl);
+    }
+  }
+  if (shm == nullptr) return skip_shm("wl_shm missing");
+
+  const int stride = width * 4;
+  const size_t bytes = static_cast<size_t>(stride) * static_cast<size_t>(height);
+  std::vector<unsigned char> pixels(bytes);
+  constexpr unsigned int kRgba = 0x1908;
+  constexpr unsigned int kUnsignedByte = 0x1401;
+  // The frame is in the back buffer only after Mesa's own swap copies it.
+  // Keep that buffer so the read still sees it, then replace Mesa's texture
+  // with the shared-memory copy. Mir can show the copy.
+  using SwapFn = EGLBoolean (*)(EGLDisplay, EGLSurface);
+  using AttribFn = EGLBoolean (*)(EGLDisplay, EGLSurface, EGLint, EGLint);
+  static SwapFn mesa_swap = nullptr;
+  static bool mesa_ready = false;
+  if (!mesa_ready) {
+    mesa_ready = true;
+    void* egl = dlopen("libEGL_mesa.so.0", RTLD_NOW | RTLD_NOLOAD);
+    if (egl == nullptr) egl = dlopen("libEGL.so.1", RTLD_NOW | RTLD_NOLOAD);
+    if (egl != nullptr) {
+      mesa_swap = reinterpret_cast<SwapFn>(dlsym(egl, "eglSwapBuffers"));
+      auto attrib = reinterpret_cast<AttribFn>(dlsym(egl, "eglSurfaceAttrib"));
+      constexpr EGLint kSwapBehavior = 0x3093;
+      constexpr EGLint kBufferPreserved = 0x3094;
+      if (attrib != nullptr) {
+        attrib(egl_display, egl_surface, kSwapBehavior, kBufferPreserved);
+      }
+    }
+  }
+  if (mesa_swap != nullptr) mesa_swap(egl_display, egl_surface);
+  finish_gl();
+  read_pixels(0, 0, width, height, kRgba, kUnsignedByte, pixels.data());
+  using ErrorFn = unsigned int (*)();
+  static ErrorFn gl_error = nullptr;
+  if (gl_error == nullptr) {
+    void* gles = dlopen("libGLESv2.so.2", RTLD_NOW | RTLD_NOLOAD);
+    if (gles != nullptr) {
+      gl_error = reinterpret_cast<ErrorFn>(dlsym(gles, "glGetError"));
+    }
+  }
+  unsigned int error = gl_error != nullptr ? gl_error() : 0;
+
+  static int fd = -1;
+  static void* mapping = nullptr;
+  static size_t mapped = 0;
+  static struct wl_shm_pool* pool = nullptr;
+  static struct wl_buffer* buffers[2] = {};
+  static int next_buffer = 0;
+  if (mapped != bytes) {
+    if (mapping != nullptr) munmap(mapping, mapped);
+    if (fd >= 0) close(fd);
+    fd = memfd_create("gastube-frame", MFD_CLOEXEC);
+    if (fd < 0) return skip_shm("memfd");
+    if (ftruncate(fd, static_cast<off_t>(bytes)) != 0) return skip_shm("ftruncate");
+    mapping = mmap(nullptr, bytes, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (mapping == MAP_FAILED) {
+      mapping = nullptr;
+      return skip_shm("mmap");
+    }
+    mapped = bytes;
+    if (pool != nullptr) wl_shm_pool_destroy(pool);
+    pool = wl_shm_create_pool(shm, fd, static_cast<int32_t>(bytes));
+    buffers[0] = nullptr;
+    buffers[1] = nullptr;
+  }
+  if (pool == nullptr || mapping == nullptr) return skip_shm("pool");
+
+  auto* dest = static_cast<unsigned char*>(mapping);
+  int colored = 0;
+  int white = 0;
+  for (int y = 0; y < height; y++) {
+    const unsigned char* src =
+        pixels.data() + static_cast<size_t>(height - 1 - y) * stride;
+    unsigned char* row = dest + static_cast<size_t>(y) * stride;
+    for (int x = 0; x < width; x++) {
+      row[x * 4 + 0] = src[x * 4 + 2];
+      row[x * 4 + 1] = src[x * 4 + 1];
+      row[x * 4 + 2] = src[x * 4 + 0];
+      row[x * 4 + 3] = 255;
+      if (src[x * 4] > 8 || src[x * 4 + 1] > 8 || src[x * 4 + 2] > 8) {
+        colored++;
+      }
+      if (src[x * 4] > 250 && src[x * 4 + 1] > 250 && src[x * 4 + 2] > 250) {
+        white++;
+      }
+    }
+  }
+
+  static bool logged_empty = false;
+  if (colored == 0) {
+    if (!logged_empty) {
+      logged_empty = true;
+      g_message("present: shared-memory frame %dx%d colored=0 white=%d gl=0x%x",
+                width, height, white, error);
+    }
+    return true;
+  }
+
+  int slot = next_buffer;
+  next_buffer ^= 1;
+  if (buffers[slot] != nullptr) wl_buffer_destroy(buffers[slot]);
+  buffers[slot] = wl_shm_pool_create_buffer(pool, 0, width, height, stride,
+                                            WL_SHM_FORMAT_XRGB8888);
+  struct wl_surface* surface = *reinterpret_cast<struct wl_surface**>(
+      reinterpret_cast<char*>(window) + 56);
+  wl_surface_attach(surface, buffers[slot], 0, 0);
+  wl_surface_damage(surface, 0, 0, width, height);
+  wl_surface_commit(surface);
+
+  static bool logged = false;
+  if (!logged) {
+    logged = true;
+    g_message("present: shared-memory frame %dx%d colored=%d white=%d gl=0x%x",
+              width, height, colored, white, error);
+  }
+  return true;
+}
+
 namespace {
 
 constexpr double kBudgetMs = 16.7;
@@ -352,6 +576,10 @@ void install_damage_gate() {
 
 extern "C" EGLBoolean gastube_gated_egl_swap(EGLDisplay display,
                                             EGLSurface surface) {
+  if (shm_present_enabled()) {
+    publish_shm_frame(display, surface);
+    return EGL_TRUE;
+  }
   if (!g_present_allowed.load(std::memory_order_acquire)) {
     bool already = g_logged_skip.exchange(true, std::memory_order_relaxed);
     if (!already) {
@@ -388,6 +616,10 @@ extern "C" EGLBoolean gastube_gated_egl_swap_damage(EGLDisplay display,
                                                    EGLSurface surface,
                                                    EGLint* rects,
                                                    EGLint n_rects) {
+  if (shm_present_enabled()) {
+    publish_shm_frame(display, surface);
+    return EGL_TRUE;
+  }
   if (!g_present_allowed.load(std::memory_order_acquire)) {
     bool already = g_logged_skip.exchange(true, std::memory_order_relaxed);
     if (!already) {
@@ -536,6 +768,7 @@ WidgetDrawFn g_original_window_draw = nullptr;
 WidgetDrawFn g_original_view_draw = nullptr;
 
 bool expose_held() {
+  if (shm_present_enabled()) return false;
   return !g_present_allowed.load(std::memory_order_acquire) ||
          g_hold_expose.load(std::memory_order_acquire);
 }
@@ -713,6 +946,7 @@ void show_paint_context() {
 }
 
 void gastube_ut_set_present_allowed(bool allowed) {
+  if (shm_present_enabled()) return;
   bool previous = g_present_allowed.exchange(allowed, std::memory_order_release);
   if (previous == allowed) return;
   g_logged_skip.store(false, std::memory_order_relaxed);

@@ -201,10 +201,16 @@ GdkMonitor* choose_panel(GdkDisplay* display) {
 }
 
 // Fullscreen tells Lomiri to hide the indicator panel. That is only for video.
-// Maximized fills the stage underneath the panel.
+// Maximized fills the stage underneath the panel. unfullscreen on a window
+// that is only maximized is a restore: the shell animates the stage down to
+// the window's own size.
 void use_application_stage(GtkWindow* window) {
   gtk_window_set_decorated(window, FALSE);
-  gtk_window_unfullscreen(window);
+  GdkWindow* native = gtk_widget_get_window(GTK_WIDGET(window));
+  if (native != nullptr &&
+      (gdk_window_get_state(native) & GDK_WINDOW_STATE_FULLSCREEN) != 0) {
+    gtk_window_unfullscreen(window);
+  }
   gtk_window_maximize(window);
 }
 

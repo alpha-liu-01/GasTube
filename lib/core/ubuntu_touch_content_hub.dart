@@ -12,14 +12,20 @@ import 'package:path/path.dart' as p;
 
 /// Opens an http(s) video in Media Player without downloading it first.
 ///
-/// Content Hub passes the URL through as the item address. `mediaplayer-app`
-/// plays that address. Launching it with `lomiri-app-launch` from this
-/// profile cannot talk to systemd, so this is the handoff the profile allows.
+/// Content Hub passes the URL through as the item address. The system
+/// player plays that address. Ubuntu Touch 20.04 registers it as
+/// `mediaplayer-app`; 24.04 registers `lomiri-mediaplayer-app`. Launching
+/// either with `lomiri-app-launch` from this profile cannot talk to systemd,
+/// so this is the handoff the profile allows.
 Future<({bool ok, String message})> openUrlInSystemPlayer(String url) async {
   final client = DBusClient.session();
   try {
     final hub = _service(client);
-    const peer = 'mediaplayer-app';
+    final peer = await _systemPlayerPeer(hub);
+    if (peer == null) {
+      print('gastube: open system url failed error=no peer');
+      return (ok: false, message: 'no peer');
+    }
     final state = await _chargeItem(
       client,
       hub,
@@ -733,6 +739,12 @@ Future<bool?> _mediaHubBool(DBusClient client, int id, String name) async {
 ///
 /// The handoff is a temporary Content Hub link. It does not copy the file
 /// into Music or Videos. Saving is the path that does that, and only once.
+///
+/// Ubuntu Touch 24.04 aborts a `file://` charge when its profile query
+/// refuses the Click's private directory, and the player never starts. An
+/// `http://127.0.0.1` address skips that query. The loopback server starts
+/// only after that abort, so a 20.04 charge that already succeeded is left
+/// on the file address.
 Future<({bool ok, String message})> openInSystemPlayer({
   required String path,
   required bool audioOnly,
@@ -740,8 +752,12 @@ Future<({bool ok, String message})> openInSystemPlayer({
   final client = DBusClient.session();
   try {
     final hub = _service(client);
-    const peer = 'mediaplayer-app';
-    final state = await _chargeItem(
+    final peer = await _systemPlayerPeer(hub);
+    if (peer == null) {
+      print('gastube: open system failed file=$path error=no peer');
+      return (ok: false, message: 'no peer');
+    }
+    var state = await _chargeItem(
       client,
       hub,
       peer: peer,
@@ -751,9 +767,25 @@ Future<({bool ok, String message})> openInSystemPlayer({
     );
     if (state == 5) {
       print('gastube: open system failed file=$path peer=$peer error=aborted');
+      final served = await _systemPlayerLoopbackUrl(path);
+      if (served != null) {
+        state = await _chargeItem(
+          client,
+          hub,
+          peer: peer,
+          contentType: 'videos',
+          name: p.basename(path),
+          url: served,
+        );
+        print('gastube: open system local peer=$peer state=$state');
+      }
+    }
+    if (state == 5) {
       return (ok: false, message: 'aborted');
     }
-    print('gastube: open system file=$path peer=$peer audio=$audioOnly state=$state');
+    print(
+      'gastube: open system file=$path peer=$peer audio=$audioOnly state=$state',
+    );
     return (ok: true, message: '');
   } catch (error) {
     print('gastube: open system failed file=$path error=$error');
@@ -761,6 +793,142 @@ Future<({bool ok, String message})> openInSystemPlayer({
   } finally {
     await client.close();
   }
+}
+
+HttpServer? _systemPlayerServer;
+var _systemPlayerServing = false;
+var _systemPlayerRouteId = 0;
+final Map<String, String> _systemPlayerRoutes = {};
+
+/// Publishes [path] on the Click's loopback interface and returns its URL.
+///
+/// The last path segment stays the filename, so the player's bookmark key
+/// matches the file that a direct charge would have used.
+Future<String?> _systemPlayerLoopbackUrl(String path) async {
+  final name = p.basename(path);
+  if (name.isEmpty || name == '.' || name == '..') return null;
+  try {
+    final server = _systemPlayerServer ??= await HttpServer.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
+    if (!_systemPlayerServing) {
+      _systemPlayerServing = true;
+      print('gastube: system player local port=${server.port}');
+      server.listen(
+        _serveSystemPlayerFile,
+        onError: (Object error) {
+          print('gastube: system player local failed error=$error');
+        },
+      );
+    }
+    final route = '/${_systemPlayerRouteId++}/$name';
+    _systemPlayerRoutes[route] = path;
+    return 'http://127.0.0.1:${server.port}$route';
+  } catch (error) {
+    print('gastube: system player local failed error=$error');
+    return null;
+  }
+}
+
+ContentType _systemPlayerContentType(String path) {
+  switch (p.extension(path).toLowerCase()) {
+    case '.mpd':
+      return ContentType('application', 'dash+xml', charset: 'utf-8');
+    case '.mp4':
+    case '.m4v':
+      return ContentType('video', 'mp4');
+    case '.m4a':
+      return ContentType('audio', 'mp4');
+    case '.webm':
+      return ContentType('video', 'webm');
+    case '.mkv':
+      return ContentType('video', 'x-matroska');
+    default:
+      return ContentType.binary;
+  }
+}
+
+Future<void> _serveSystemPlayerFile(HttpRequest request) async {
+  final response = request.response;
+  try {
+    final filePath = _systemPlayerRoutes[request.uri.path];
+    final file = filePath == null ? null : File(filePath);
+    if ((request.method != 'GET' && request.method != 'HEAD') ||
+        file == null ||
+        !file.existsSync()) {
+      response.statusCode = HttpStatus.notFound;
+      await response.close();
+      return;
+    }
+    final total = await file.length();
+    response.headers.set(HttpHeaders.acceptRangesHeader, 'bytes');
+    response.headers.contentType = _systemPlayerContentType(filePath!);
+    final opened = _systemPlayerRange(request, total);
+    if (opened == null) {
+      response.statusCode = HttpStatus.requestedRangeNotSatisfiable;
+      response.headers.set(HttpHeaders.contentRangeHeader, 'bytes */$total');
+      await response.close();
+      return;
+    }
+    final start = opened.$1;
+    final end = opened.$2;
+    if (request.headers.value(HttpHeaders.rangeHeader) != null) {
+      response.statusCode = HttpStatus.partialContent;
+      response.headers.set(
+        HttpHeaders.contentRangeHeader,
+        'bytes $start-$end/$total',
+      );
+    }
+    final length = total == 0 ? 0 : end - start + 1;
+    response.contentLength = length;
+    if (request.method == 'HEAD' || length == 0) {
+      await response.close();
+      return;
+    }
+    await response.addStream(file.openRead(start, end + 1));
+    await response.close();
+  } catch (error) {
+    print('gastube: system player local failed error=$error');
+    try {
+      await response.close();
+    } catch (_) {}
+  }
+}
+
+/// Byte range to send, or null when the request's range cannot be served.
+(int, int)? _systemPlayerRange(HttpRequest request, int total) {
+  if (total == 0) {
+    final asked = request.headers.value(HttpHeaders.rangeHeader);
+    return asked == null ? (0, 0) : null;
+  }
+  final header = request.headers.value(HttpHeaders.rangeHeader);
+  if (header == null) return (0, total - 1);
+  final match = RegExp(r'^bytes=(\d*)-(\d*)$').firstMatch(header.trim());
+  if (match == null) return null;
+  final startText = match.group(1)!;
+  final endText = match.group(2)!;
+  if (startText.isEmpty && endText.isEmpty) return null;
+  var start = 0;
+  var end = total - 1;
+  if (startText.isEmpty) {
+    final suffix = int.tryParse(endText);
+    if (suffix == null || suffix <= 0) return null;
+    start = total - suffix;
+    if (start < 0) start = 0;
+  } else {
+    final parsedStart = int.tryParse(startText);
+    if (parsedStart == null) return null;
+    start = parsedStart;
+    if (endText.isNotEmpty) {
+      final parsedEnd = int.tryParse(endText);
+      if (parsedEnd == null) return null;
+      end = parsedEnd;
+    }
+  }
+  if (start < 0 || start >= total || end < start) return null;
+  if (end >= total) end = total - 1;
+  return (start, end);
 }
 
 /// Writes text onto the Lomiri pasteboard. Flutter's clipboard stays inside
@@ -1438,6 +1606,37 @@ Future<String?> _peerId(
   String type,
   String prefix,
 ) async {
+  final ids = await _destinationIds(hub, method, type);
+  for (final id in ids) {
+    if (id.startsWith(prefix)) return id;
+  }
+  print('gastube: content peer missing type=$type prefix=$prefix ids=$ids');
+  return null;
+}
+
+/// Focal's media player and Noble's renamed package are different peers.
+/// The older name wins when both are installed, so a 20.04 phone keeps the
+/// player it already uses.
+Future<String?> _systemPlayerPeer(DBusRemoteObject hub) async {
+  const preferred = ['mediaplayer-app', 'lomiri-mediaplayer-app'];
+  final ids = await _destinationIds(hub, 'KnownDestinationsForType', 'videos');
+  for (final name in preferred) {
+    if (ids.contains(name)) return name;
+  }
+  for (final name in preferred) {
+    for (final id in ids) {
+      if (id.startsWith(name)) return id;
+    }
+  }
+  print('gastube: system player peer missing ids=$ids');
+  return null;
+}
+
+Future<List<String>> _destinationIds(
+  DBusRemoteObject hub,
+  String method,
+  String type,
+) async {
   final reply = await hub.callMethod(
     'com.lomiri.content.dbus.Service',
     method,
@@ -1445,7 +1644,7 @@ Future<String?> _peerId(
     replySignature: DBusSignature('av'),
   );
   final value = reply.returnValues.first;
-  if (value is! DBusArray) return null;
+  if (value is! DBusArray) return const [];
   final ids = <String>[];
   for (final child in value.children) {
     final item = child is DBusVariant ? child.value : child;
@@ -1453,11 +1652,7 @@ Future<String?> _peerId(
     final id = item.children.first;
     if (id is DBusString) ids.add(id.value);
   }
-  for (final id in ids) {
-    if (id.startsWith(prefix)) return id;
-  }
-  print('gastube: content peer missing type=$type prefix=$prefix ids=$ids');
-  return null;
+  return ids;
 }
 
 String? _firstFilePath(DBusValue value) {

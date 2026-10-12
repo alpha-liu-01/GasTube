@@ -1,13 +1,35 @@
 #include <dlfcn.h>
+#include <unistd.h>
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <sys/types.h>
 
+// libmedia.so.1 is the libhybris wrapper. Its constructor calls into
+// Android's libmedia_compat_layer.so. On a Halium phone that file is
+// present. On the PDK it is not, and the constructor raises SIGSEGV, so
+// the probe must not open the wrapper there.
+static bool android_media_layer_present() {
+  return access("/android/system/lib64/libmedia_compat_layer.so", R_OK) == 0 ||
+         access("/system/lib64/libmedia_compat_layer.so", R_OK) == 0;
+}
+
 // The phone already has libhybris libmedia.so.1. This probe asks which
 // decoder serves video/avc and video/x-vnd.on2.vp9. It does not feed packets.
 extern "C" void gastube_ut_probe_media_codec() {
+  if (!android_media_layer_present()) {
+    std::fprintf(stderr, "gastube: mediacodec android layer absent\n");
+    std::fprintf(stderr, "gastube: decode=software-h264\n");
+    setenv("GASTUBE_VP9_QCOM", "0", 1);
+    // Hybris shows an EGL window buffer. Mesa's llvmpipe buffer is the one
+    // Mir logs as an old texture and leaves black. The GTK draw copies the
+    // same frame into a shared-memory buffer, which this compositor shows.
+    setenv("GASTUBE_SHM_PRESENT", "1", 1);
+    std::fprintf(stderr, "gastube: vp9-hw=absent\n");
+    std::fprintf(stderr, "gastube: present=cairo\n");
+    return;
+  }
   void* library = dlopen("libmedia.so.1", RTLD_NOW | RTLD_GLOBAL);
   if (library == nullptr) {
     std::fprintf(stderr, "gastube: mediacodec dlopen failed: %s\n", dlerror());
