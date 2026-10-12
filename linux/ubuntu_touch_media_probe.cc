@@ -22,12 +22,7 @@ extern "C" void gastube_ut_probe_media_codec() {
     std::fprintf(stderr, "gastube: mediacodec android layer absent\n");
     std::fprintf(stderr, "gastube: decode=software-h264\n");
     setenv("GASTUBE_VP9_QCOM", "0", 1);
-    // Hybris shows an EGL window buffer. Mesa's llvmpipe buffer is the one
-    // Mir logs as an old texture and leaves black. The GTK draw copies the
-    // same frame into a shared-memory buffer, which this compositor shows.
-    setenv("GASTUBE_SHM_PRESENT", "1", 1);
     std::fprintf(stderr, "gastube: vp9-hw=absent\n");
-    std::fprintf(stderr, "gastube: present=cairo\n");
     return;
   }
   void* library = dlopen("libmedia.so.1", RTLD_NOW | RTLD_GLOBAL);
