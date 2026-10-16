@@ -109,6 +109,10 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
   // SponsorBlock
   StreamSubscription<Duration>? _sponsorBlockSubscription;
   final Set<String> _skippedSegments = {};
+  int _sponsorPollGeneration = 0;
+  int? _sponsorSurfaceSession;
+  int _sponsorSurfaceUs = 0;
+  bool _sponsorSurfaceReady = false;
 
   // History tracking - throttle updates
   StreamSubscription<Duration>? _historySubscription;
@@ -197,7 +201,10 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
         if (mounted) setState(() {});
         await _refreshHandoffPosition();
         final handoffUrl = _systemPlayerUrl;
-        if (handoffUrl != null) _armSystemPlayerHistory(handoffUrl);
+        if (handoffUrl != null) {
+          _armSystemPlayerHistory(handoffUrl);
+          _armSystemPlayerSponsor(handoffUrl);
+        }
         _globalPlayer.exitPipMode();
         _setupHistoryListener();
         _setupSponsorBlockListener();
@@ -485,6 +492,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
       _systemPlayerUrl = url;
     }
     _armSystemPlayerHistory(url);
+    _armSystemPlayerSponsor(url);
   }
 
   List<StreamQualityInfo> _loadQualities() {
@@ -1404,6 +1412,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
     _picturePausedAt = null;
     _picturePausedSession = null;
     _cancelSystemPlayerHistory();
+    _cancelSystemPlayerSponsor();
   }
 
   /// Writes watch history from the system player's position while it is in
@@ -1422,6 +1431,77 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
   void _cancelSystemPlayerHistory() {
     _historyPollUrl = null;
     _historyPollGeneration++;
+  }
+
+  /// Skips SponsorBlock segments from the system player's clock. The in-app
+  /// player is paused after the handoff, so its position never enters a
+  /// segment. The first skip waits until this session has moved about 1.5s,
+  /// which is when the picture surface exists. Later segments skip as soon
+  /// as the playhead is inside them.
+  void _armSystemPlayerSponsor(String url) {
+    if (!UbuntuTouch.enabled || url.isEmpty) return;
+    if (widget.sponsorSegments.isEmpty) return;
+    _sponsorSurfaceSession = null;
+    _sponsorSurfaceUs = 0;
+    _sponsorSurfaceReady = false;
+    final generation = ++_sponsorPollGeneration;
+    unawaited(_pollSystemPlayerSponsor(generation, url));
+  }
+
+  void _cancelSystemPlayerSponsor() {
+    _sponsorPollGeneration++;
+    _sponsorSurfaceSession = null;
+    _sponsorSurfaceReady = false;
+  }
+
+  Future<void> _pollSystemPlayerSponsor(int generation, String url) async {
+    while (mounted &&
+        generation == _sponsorPollGeneration &&
+        _systemPlayerUrl == url) {
+      final picture = await systemPlayerPicture(url);
+      if (!mounted ||
+          generation != _sponsorPollGeneration ||
+          _systemPlayerUrl != url) {
+        return;
+      }
+      if (picture != null && picture.status == 'Playing') {
+        if (_sponsorSurfaceSession != picture.id) {
+          _sponsorSurfaceSession = picture.id;
+          _sponsorSurfaceUs = picture.positionUs;
+          _sponsorSurfaceReady = false;
+        } else if (!_sponsorSurfaceReady &&
+            picture.positionUs - _sponsorSurfaceUs >= 1500000) {
+          _sponsorSurfaceReady = true;
+        }
+        if (_sponsorSurfaceReady) {
+          final seconds = picture.positionUs / 1000000;
+          for (final segment in widget.sponsorSegments) {
+            if (!segment.containsPosition(seconds) ||
+                _skippedSegments.contains(segment.uuid)) {
+              continue;
+            }
+            final fresh = await systemPlayerPicture(url);
+            if (!mounted || generation != _sponsorPollGeneration) return;
+            if (fresh == null || fresh.status != 'Playing') break;
+            final freshSeconds = fresh.positionUs / 1000000;
+            if (!segment.containsPosition(freshSeconds)) break;
+            final endMs = (segment.endTime * 1000).round();
+            final ok = await seekSystemPlayerPicture(url, endMs);
+            if (!mounted || generation != _sponsorPollGeneration) return;
+            if (!ok) break;
+            _skippedSegments.add(segment.uuid);
+            print(
+              'gastube: sponsor skip category=${segment.category} '
+              'positionMs=${fresh.positionUs ~/ 1000} toMs=$endMs '
+              'session=${fresh.id}',
+            );
+            _showToast('Skipped ${segment.categoryDisplayName}');
+            break;
+          }
+        }
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
   }
 
   Future<void> _pollSystemPlayerHistory(int generation, String url) async {
@@ -1986,6 +2066,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
     if (widget.sponsorSegments.isEmpty) return;
 
     _sponsorBlockSubscription = _player.stream.position.listen((position) {
+      if (UbuntuTouch.enabled && _systemPlayerUrl != null) return;
       final currentSeconds = position.inSeconds.toDouble() +
           (position.inMilliseconds % 1000) / 1000.0;
 

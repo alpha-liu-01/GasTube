@@ -715,6 +715,17 @@ Future<bool> seekSystemPlayerSession(int id, int positionMs) async {
   }
 }
 
+/// Seeks the playing picture for [url] to absolute [positionMs].
+///
+/// The session is the one [systemPlayerPicture] matches. A paused picture
+/// and the lock-screen audio are not moved.
+Future<bool> seekSystemPlayerPicture(String url, int positionMs) async {
+  if (positionMs < 0) return false;
+  final picture = await systemPlayerPicture(url);
+  if (picture == null || picture.status != 'Playing') return false;
+  return seekSystemPlayerSession(picture.id, positionMs);
+}
+
 Future<bool?> _mediaHubBool(DBusClient client, int id, String name) async {
   try {
     final reply = await DBusRemoteObject(
