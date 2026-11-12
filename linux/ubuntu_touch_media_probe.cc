@@ -1,11 +1,30 @@
 #include <dlfcn.h>
+#include <unistd.h>
 
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <sys/types.h>
+
+// libmedia.so.1 is the libhybris wrapper. Its constructor calls into
+// Android's libmedia_compat_layer.so. On a Halium phone that file is
+// present. On the PDK it is not, and the constructor raises SIGSEGV, so
+// the probe must not open the wrapper there.
+static bool android_media_layer_present() {
+  return access("/android/system/lib64/libmedia_compat_layer.so", R_OK) == 0 ||
+         access("/system/lib64/libmedia_compat_layer.so", R_OK) == 0;
+}
 
 // The phone already has libhybris libmedia.so.1. This probe asks which
 // decoder serves video/avc and video/x-vnd.on2.vp9. It does not feed packets.
 extern "C" void gastube_ut_probe_media_codec() {
+  if (!android_media_layer_present()) {
+    std::fprintf(stderr, "gastube: mediacodec android layer absent\n");
+    std::fprintf(stderr, "gastube: decode=software-h264\n");
+    setenv("GASTUBE_VP9_QCOM", "0", 1);
+    std::fprintf(stderr, "gastube: vp9-hw=absent\n");
+    return;
+  }
   void* library = dlopen("libmedia.so.1", RTLD_NOW | RTLD_GLOBAL);
   if (library == nullptr) {
     std::fprintf(stderr, "gastube: mediacodec dlopen failed: %s\n", dlerror());
@@ -46,6 +65,7 @@ extern "C" void gastube_ut_probe_media_codec() {
 
   const char* vp9_mimes[] = {"video/x-vnd.on2.vp9", "video/vp9"};
   bool vp9_named = false;
+  bool vp9_qcom = false;
   for (const char* mime : vp9_mimes) {
     size_t start = 0;
     bool mime_named = false;
@@ -65,13 +85,20 @@ extern "C" void gastube_ut_probe_media_codec() {
                    codec != nullptr ? codec : "(null)");
       mime_named = codec != nullptr && codec[0] != '\0';
       vp9_named = vp9_named || mime_named;
+      if (codec != nullptr && std::strstr(codec, "qcom") != nullptr) {
+        vp9_qcom = true;
+      }
       start = static_cast<size_t>(index) + 1;
     }
     if (vp9_named) {
       break;
     }
   }
-  if (!vp9_named) {
+  if (vp9_qcom) {
+    setenv("GASTUBE_VP9_QCOM", "1", 1);
+    std::fprintf(stderr, "gastube: vp9-hw=qcom\n");
+  } else {
+    setenv("GASTUBE_VP9_QCOM", "0", 1);
     std::fprintf(stderr, "gastube: vp9-hw=absent\n");
   }
 }

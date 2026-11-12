@@ -9,6 +9,7 @@ import 'package:fluxtube/core/player/global_player_controller.dart';
 import 'package:fluxtube/core/services/media_controls.dart';
 import 'package:fluxtube/core/services/exoplayer_notification_bridge.dart';
 import 'package:fluxtube/presentation/routes/app_routes.dart';
+import 'package:fluxtube/presentation/watch/widgets/system_player_preview.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 /// A draggable Picture-in-Picture video overlay widget
@@ -126,6 +127,14 @@ class _PipVideoWidgetState extends State<PipVideoWidget> {
                           'fitMode': 'cover',
                         },
                         creationParamsCodec: const StandardMessageCodec(),
+                      ),
+                    )
+                  else if (_globalPlayer.systemPlayerHandoffFor(widget.videoId))
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: SystemPlayerPreview(
+                        videoId: widget.videoId,
+                        thumbnailUrl: widget.thumbnailUrl,
                       ),
                     )
                   else if (_globalPlayer.hasActiveMediaKitPlayer)

@@ -4,7 +4,7 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/../../.." && pwd)
-host=alpha@10.0.0.118
+host=alpha@10.0.0.108
 remote=gastube-ut/app
 
 ssh "$host" "mkdir -p \$HOME/$remote; nohup caffeinate -dimsu -t 10800 >/dev/null 2>&1 </dev/null &"

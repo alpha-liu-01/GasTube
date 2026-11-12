@@ -34,6 +34,7 @@ class ScreenSettings extends StatelessWidget {
                 VideoSettingsSection(),
                 kHeightBox15,
                 PlaybackSettingsSection(),
+                UbuntuTouchEnhancedModeTile(),
                 kHeightBox15,
                 SponsorBlockSettingsSection(),
                 kHeightBox15,

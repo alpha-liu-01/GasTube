@@ -8,6 +8,7 @@ import 'package:fluxtube/core/player/global_player_controller.dart';
 import 'package:fluxtube/core/player/playback_queue.dart';
 import 'package:fluxtube/presentation/routes/app_routes.dart';
 import 'package:fluxtube/presentation/watch/widgets/pip_video_widget.dart';
+import 'package:fluxtube/presentation/watch/widgets/system_player_preview.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 /// Global key for the PiP widget to maintain its state across route changes
@@ -132,6 +133,8 @@ class _GlobalPipOverlayState extends State<GlobalPipOverlay> {
                         watchState.isPipEnabled &&
                         !settingsState.isPipDisabled &&
                         !isInSystemPip;
+                final handoffVideoId =
+                    watchState.selectedVideoBasicDetails?.id;
 
                 // When in system PiP mode (very small window), show ONLY the video player
                 // This ensures the PiP window shows just the video, not the whole app UI
@@ -140,6 +143,24 @@ class _GlobalPipOverlayState extends State<GlobalPipOverlay> {
                     Platform.isAndroid &&
                     _globalPlayer.hasNativeExoPlayer) {
                   return const _SystemPipExoPlayerView();
+                }
+
+                if (shouldRenderSystemPip &&
+                    handoffVideoId != null &&
+                    _globalPlayer.systemPlayerHandoffFor(handoffVideoId)) {
+                  return ColoredBox(
+                    color: Colors.black,
+                    child: Center(
+                      child: AspectRatio(
+                        aspectRatio: 16 / 9,
+                        child: SystemPlayerPreview(
+                          videoId: handoffVideoId,
+                          thumbnailUrl: watchState
+                              .selectedVideoBasicDetails?.thumbnailUrl,
+                        ),
+                      ),
+                    ),
+                  );
                 }
 
                 if (shouldRenderSystemPip &&

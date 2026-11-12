@@ -10,10 +10,752 @@ import 'package:fluxtube/core/storage_paths.dart';
 import 'package:fluxtube/core/ubuntu_touch.dart';
 import 'package:path/path.dart' as p;
 
+/// Opens an http(s) video in Media Player without downloading it first.
+///
+/// Content Hub passes the URL through as the item address. The system
+/// player plays that address. Ubuntu Touch 20.04 registers it as
+/// `mediaplayer-app`; 24.04 registers `lomiri-mediaplayer-app`. Launching
+/// either with `lomiri-app-launch` from this profile cannot talk to systemd,
+/// so this is the handoff the profile allows.
+Future<({bool ok, String message})> openUrlInSystemPlayer(String url) async {
+  final client = DBusClient.session();
+  try {
+    final hub = _service(client);
+    final peer = await _systemPlayerPeer(hub);
+    if (peer == null) {
+      print('gastube: open system url failed error=no peer');
+      return (ok: false, message: 'no peer');
+    }
+    final state = await _chargeItem(
+      client,
+      hub,
+      peer: peer,
+      contentType: 'videos',
+      name: 'video',
+      url: url,
+    );
+    if (state == 5) {
+      print('gastube: open system url failed peer=$peer error=aborted');
+      return (ok: false, message: 'aborted');
+    }
+    print('gastube: open system url peer=$peer state=$state');
+    return (ok: true, message: '');
+  } catch (error) {
+    print('gastube: open system url failed error=$error');
+    return (ok: false, message: error.toString());
+  } finally {
+    await client.close();
+  }
+}
+
+/// Position stored for [url], without writing a seek or clearing the file.
+///
+/// The player file wins when it is at least five seconds. Otherwise the copy
+/// written before the last handoff is used. Looking at the placeholder must
+/// not ask the helper to seek.
+Future<Duration?> peekSystemPlayerPosition(String url) async {
+  final wanted = _playerSettingsKey(url);
+  final fromFile = await _storedMsForKey(wanted);
+  // -1 means the video finished. The older bookmark must not look like
+  // the position they just left.
+  if (fromFile != null && fromFile < 0) return null;
+  if (fromFile != null && fromFile >= _resumeMinMs) {
+    return Duration(milliseconds: fromFile);
+  }
+  final remembered = await _rememberedMs(wanted);
+  if (remembered != null && remembered >= _resumeMinMs) {
+    return Duration(milliseconds: remembered);
+  }
+  return null;
+}
+
+/// Writes [position] as the bookmark for [url], without asking the helper to seek.
+///
+/// Background audio uses this when the listener comes back, so the next
+/// system-player open continues from the audio instead of the older picture.
+Future<void> noteSystemPlayerBookmark(String url, Duration position) async {
+  final ms = position.inMilliseconds;
+  if (ms <= 0) return;
+  final wanted = _playerSettingsKey(url);
+  await _rememberMs(wanted, ms);
+  await _writePlayerMs(wanted, ms);
+}
+
+/// The system player writes -1 when playback reaches the end.
+///
+/// A later open that has not reached the end stores a positive position, or
+/// 0 when resume was cleared. Those are not the end.
+Future<bool> systemPlayerReachedEnd(String url) async {
+  final stored = await _storedMsForKey(_playerSettingsKey(url));
+  return stored != null && stored < 0;
+}
+
+/// Drops the resume bookmark for [url] so the next open starts at the beginning.
+Future<void> forgetSystemPlayerResume(String url) async {
+  await clearSystemPlayerStoredPosition(url);
+  final wanted = _playerSettingsKey(url);
+  final file = await _resumeDirFile('gastube-resume.txt');
+  if (file.existsSync()) {
+    final lines = file.readAsLinesSync();
+    if (lines.length >= 2 && lines[1] == wanted) {
+      await file.writeAsString('');
+    }
+  }
+  await _writePendingSeek(0, '');
+}
+
+/// Milliseconds the system player stored for [url].
+///
+/// The player keeps the part after the last `/`, and percent-encodes it in
+/// the ini file. A stored value below five seconds is a later open that
+/// already started from the beginning. The real minutes are kept in
+/// `gastube-resume.txt`, because that failed open overwrites the player file.
+///
+/// When the seek helper is running, the player file is set to 0 so its
+/// Continue dialog does not call play() from the start. The helper seeks the
+/// new media-hub session after this process has been stopped. This click does
+/// not seek as well.
+///
+/// When the helper is not running, the player file keeps the minutes, which
+/// is the path used if Lomiri stops this process. If the process stays
+/// scheduled, a later wait seeks the new session once. A monotonic gap means
+/// the wait was frozen, and that seek is skipped.
+///
+/// The enhancement switch means this process is not stopped. The player file
+/// is set to 0 so Continue does not seek in the same moment the picture
+/// surface is created. That early seek leaves the surface at 0×0. Playback
+/// starts at the beginning, and the wait seeks after the opening frames.
+///
+/// [carry] is the position of the session just left. A quality change passes
+/// it so the new address does not resume its own older bookmark.
+Future<Duration?> systemPlayerStoredPosition(
+  String url, {
+  Duration? carry,
+}) async {
+  final wanted = _playerSettingsKey(url);
+  final carried = carry?.inMilliseconds;
+  final fromFile = await _storedMsForKey(wanted);
+  final remembered = await _rememberedMs(wanted);
+  int? ms;
+  if (carried != null && carried >= _resumeMinMs) {
+    ms = carried;
+    print('gastube: system player resume carry ms=$ms');
+  } else if (fromFile != null && fromFile < 0) {
+    ms = null;
+  } else {
+    ms = fromFile != null && fromFile >= _resumeMinMs ? fromFile : null;
+    if (ms == null && remembered != null && remembered >= _resumeMinMs) {
+      ms = remembered;
+      print('gastube: system player resume restore ms=$ms');
+    }
+  }
+  if (ms == null) {
+    if (fromFile != null && fromFile > 0 && fromFile < _resumeMinMs) {
+      await clearSystemPlayerStoredPosition(url);
+      print('gastube: system player resume discard ms=$fromFile');
+    }
+    await _writePendingSeek(0, '');
+    return null;
+  }
+  await _rememberMs(wanted, ms);
+  if (await _seekHelperAlive()) {
+    await _writePendingSeek(ms, wanted);
+    await clearSystemPlayerStoredPosition(url);
+    print('gastube: system player resume stored ms=$ms helper=up');
+    print('gastube: system player resume seek skipped reason=helper');
+  } else if (await ubuntuTouchEnhancedMode()) {
+    // Continue calls seek() then play() while the Hybris surface is still
+    // 0×0. The 1920×1088 setup never runs, and the picture stays black.
+    // Start at the beginning so that setup runs, then seek once.
+    await clearSystemPlayerStoredPosition(url);
+    print(
+      'gastube: system player resume stored ms=$ms helper=down surface=start',
+    );
+    await _armInProcessResumeSeek(ms, wanted);
+  } else {
+    // The dialog seeks whatever this file holds. A carry must replace an
+    // older bookmark, or Continue resumes the previous visit.
+    await _writePlayerMs(wanted, ms);
+    print('gastube: system player resume stored ms=$ms helper=down');
+    await _armInProcessResumeSeek(ms, wanted);
+  }
+  return Duration(milliseconds: ms);
+}
+
+/// Stops a resume seek that has not fired yet.
+///
+/// A failed handoff must not seek a session opened later.
+void cancelUbuntuTouchInProcessResumeSeek() {
+  _resumeSeekGeneration++;
+}
+
+const _resumeMinMs = 5000;
+
+/// Writes 0 for [url] so the player starts immediately and shows no dialog.
+Future<void> clearSystemPlayerStoredPosition(String url) async {
+  final file = await _systemPlayerSettingsFile();
+  if (!file.existsSync()) return;
+  final wanted = _playerSettingsKey(url);
+  final next = _withoutStaleStreamKeys(
+    file.readAsLinesSync().map((line) {
+      final split = line.indexOf('=');
+      if (split <= 0) return line;
+      if (_unescapeIniKey(line.substring(0, split)) != wanted) return line;
+      return '${line.substring(0, split)}=0';
+    }).toList(),
+    wanted,
+  );
+  await file.writeAsString('${next.join('\n')}\n');
+}
+
+/// `videoplayback?expire=...`, the key mediaplayer-app actually stores.
+String _playerSettingsKey(String url) {
+  final slash = url.lastIndexOf('/');
+  if (slash < 0 || slash + 1 >= url.length) return url;
+  return url.substring(slash + 1);
+}
+
+String _unescapeIniKey(String key) {
+  final out = StringBuffer();
+  for (var i = 0; i < key.length; i++) {
+    final ch = key[i];
+    if (ch == '\\') {
+      out.write('/');
+      continue;
+    }
+    if (ch == '%' && i + 2 < key.length) {
+      final value = int.tryParse(key.substring(i + 1, i + 3), radix: 16);
+      if (value != null) {
+        out.writeCharCode(value);
+        i += 2;
+        continue;
+      }
+    }
+    out.write(ch);
+  }
+  return out.toString();
+}
+
+Future<File> _systemPlayerSettingsFile() async {
+  final root = await persistentAppDirectory();
+  return File(p.join(root.path, 'player-resume', 'Media Player.conf'));
+}
+
+Future<File> _resumeDirFile(String name) async {
+  final root = await persistentAppDirectory();
+  return File(p.join(root.path, 'player-resume', name));
+}
+
+Future<int?> _storedMsForKey(String wanted) async {
+  final file = await _systemPlayerSettingsFile();
+  if (!file.existsSync()) return null;
+  for (final line in file.readAsLinesSync()) {
+    final split = line.indexOf('=');
+    if (split <= 0) continue;
+    if (_unescapeIniKey(line.substring(0, split)) != wanted) continue;
+    return int.tryParse(line.substring(split + 1).trim());
+  }
+  return null;
+}
+
+Future<void> _writePlayerMs(String wanted, int ms) async {
+  final file = await _systemPlayerSettingsFile();
+  if (!file.existsSync()) return;
+  var found = false;
+  final next = file.readAsLinesSync().map((line) {
+    final split = line.indexOf('=');
+    if (split <= 0) return line;
+    if (_unescapeIniKey(line.substring(0, split)) != wanted) return line;
+    found = true;
+    return '${line.substring(0, split)}=$ms';
+  }).toList();
+  if (!found) next.add('${_escapeIniKey(wanted)}=$ms');
+  await file.writeAsString('${_withoutStaleStreamKeys(next, wanted).join('\n')}\n');
+}
+
+/// Muxed addresses put the whole query string in the key. The next extract
+/// has a new `expire`, so the old line never matches again.
+List<String> _withoutStaleStreamKeys(List<String> lines, String keep) {
+  return lines.where((line) {
+    final split = line.indexOf('=');
+    if (split <= 0) return true;
+    final key = _unescapeIniKey(line.substring(0, split));
+    if (!key.startsWith('videoplayback?')) return true;
+    return key == keep;
+  }).toList();
+}
+
+String _escapeIniKey(String key) {
+  final out = StringBuffer();
+  for (final unit in key.codeUnits) {
+    final ch = String.fromCharCode(unit);
+    final alnum = (unit >= 0x30 && unit <= 0x39) ||
+        (unit >= 0x41 && unit <= 0x5a) ||
+        (unit >= 0x61 && unit <= 0x7a);
+    if (alnum || ch == '_' || ch == '-' || ch == '.') {
+      out.write(ch);
+    } else if (ch == '/') {
+      out.write(r'\');
+    } else {
+      out.write('%${unit.toRadixString(16).padLeft(2, '0').toUpperCase()}');
+    }
+  }
+  return out.toString();
+}
+
+Future<int?> _rememberedMs(String wanted) async {
+  final file = await _resumeDirFile('gastube-resume.txt');
+  if (!file.existsSync()) return null;
+  final lines = file.readAsLinesSync();
+  if (lines.length < 2 || lines[1] != wanted) return null;
+  return int.tryParse(lines.first.trim());
+}
+
+Future<void> _rememberMs(String wanted, int ms) async {
+  final file = await _resumeDirFile('gastube-resume.txt');
+  await file.parent.create(recursive: true);
+  await file.writeAsString('$ms\n$wanted\n');
+}
+
+/// Tells the in-click helper which session to seek.
+///
+/// `ms` of 0 cancels a previous request.
+Future<void> _writePendingSeek(int ms, String wanted) async {
+  final file = await _resumeDirFile('pending-seek');
+  final tmp = await _resumeDirFile('pending-seek.tmp');
+  await tmp.parent.create(recursive: true);
+  await tmp.writeAsString('$ms\n$wanted\n');
+  await tmp.rename(file.path);
+}
+
+Future<bool> _seekHelperAlive() async {
+  final file = await _resumeDirFile('seek-helper.heartbeat');
+  if (!file.existsSync()) return false;
+  final age = DateTime.now().difference(file.lastModifiedSync());
+  return age < const Duration(seconds: 3);
+}
+
+int _resumeSeekGeneration = 0;
+
+const _mediaHubDest = 'com.lomiri.MediaHub.Service';
+const _mediaHubSessions = '/com/lomiri/MediaHub/Service/sessions';
+const _mprisPlayer = 'org.mpris.MediaPlayer2.Player';
+const _mprisTracks = 'org.mpris.MediaPlayer2.TrackList';
+
+/// Snapshots media-hub sessions, then waits for the one this handoff opens.
+///
+/// The snapshot finishes before the caller charges Content Hub. The watch
+/// itself continues afterwards. It seeks once, after the new session reports
+/// a duration and playback has moved 1.5s past the first sample. Those
+/// opening frames are what size the picture surface. Seeking earlier leaves
+/// it at 0×0. If the position is already at the stored minute, it does not
+/// seek again. If the first seek is still at the beginning, one more seek
+/// puts the playhead back. [Stopwatch] is monotonic: if a wait returns much
+/// later than it was asked to, this process was stopped and the seek is
+/// dropped. Choosing "From start" stores a negative position and cancels
+/// the watch.
+Future<void> _armInProcessResumeSeek(int ms, String key) async {
+  final generation = ++_resumeSeekGeneration;
+  final client = DBusClient.session();
+  List<int> snapshot;
+  try {
+    snapshot = await _mediaHubSessionIds(client);
+  } catch (error) {
+    print('gastube: system player resume seek failed error=$error');
+    await client.close();
+    return;
+  }
+  print(
+    'gastube: system player resume seek arm ms=$ms sessions=${snapshot.length}',
+  );
+  unawaited(
+    _watchResumeSeek(
+      client: client,
+      generation: generation,
+      ms: ms,
+      key: key,
+      snapshot: snapshot,
+    ),
+  );
+}
+
+Future<void> _watchResumeSeek({
+  required DBusClient client,
+  required int generation,
+  required int ms,
+  required String key,
+  required List<int> snapshot,
+}) async {
+  final clock = Stopwatch()..start();
+  var last = clock.elapsedMilliseconds;
+  var seenId = -1;
+  var seenAt = 0;
+  var loggedBus = false;
+  var loggedSurface = false;
+  var sought = false;
+  var soughtAt = -1;
+  var recovered = false;
+  var pictureAt = -1;
+  var pictureUs = 0;
+  try {
+    while (generation == _resumeSeekGeneration &&
+        clock.elapsedMilliseconds < 20000) {
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      if (generation != _resumeSeekGeneration) return;
+      final now = clock.elapsedMilliseconds;
+      final gap = now - last;
+      last = now;
+      if (gap > 1500) {
+        print(
+          'gastube: system player resume seek skipped reason=frozen gapMs=$gap',
+        );
+        return;
+      }
+      List<int> ids;
+      try {
+        ids = await _mediaHubSessionIds(client);
+      } catch (error) {
+        if (!loggedBus) {
+          loggedBus = true;
+          print('gastube: system player resume seek failed error=$error');
+        }
+        continue;
+      }
+      var newest = -1;
+      for (final id in ids) {
+        if (snapshot.contains(id) || id < newest) continue;
+        final found = await _mediaHubTrackKey(client, id);
+        if (found == null || !_sameTrackTail(found, key)) continue;
+        newest = id;
+      }
+      if (newest < 0) continue;
+      if (seenId != newest) {
+        seenId = newest;
+        seenAt = now;
+        print('gastube: system player resume seek saw session=$newest');
+      }
+      final durationRaw = await _mediaHubDuration(client, newest);
+      if (durationRaw <= 0) continue;
+      final positionUs = _hubMicroseconds(
+        await _mediaHubPosition(client, newest),
+        durationRaw,
+      );
+      final targetUs = ms * 1000;
+      if (positionUs != null && (positionUs - targetUs).abs() < 4000000) {
+        print(
+          'gastube: system player resume seek landed session=$newest ms=$ms',
+        );
+        return;
+      }
+      final storedNow = await _storedMsForKey(key);
+      if (storedNow != null && storedNow < 0) {
+        print('gastube: system player resume seek skipped reason=restart');
+        return;
+      }
+      final playing = await _mediaHubStatus(client, newest) == 'Playing';
+      if (playing && positionUs != null && pictureAt < 0) {
+        pictureAt = now;
+        pictureUs = positionUs;
+      }
+      // First frames at the start of the file size the Hybris surface.
+      // A Seek before that leaves height and width at 0.
+      final pictureReady = pictureAt >= 0 &&
+          positionUs != null &&
+          positionUs - pictureUs >= 1500000;
+      if (!pictureReady) {
+        if (!loggedSurface && pictureAt >= 0) {
+          loggedSurface = true;
+          print(
+            'gastube: system player resume seek wait reason=surface '
+            'session=$newest',
+          );
+        }
+        continue;
+      }
+      if (!sought) {
+        sought = true;
+        soughtAt = now;
+        final ok = await _seekMediaHubSession(client, newest, ms);
+        print(
+          'gastube: system player resume seek once session=$newest '
+          'ms=$ms ageMs=${now - seenAt} ok=$ok',
+        );
+        continue;
+      }
+      if (now - soughtAt < 1500) continue;
+      final stillOpening = positionUs - pictureUs < 4000000;
+      if (playing && stillOpening && targetUs > 15000000 && !recovered) {
+        recovered = true;
+        final ok = await _seekMediaHubSession(client, newest, ms);
+        print(
+          'gastube: system player resume seek recover session=$newest '
+          'ms=$ms ok=$ok',
+        );
+        return;
+      }
+    }
+    if (generation == _resumeSeekGeneration) {
+      print('gastube: system player resume seek gave up ms=$ms');
+    }
+  } catch (error) {
+    print('gastube: system player resume seek failed error=$error');
+  } finally {
+    await client.close();
+  }
+}
+
+Future<List<int>> _mediaHubSessionIds(DBusClient client) async {
+  final reply = await DBusRemoteObject(
+    client,
+    name: _mediaHubDest,
+    path: DBusObjectPath(_mediaHubSessions),
+  ).callMethod(
+    'org.freedesktop.DBus.Introspectable',
+    'Introspect',
+    const [],
+    replySignature: DBusSignature('s'),
+  );
+  final xml = reply.returnValues.first.asString();
+  final ids = <int>[];
+  for (final match in RegExp(r'name="(\d+)"').allMatches(xml)) {
+    final id = int.tryParse(match.group(1)!);
+    if (id != null) ids.add(id);
+  }
+  return ids;
+}
+
+Future<String?> _mediaHubTrackKey(DBusClient client, int id) async {
+  try {
+    final list = DBusRemoteObject(
+      client,
+      name: _mediaHubDest,
+      path: DBusObjectPath('$_mediaHubSessions/$id/TrackList'),
+    );
+    final tracks = await list.callMethod(
+      'org.freedesktop.DBus.Properties',
+      'Get',
+      [const DBusString(_mprisTracks), const DBusString('Tracks')],
+      replySignature: DBusSignature('v'),
+    );
+    // DBusArray.toNative() is an Iterable, not a List. An object path's
+    // toNative() is the path object itself.
+    final native = tracks.returnValues.first.asVariant().toNative();
+    if (native is String || native is! Iterable) return null;
+    String? trackId;
+    for (final value in native) {
+      trackId = _dbusText(value);
+      if (trackId != null) break;
+    }
+    if (trackId == null) return null;
+    final reply = await list.callMethod(
+      _mprisTracks,
+      'GetTracksUri',
+      [DBusString(trackId)],
+      replySignature: DBusSignature('s'),
+    );
+    final uri = reply.returnValues.first.asString();
+    if (uri.isEmpty) return null;
+    return uri;
+  } catch (_) {
+    return null;
+  }
+}
+
+String? _dbusText(Object? value) {
+  if (value is String && value.isNotEmpty) return value;
+  if (value is DBusObjectPath && value.value.isNotEmpty) return value.value;
+  if (value is DBusString && value.value.isNotEmpty) return value.value;
+  return null;
+}
+
+Future<int> _mediaHubPosition(DBusClient client, int id) async {
+  try {
+    final reply = await DBusRemoteObject(
+      client,
+      name: _mediaHubDest,
+      path: DBusObjectPath('$_mediaHubSessions/$id'),
+    ).callMethod(
+      'org.freedesktop.DBus.Properties',
+      'Get',
+      [const DBusString(_mprisPlayer), const DBusString('Position')],
+      replySignature: DBusSignature('v'),
+    );
+    final native = reply.returnValues.first.asVariant().toNative();
+    if (native is int) return native;
+    return -1;
+  } catch (_) {
+    return -1;
+  }
+}
+
+Future<String> _mediaHubStatus(DBusClient client, int id) async {
+  try {
+    final reply = await DBusRemoteObject(
+      client,
+      name: _mediaHubDest,
+      path: DBusObjectPath('$_mediaHubSessions/$id'),
+    ).callMethod(
+      'org.freedesktop.DBus.Properties',
+      'Get',
+      [const DBusString(_mprisPlayer), const DBusString('PlaybackStatus')],
+      replySignature: DBusSignature('v'),
+    );
+    final native = reply.returnValues.first.asVariant().toNative();
+    return native is String ? native : '';
+  } catch (_) {
+    return '';
+  }
+}
+
+/// media-hub reports nanoseconds once the value passes one second.
+int? _hubMicroseconds(int raw, int durationRaw) {
+  if (raw < 0) return null;
+  final nanoseconds = durationRaw >= 1000000000 || raw >= 1000000000;
+  return nanoseconds ? raw ~/ 1000 : raw;
+}
+
+Future<int> _mediaHubDuration(DBusClient client, int id) async {
+  try {
+    final reply = await DBusRemoteObject(
+      client,
+      name: _mediaHubDest,
+      path: DBusObjectPath('$_mediaHubSessions/$id'),
+    ).callMethod(
+      'org.freedesktop.DBus.Properties',
+      'Get',
+      [const DBusString(_mprisPlayer), const DBusString('Duration')],
+      replySignature: DBusSignature('v'),
+    );
+    final native = reply.returnValues.first.asVariant().toNative();
+    if (native is int) return native;
+    return -1;
+  } catch (_) {
+    return -1;
+  }
+}
+
+Future<bool> _seekMediaHubSession(DBusClient client, int id, int ms) async {
+  try {
+    await DBusRemoteObject(
+      client,
+      name: _mediaHubDest,
+      path: DBusObjectPath('$_mediaHubSessions/$id'),
+    ).callMethod(
+      _mprisPlayer,
+      'Seek',
+      [DBusUint64(ms * 1000)],
+    );
+    return true;
+  } catch (error) {
+    print('gastube: system player resume seek failed error=$error');
+    return false;
+  }
+}
+
+bool _sameTrackTail(String uri, String key) {
+  if (key.isEmpty) return false;
+  final slash = uri.lastIndexOf('/');
+  final tail = slash < 0 ? uri : uri.substring(slash + 1);
+  if (tail == key) return true;
+  try {
+    return Uri.decodeComponent(tail) == key;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// The system player's media-hub session for [url], when one is open.
+///
+/// The match is the same track tail the resume seek uses. An audio-only
+/// session is skipped, so the m4a opened while the picture is paused is not
+/// treated as the picture.
+Future<({int id, String status, int positionUs, bool video})?>
+    systemPlayerPicture(String url) async {
+  final key = _playerSettingsKey(url);
+  if (key.isEmpty) return null;
+  final client = DBusClient.session();
+  try {
+    final ids = await _mediaHubSessionIds(client);
+    ({int id, String status, int positionUs, bool video})? paused;
+    for (final id in ids) {
+      final uri = await _mediaHubTrackKey(client, id);
+      if (uri == null || !_sameTrackTail(uri, key)) continue;
+      final video = await _mediaHubBool(client, id, 'IsVideoSource');
+      final mpd = uri.toLowerCase().contains('.mpd');
+      if (video == false && !mpd) continue;
+      final status = await _mediaHubStatus(client, id);
+      final raw = await _mediaHubPosition(client, id);
+      final duration = await _mediaHubDuration(client, id);
+      final us = _hubMicroseconds(raw, duration) ?? 0;
+      final found = (
+        id: id,
+        status: status,
+        positionUs: us,
+        video: video ?? mpd,
+      );
+      if (status == 'Playing') return found;
+      paused ??= found;
+    }
+    return paused;
+  } catch (error) {
+    print('gastube: system player picture failed error=$error');
+    return null;
+  } finally {
+    await client.close();
+  }
+}
+
+/// Seeks the system player's session. [positionMs] is absolute milliseconds.
+Future<bool> seekSystemPlayerSession(int id, int positionMs) async {
+  final client = DBusClient.session();
+  try {
+    return await _seekMediaHubSession(client, id, positionMs);
+  } finally {
+    await client.close();
+  }
+}
+
+/// Seeks the playing picture for [url] to absolute [positionMs].
+///
+/// The session is the one [systemPlayerPicture] matches. A paused picture
+/// and the lock-screen audio are not moved.
+Future<bool> seekSystemPlayerPicture(String url, int positionMs) async {
+  if (positionMs < 0) return false;
+  final picture = await systemPlayerPicture(url);
+  if (picture == null || picture.status != 'Playing') return false;
+  return seekSystemPlayerSession(picture.id, positionMs);
+}
+
+Future<bool?> _mediaHubBool(DBusClient client, int id, String name) async {
+  try {
+    final reply = await DBusRemoteObject(
+      client,
+      name: _mediaHubDest,
+      path: DBusObjectPath('$_mediaHubSessions/$id'),
+    ).callMethod(
+      'org.freedesktop.DBus.Properties',
+      'Get',
+      [DBusString(_mprisPlayer), DBusString(name)],
+      replySignature: DBusSignature('v'),
+    );
+    final native = reply.returnValues.first.asVariant().toNative();
+    if (native is bool) return native;
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
+
 /// Opens a finished download in Media Player.
 ///
 /// The handoff is a temporary Content Hub link. It does not copy the file
 /// into Music or Videos. Saving is the path that does that, and only once.
+///
+/// Ubuntu Touch 24.04 aborts a `file://` charge when its profile query
+/// refuses the Click's private directory, and the player never starts. An
+/// `http://127.0.0.1` address skips that query. The loopback server starts
+/// only after that abort, so a 20.04 charge that already succeeded is left
+/// on the file address.
 Future<({bool ok, String message})> openInSystemPlayer({
   required String path,
   required bool audioOnly,
@@ -21,19 +763,40 @@ Future<({bool ok, String message})> openInSystemPlayer({
   final client = DBusClient.session();
   try {
     final hub = _service(client);
-    const peer = 'mediaplayer-app';
-    final state = await _chargeFile(
+    final peer = await _systemPlayerPeer(hub);
+    if (peer == null) {
+      print('gastube: open system failed file=$path error=no peer');
+      return (ok: false, message: 'no peer');
+    }
+    var state = await _chargeItem(
       client,
       hub,
       peer: peer,
       contentType: 'videos',
-      path: path,
+      name: p.basename(path),
+      url: Uri.file(path).toString(),
     );
     if (state == 5) {
       print('gastube: open system failed file=$path peer=$peer error=aborted');
+      final served = await _systemPlayerLoopbackUrl(path);
+      if (served != null) {
+        state = await _chargeItem(
+          client,
+          hub,
+          peer: peer,
+          contentType: 'videos',
+          name: p.basename(path),
+          url: served,
+        );
+        print('gastube: open system local peer=$peer state=$state');
+      }
+    }
+    if (state == 5) {
       return (ok: false, message: 'aborted');
     }
-    print('gastube: open system file=$path peer=$peer audio=$audioOnly state=$state');
+    print(
+      'gastube: open system file=$path peer=$peer audio=$audioOnly state=$state',
+    );
     return (ok: true, message: '');
   } catch (error) {
     print('gastube: open system failed file=$path error=$error');
@@ -41,6 +804,142 @@ Future<({bool ok, String message})> openInSystemPlayer({
   } finally {
     await client.close();
   }
+}
+
+HttpServer? _systemPlayerServer;
+var _systemPlayerServing = false;
+var _systemPlayerRouteId = 0;
+final Map<String, String> _systemPlayerRoutes = {};
+
+/// Publishes [path] on the Click's loopback interface and returns its URL.
+///
+/// The last path segment stays the filename, so the player's bookmark key
+/// matches the file that a direct charge would have used.
+Future<String?> _systemPlayerLoopbackUrl(String path) async {
+  final name = p.basename(path);
+  if (name.isEmpty || name == '.' || name == '..') return null;
+  try {
+    final server = _systemPlayerServer ??= await HttpServer.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
+    if (!_systemPlayerServing) {
+      _systemPlayerServing = true;
+      print('gastube: system player local port=${server.port}');
+      server.listen(
+        _serveSystemPlayerFile,
+        onError: (Object error) {
+          print('gastube: system player local failed error=$error');
+        },
+      );
+    }
+    final route = '/${_systemPlayerRouteId++}/$name';
+    _systemPlayerRoutes[route] = path;
+    return 'http://127.0.0.1:${server.port}$route';
+  } catch (error) {
+    print('gastube: system player local failed error=$error');
+    return null;
+  }
+}
+
+ContentType _systemPlayerContentType(String path) {
+  switch (p.extension(path).toLowerCase()) {
+    case '.mpd':
+      return ContentType('application', 'dash+xml', charset: 'utf-8');
+    case '.mp4':
+    case '.m4v':
+      return ContentType('video', 'mp4');
+    case '.m4a':
+      return ContentType('audio', 'mp4');
+    case '.webm':
+      return ContentType('video', 'webm');
+    case '.mkv':
+      return ContentType('video', 'x-matroska');
+    default:
+      return ContentType.binary;
+  }
+}
+
+Future<void> _serveSystemPlayerFile(HttpRequest request) async {
+  final response = request.response;
+  try {
+    final filePath = _systemPlayerRoutes[request.uri.path];
+    final file = filePath == null ? null : File(filePath);
+    if ((request.method != 'GET' && request.method != 'HEAD') ||
+        file == null ||
+        !file.existsSync()) {
+      response.statusCode = HttpStatus.notFound;
+      await response.close();
+      return;
+    }
+    final total = await file.length();
+    response.headers.set(HttpHeaders.acceptRangesHeader, 'bytes');
+    response.headers.contentType = _systemPlayerContentType(filePath!);
+    final opened = _systemPlayerRange(request, total);
+    if (opened == null) {
+      response.statusCode = HttpStatus.requestedRangeNotSatisfiable;
+      response.headers.set(HttpHeaders.contentRangeHeader, 'bytes */$total');
+      await response.close();
+      return;
+    }
+    final start = opened.$1;
+    final end = opened.$2;
+    if (request.headers.value(HttpHeaders.rangeHeader) != null) {
+      response.statusCode = HttpStatus.partialContent;
+      response.headers.set(
+        HttpHeaders.contentRangeHeader,
+        'bytes $start-$end/$total',
+      );
+    }
+    final length = total == 0 ? 0 : end - start + 1;
+    response.contentLength = length;
+    if (request.method == 'HEAD' || length == 0) {
+      await response.close();
+      return;
+    }
+    await response.addStream(file.openRead(start, end + 1));
+    await response.close();
+  } catch (error) {
+    print('gastube: system player local failed error=$error');
+    try {
+      await response.close();
+    } catch (_) {}
+  }
+}
+
+/// Byte range to send, or null when the request's range cannot be served.
+(int, int)? _systemPlayerRange(HttpRequest request, int total) {
+  if (total == 0) {
+    final asked = request.headers.value(HttpHeaders.rangeHeader);
+    return asked == null ? (0, 0) : null;
+  }
+  final header = request.headers.value(HttpHeaders.rangeHeader);
+  if (header == null) return (0, total - 1);
+  final match = RegExp(r'^bytes=(\d*)-(\d*)$').firstMatch(header.trim());
+  if (match == null) return null;
+  final startText = match.group(1)!;
+  final endText = match.group(2)!;
+  if (startText.isEmpty && endText.isEmpty) return null;
+  var start = 0;
+  var end = total - 1;
+  if (startText.isEmpty) {
+    final suffix = int.tryParse(endText);
+    if (suffix == null || suffix <= 0) return null;
+    start = total - suffix;
+    if (start < 0) start = 0;
+  } else {
+    final parsedStart = int.tryParse(startText);
+    if (parsedStart == null) return null;
+    start = parsedStart;
+    if (endText.isNotEmpty) {
+      final parsedEnd = int.tryParse(endText);
+      if (parsedEnd == null) return null;
+      end = parsedEnd;
+    }
+  }
+  if (start < 0 || start >= total || end < start) return null;
+  if (end >= total) end = total - 1;
+  return (start, end);
 }
 
 /// Writes text onto the Lomiri pasteboard. Flutter's clipboard stays inside
@@ -284,6 +1183,130 @@ Future<({bool ok, String message})> shareText(String text) async {
   }
 }
 
+/// Whether the UT Tweak Tool enhancement path is on.
+///
+/// The switch lives in Settings. While it is on, this app does not start
+/// `gastube-seek`, and a running copy is stopped.
+Future<bool> ubuntuTouchEnhancedMode() async {
+  if (!UbuntuTouch.enabled) return false;
+  final file = await _resumeDirFile('enhanced-mode');
+  if (!file.existsSync()) return false;
+  return file.readAsStringSync().trim() == '1';
+}
+
+/// Remembers [enabled] and starts or stops the resume helper to match.
+Future<void> setUbuntuTouchEnhancedMode(bool enabled) async {
+  final file = await _resumeDirFile('enhanced-mode');
+  await file.parent.create(recursive: true);
+  await file.writeAsString(enabled ? '1\n' : '0\n');
+  if (enabled) {
+    await stopUbuntuTouchSeekHelper();
+  } else {
+    await startUbuntuTouchSeekHelper();
+  }
+  print('gastube: enhanced mode enabled=$enabled');
+}
+
+/// Starts the resume helper that ships inside the click.
+///
+/// Lomiri stops this process group when the system player is in front.
+/// The helper calls setsid, so it is not in that group and can seek after
+/// the player is ready. The enhancement switch leaves this stopped.
+Future<void> startUbuntuTouchSeekHelper() async {
+  if (!UbuntuTouch.enabled) return;
+  if (await ubuntuTouchEnhancedMode()) {
+    print('gastube: seek helper skipped reason=enhanced');
+    await stopUbuntuTouchSeekHelper();
+    return;
+  }
+  final helper = p.join(p.dirname(Platform.resolvedExecutable), 'gastube-seek');
+  if (!File(helper).existsSync()) {
+    print('gastube: seek helper missing');
+    return;
+  }
+  try {
+    final process = await Process.start(
+      helper,
+      const [],
+      mode: ProcessStartMode.detached,
+    );
+    final pidFile = await _resumeDirFile('seek-helper.pid');
+    await pidFile.writeAsString('${process.pid}\n');
+    print('gastube: seek helper started pid=${process.pid}');
+  } catch (error) {
+    print('gastube: seek helper start error=$error');
+  }
+}
+
+/// Stops every `gastube-seek` this app can see.
+///
+/// The user service and the copy started at launch are the same program.
+/// Stopping the service leaves the copy inside this app's cgroup running.
+Future<void> stopUbuntuTouchSeekHelper() async {
+  final pids = _seekHelperPids();
+  for (final pid in pids) {
+    final ok = Process.killPid(pid, ProcessSignal.sigterm);
+    print('gastube: seek helper stop pid=$pid ok=$ok signal=term');
+  }
+  await Future<void>.delayed(const Duration(milliseconds: 300));
+  for (final pid in _seekHelperPids()) {
+    final ok = Process.killPid(pid, ProcessSignal.sigkill);
+    print('gastube: seek helper stop pid=$pid ok=$ok signal=kill');
+  }
+  try {
+    final unit = await Process.run(
+      'systemctl',
+      ['--user', 'stop', 'gastube-seek.service'],
+    );
+    print('gastube: seek helper unit stop code=${unit.exitCode}');
+  } catch (error) {
+    print('gastube: seek helper unit stop error=$error');
+  }
+  final beat = await _resumeDirFile('seek-helper.heartbeat');
+  if (beat.existsSync()) await beat.delete();
+  final pidFile = await _resumeDirFile('seek-helper.pid');
+  if (pidFile.existsSync()) await pidFile.delete();
+  await _writePendingSeek(0, '');
+}
+
+Set<int> _seekHelperPids() {
+  final pids = <int>{};
+  final recorded = _resumeDirFileSync('seek-helper.pid');
+  if (recorded != null && recorded.existsSync()) {
+    final pid = int.tryParse(recorded.readAsStringSync().trim());
+    if (pid != null && pid > 0) pids.add(pid);
+  }
+  final proc = Directory('/proc');
+  if (!proc.existsSync()) return pids;
+  try {
+    for (final entity in proc.listSync()) {
+      final pid = int.tryParse(p.basename(entity.path));
+      if (pid == null || pid <= 0) continue;
+      try {
+        final raw = File('/proc/$pid/cmdline').readAsBytesSync();
+        final text = String.fromCharCodes(raw.where((byte) => byte != 0));
+        if (!text.contains('/gastube-seek')) continue;
+        pids.add(pid);
+      } catch (_) {}
+    }
+  } catch (error) {
+    print('gastube: seek helper pids error=$error');
+  }
+  return pids;
+}
+
+File? _resumeDirFileSync(String name) {
+  final home = Platform.environment['HOME'];
+  if (home == null || home.isEmpty) return null;
+  final data = Platform.environment['XDG_DATA_HOME'];
+  final root = (data != null && data.isNotEmpty)
+      ? data
+      : p.join(home, '.local', 'share');
+  return File(
+    p.join(root, UbuntuTouch.clickPackage, 'player-resume', name),
+  );
+}
+
 /// Listens for a shared link or an imported document while the process lives.
 Future<void> startUbuntuTouchContentHub() async {
   if (!UbuntuTouch.enabled) return;
@@ -326,7 +1349,7 @@ DBusRemoteObject _service(DBusClient client) {
 String _appId() {
   final appId = Platform.environment['APP_ID'];
   if (appId != null && appId.isNotEmpty) return appId;
-  return 'gastube.alphaliu01_gastube_0.9.4';
+  return 'gastube.alphaliu01_gastube_0.9.5';
 }
 
 String _dbusEscape(String id) {
@@ -522,6 +1545,24 @@ Future<int> _chargeFile(
   required String peer,
   required String contentType,
   required String path,
+}) {
+  return _chargeItem(
+    client,
+    hub,
+    peer: peer,
+    contentType: contentType,
+    name: p.basename(path),
+    url: Uri.file(path).toString(),
+  );
+}
+
+Future<int> _chargeItem(
+  DBusClient client,
+  DBusRemoteObject hub, {
+  required String peer,
+  required String contentType,
+  required String name,
+  required String url,
 }) async {
   final created = await hub.callMethod(
     'com.lomiri.content.dbus.Service',
@@ -542,8 +1583,8 @@ Future<int> _chargeFile(
         DBusVariant(DBusStruct([
           const DBusString(''),
           DBusArray.byte(<int>[]),
-          DBusString(p.basename(path)),
-          DBusString(Uri.file(path).toString()),
+          DBusString(name),
+          DBusString(url),
         ])),
       ]),
     ],
@@ -576,6 +1617,37 @@ Future<String?> _peerId(
   String type,
   String prefix,
 ) async {
+  final ids = await _destinationIds(hub, method, type);
+  for (final id in ids) {
+    if (id.startsWith(prefix)) return id;
+  }
+  print('gastube: content peer missing type=$type prefix=$prefix ids=$ids');
+  return null;
+}
+
+/// Focal's media player and Noble's renamed package are different peers.
+/// The older name wins when both are installed, so a 20.04 phone keeps the
+/// player it already uses.
+Future<String?> _systemPlayerPeer(DBusRemoteObject hub) async {
+  const preferred = ['mediaplayer-app', 'lomiri-mediaplayer-app'];
+  final ids = await _destinationIds(hub, 'KnownDestinationsForType', 'videos');
+  for (final name in preferred) {
+    if (ids.contains(name)) return name;
+  }
+  for (final name in preferred) {
+    for (final id in ids) {
+      if (id.startsWith(name)) return id;
+    }
+  }
+  print('gastube: system player peer missing ids=$ids');
+  return null;
+}
+
+Future<List<String>> _destinationIds(
+  DBusRemoteObject hub,
+  String method,
+  String type,
+) async {
   final reply = await hub.callMethod(
     'com.lomiri.content.dbus.Service',
     method,
@@ -583,7 +1655,7 @@ Future<String?> _peerId(
     replySignature: DBusSignature('av'),
   );
   final value = reply.returnValues.first;
-  if (value is! DBusArray) return null;
+  if (value is! DBusArray) return const [];
   final ids = <String>[];
   for (final child in value.children) {
     final item = child is DBusVariant ? child.value : child;
@@ -591,11 +1663,7 @@ Future<String?> _peerId(
     final id = item.children.first;
     if (id is DBusString) ids.add(id.value);
   }
-  for (final id in ids) {
-    if (id.startsWith(prefix)) return id;
-  }
-  print('gastube: content peer missing type=$type prefix=$prefix ids=$ids');
-  return null;
+  return ids;
 }
 
 String? _firstFilePath(DBusValue value) {

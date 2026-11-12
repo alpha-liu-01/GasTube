@@ -380,6 +380,12 @@ class MessageLookup extends MessageLookupByLibrary {
     "title": MessageLookupByLibrary.simpleMessage("标题"),
     "translators": MessageLookupByLibrary.simpleMessage("翻译人员"),
     "trending": MessageLookupByLibrary.simpleMessage("热门"),
+    "ubuntuTouchEnhanced": MessageLookupByLibrary.simpleMessage(
+      "UT Tweak Tool 增强模式",
+    ),
+    "ubuntuTouchEnhancedDescription": MessageLookupByLibrary.simpleMessage(
+      "停掉本应用拉起的续播进程。已在 UT Tweak Tool 里为本应用打开 Prevent app suspension 时打开。",
+    ),
     "unitedKingdom": MessageLookupByLibrary.simpleMessage("英国"),
     "unitedStates": MessageLookupByLibrary.simpleMessage("美国"),
     "unknown": MessageLookupByLibrary.simpleMessage("未知"),

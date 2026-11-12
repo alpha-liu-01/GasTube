@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -8,6 +9,8 @@ import 'package:fluxtube/core/player/global_player_controller.dart';
 import 'package:fluxtube/core/player/playback_queue.dart';
 import 'package:fluxtube/core/services/media_hub_player.dart';
 import 'package:fluxtube/core/ubuntu_touch.dart';
+import 'package:fluxtube/core/ubuntu_touch_content_hub.dart';
+import 'package:fluxtube/core/ubuntu_touch_dash_mpd.dart';
 import 'package:fluxtube/domain/saved/models/local_store.dart';
 import 'package:fluxtube/domain/sponsorblock/models/sponsor_segment.dart';
 import 'package:fluxtube/domain/watch/models/newpipe/newpipe_stream.dart';
@@ -21,6 +24,8 @@ import 'package:fluxtube/domain/watch/playback/newpipe_stream_helper.dart';
 import 'package:fluxtube/domain/watch/playback/video_codec.dart';
 import 'package:fluxtube/presentation/watch/queue_playback.dart';
 import 'package:fluxtube/presentation/watch/widgets/player/player_controls_overlay.dart';
+import 'package:fluxtube/presentation/watch/widgets/queue_sheet.dart';
+import 'package:fluxtube/presentation/watch/widgets/system_player_preview.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
@@ -67,7 +72,8 @@ class NewPipeMediaKitPlayer extends StatefulWidget {
   State<NewPipeMediaKitPlayer> createState() => _NewPipeMediaKitPlayerState();
 }
 
-class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
+class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer>
+    with WidgetsBindingObserver {
   // Use global player controller for persistence across navigation
   final GlobalPlayerController _globalPlayer = GlobalPlayerController();
 
@@ -78,21 +84,41 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
   PlaybackConfiguration? _currentConfig;
   List<StreamQualityInfo>? _availableQualities;
   String? _currentQualityLabel;
+  String? _systemPlayerUrl;
+  bool _systemPlayerOpening = false;
+  bool _systemPlayerEnded = false;
+  DateTime? _systemPlayerHandoffAt;
+  Uint8List? _pendingPreviewFrame;
   bool _isInitialized = false;
   bool _isInitializing = false; // Guard against concurrent initializations
   bool _isRestoringFromPip = false;
   Duration? _indicatorStart;
   bool _isChangingQuality = false;
   bool _streamRefreshUsed = false;
+  int _dashSeekRetries = 0;
+  int _pictureListenGeneration = 0;
+  bool _pictureListenBusy = false;
+  bool _pictureListening = false;
+  bool _pictureSeenPlaying = false;
+  bool _pictureSeenLogged = false;
+  int? _picturePausedSession;
+  int _pictureLastUs = 0;
+  DateTime? _picturePausedAt;
   late BoxFit _currentFitMode;
 
   // SponsorBlock
   StreamSubscription<Duration>? _sponsorBlockSubscription;
   final Set<String> _skippedSegments = {};
+  int _sponsorPollGeneration = 0;
+  int? _sponsorSurfaceSession;
+  int _sponsorSurfaceUs = 0;
+  bool _sponsorSurfaceReady = false;
 
   // History tracking - throttle updates
   StreamSubscription<Duration>? _historySubscription;
   int _lastSavedPositionSeconds = -1;
+  int _historyPollGeneration = 0;
+  String? _historyPollUrl;
 
   // HLS/DASH adaptive streaming - track video tracks from player
   StreamSubscription<Tracks>? _tracksSubscription;
@@ -122,6 +148,11 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     _watchBloc = BlocProvider.of<WatchBloc>(context);
     _resolver = NewPipePlaybackResolver();
     _currentFitMode = _getBoxFit(widget.videoFitMode);
+    WidgetsBinding.instance.addObserver(this);
+    if (UbuntuTouch.enabled &&
+        _globalPlayer.systemPlayerHandoffFor(widget.videoId)) {
+      _applySystemPlayerPlaceholder();
+    }
 
     // Defer initialization to next frame to handle async operations properly
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -140,6 +171,15 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     }
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        UbuntuTouch.enabled &&
+        _systemPlayerUrl != null) {
+      unawaited(_refreshHandoffPosition());
+    }
+  }
+
   /// Async initialization - matches pattern used by other player widgets
   Future<void> _initializeAsync() async {
     // CRITICAL: Prevent concurrent initializations
@@ -152,6 +192,27 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     _isInitializing = true;
 
     try {
+      // A handed-off video keeps its picture on the global player. Coming
+      // back from the mini window must not charge the system player again,
+      // and must not treat the empty mpv picture as an in-app restore.
+      if (UbuntuTouch.enabled &&
+          _globalPlayer.systemPlayerHandoffFor(widget.videoId)) {
+        _applySystemPlayerPlaceholder();
+        if (mounted) setState(() {});
+        await _refreshHandoffPosition();
+        final handoffUrl = _systemPlayerUrl;
+        if (handoffUrl != null) {
+          _armSystemPlayerHistory(handoffUrl);
+          _armSystemPlayerSponsor(handoffUrl);
+        }
+        _globalPlayer.exitPipMode();
+        _setupHistoryListener();
+        _setupSponsorBlockListener();
+        _setupTracksListener();
+        _setupPlayingStateListener();
+        print('gastube: system player preview restore');
+        return;
+      }
       // Check if we're returning from PiP for the same video
       // Only restore if the player is actually in a stable playing state for this video
       _isRestoringFromPip = _globalPlayer.isPlayingVideo(widget.videoId);
@@ -184,6 +245,18 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
       debugPrint(
           '[NewPipePlayer] CRITICAL: Video ID changed from ${oldWidget.videoId} to ${widget.videoId}');
       debugPrint('[NewPipePlayer] IMMEDIATELY stopping old video');
+      _systemPlayerUrl = null;
+      _systemPlayerEnded = false;
+      _systemPlayerHandoffAt = null;
+      _cancelPictureListen();
+      if (_globalPlayer.backgroundAudioArmed) {
+        _globalPlayer.forgetBackgroundAudio();
+        unawaited(MediaHubPlayer.instance.stop());
+      }
+      _pendingPreviewFrame = null;
+      _isInitialized = false;
+      _isRestoringFromPip = false;
+      _dashSeekRetries = 0;
 
       // Stop both local and global player for the old video. This is awaited
       // inside the async task below so the next open cannot race the previous
@@ -304,6 +377,124 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     debugPrint('[NewPipePlayer] Restored from PiP successfully (sync)');
   }
 
+  void _applySystemPlayerPlaceholder() {
+    final handoffUrl = _globalPlayer.systemPlayerHandoffUrl;
+    if (handoffUrl == null || handoffUrl.isEmpty) return;
+    _availableQualities = _loadQualities();
+    _availableAudioTracks = NewPipeStreamHelper.getAvailableAudioTracks(
+        widget.watchInfo.audioStreams ?? []);
+    final preferred = _globalPlayer.systemPlayerQualityLabel(widget.videoId) ??
+        widget.defaultQuality;
+    if (_availableAudioTracks != null && _availableAudioTracks!.isNotEmpty) {
+      final savedTrackId = _globalPlayer.currentAudioTrackId;
+      if (savedTrackId != null &&
+          _availableAudioTracks!.any((t) => t.trackId == savedTrackId)) {
+        _currentAudioTrackId = savedTrackId;
+      } else {
+        final originalTrack = _availableAudioTracks!.firstWhere(
+          (t) => t.isOriginal && !t.isDubbed && !t.isDescriptive,
+          orElse: () => _availableAudioTracks!.first,
+        );
+        _currentAudioTrackId = originalTrack.trackId;
+        _globalPlayer.setCurrentAudioTrackId(_currentAudioTrackId);
+      }
+    }
+    _currentConfig = _resolveForThisBuild(preferred);
+    _currentQualityLabel = _currentConfig?.qualityLabel ?? preferred;
+    _systemPlayerUrl = handoffUrl;
+    _isInitialized = true;
+    _isRestoringFromPip = true;
+  }
+
+  Future<void> _refreshHandoffPosition() async {
+    final url = _systemPlayerUrl;
+    if (url == null) return;
+    await _readHandoffPosition(url);
+    // The system player writes its position when it pauses, which can land
+    // just after this process resumes. Read once more without seeking.
+    await Future.delayed(const Duration(milliseconds: 700));
+    if (!mounted || _systemPlayerUrl != url) return;
+    await _readHandoffPosition(url);
+  }
+
+  Future<void> _readHandoffPosition(String url) async {
+    if (await systemPlayerReachedEnd(url)) {
+      if (!mounted || _systemPlayerUrl != url) return;
+      final seconds = widget.watchInfo.duration ?? 0;
+      if (seconds > 0) {
+        final end = Duration(seconds: seconds);
+        _globalPlayer.updateSystemPlayerHandoffPosition(end);
+        _updateVideoHistory(position: end);
+      }
+      if (!_systemPlayerEnded && mounted) {
+        setState(() => _systemPlayerEnded = true);
+        print('gastube: system player ended id=${widget.videoId}');
+      }
+      return;
+    }
+    if (_systemPlayerEnded && mounted && _systemPlayerUrl == url) {
+      setState(() => _systemPlayerEnded = false);
+    }
+    final position = await peekSystemPlayerPosition(url);
+    if (!mounted || _systemPlayerUrl != url || position == null) return;
+    _globalPlayer.updateSystemPlayerHandoffPosition(position);
+    _updateVideoHistory(position: position);
+    print(
+      'gastube: system player preview positionMs=${position.inMilliseconds}',
+    );
+    _ensureBackgroundAudio();
+  }
+
+  /// A frame mpv has already drawn. The first handoff never opens the
+  /// in-app decoder, so this stays null and the cover is used instead.
+  Future<Uint8List?> _capturedFrame() async {
+    final params = _player.state.videoParams;
+    final width = params.dw ?? params.w ?? 0;
+    final height = params.dh ?? params.h ?? 0;
+    if (width <= 0 || height <= 0) return null;
+    try {
+      final bytes = await _player.screenshot();
+      if (bytes == null || bytes.isEmpty) return null;
+      return bytes;
+    } catch (error) {
+      print('gastube: system player frame failed error=$error');
+      return null;
+    }
+  }
+
+  void _rememberSystemPlayerPreview(String url, Duration? stored) {
+    final frame = _pendingPreviewFrame;
+    _pendingPreviewFrame = null;
+    var position = stored ?? Duration.zero;
+    if (position <= Duration.zero) {
+      final playing = _player.state.position;
+      if (playing > Duration.zero) position = playing;
+    }
+    _globalPlayer.noteSystemPlayerHandoff(
+      videoId: widget.videoId,
+      url: url,
+      thumbnailUrl: widget.watchInfo.thumbnailUrl,
+      frame: frame,
+      position: position,
+    );
+    final quality = _currentConfig?.qualityLabel ?? _currentQualityLabel;
+    if (quality != null && quality.isNotEmpty && quality != 'Unknown') {
+      _currentQualityLabel = quality;
+      _globalPlayer.noteSystemPlayerQuality(quality);
+    }
+    print(
+      'gastube: system player preview frame=${frame == null ? 0 : 1} '
+      'positionMs=${position.inMilliseconds}',
+    );
+    if (mounted) {
+      setState(() => _systemPlayerUrl = url);
+    } else {
+      _systemPlayerUrl = url;
+    }
+    _armSystemPlayerHistory(url);
+    _armSystemPlayerSponsor(url);
+  }
+
   List<StreamQualityInfo> _loadQualities() {
     if (!UbuntuTouch.enabled) {
       return NewPipeStreamHelper.getAvailableQualities(
@@ -334,8 +525,22 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
       );
     }
     final qualities = _availableQualities ?? _loadQualities();
+    // A settings value such as "720p" is not a menu label. Prefer a
+    // video-only H.264 or VP9 stream that can go out as one MPD with its
+    // m4a. The codec setting picks which of those. Muxed is the fallback
+    // when that index is missing. An exact menu label still wins.
+    final normalized = preferredQuality.toLowerCase().trim();
+    final exact = qualities.any(
+      (quality) => quality.label.toLowerCase().trim() == normalized,
+    );
+    final dash = qualities.where(_dashMenuEntry).toList();
+    final muxed =
+        qualities.where((quality) => !quality.requiresMerging).toList();
+    final pool = exact
+        ? qualities
+        : (dash.isNotEmpty ? dash : (muxed.isEmpty ? qualities : muxed));
     final match = NewPipeStreamHelper.findBestMatchingQuality(
-      qualities,
+      pool,
       preferredQuality,
       preferredCodec: widget.defaultVideoCodec,
     );
@@ -397,11 +602,22 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
       ));
     }
 
-    for (final stream in watch.videoOnlyStreams ?? const <NewPipeVideoStream>[]) {
-      add(stream, merging: true);
+    // A DASH video-only stream and the muxed stream share labels such as
+    // "360p H.264". Keep the video-only one. Every quality then rewrites the
+    // same local MPD, so they resume from one position. The muxed address is
+    // only the label that has no DASH index. `requiresMerging` keeps the menu
+    // from saying "no audio": the handoff writes the m4a into that MPD.
+    final videoOnly =
+        watch.videoOnlyStreams ?? const <NewPipeVideoStream>[];
+    final muxed = watch.videoStreams ?? const <NewPipeVideoStream>[];
+    for (final stream in videoOnly) {
+      if (ubuntuTouchDashVideo(stream)) add(stream, merging: true);
     }
-    for (final stream in watch.videoStreams ?? const <NewPipeVideoStream>[]) {
+    for (final stream in muxed) {
       add(stream, merging: false);
+    }
+    for (final stream in videoOnly) {
+      if (!ubuntuTouchDashVideo(stream)) add(stream, merging: true);
     }
     qualities.sort((a, b) {
       final byQuality = a.compareTo(b);
@@ -518,6 +734,9 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
         _currentQualityLabel = 'Auto';
         // Clear video stream qualities - will be populated by tracks listener
         _availableQualities = null;
+      } else if (UbuntuTouch.enabled &&
+          _currentConfig!.qualityLabel != 'Unknown') {
+        _currentQualityLabel = _currentConfig!.qualityLabel;
       }
 
       debugPrint('=== MediaKit Playback Debug ===');
@@ -621,6 +840,25 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     }());
   }
 
+  /// Ask NewPipe for a fresh googlevideo address when the one we have refuses
+  /// a later byte range. One try. The next handoff uses the new list.
+  Future<bool> _refreshDashStreams() async {
+    print('gastube: dash seek refresh id=${widget.videoId}');
+    try {
+      await NewPipeChannel.forgetStreamInfo(widget.videoId);
+      final fresh = await NewPipeChannel.getStreamInfoFast(widget.videoId);
+      if (!mounted) return false;
+      _availableQualities = _ubuntuTouchQualities(fresh);
+      _availableAudioTracks = NewPipeStreamHelper.getAvailableAudioTracks(
+        fresh.audioStreams ?? [],
+      );
+      return true;
+    } catch (error) {
+      print('gastube: dash seek refresh failed error=$error');
+      return false;
+    }
+  }
+
   /// The last 0:00 stop was a googlevideo URL answering 403. Changing quality
   /// reused that same extract. Drop it and open the video once more.
   Future<void> _refreshRejectedStream() async {
@@ -668,6 +906,30 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     bool fastSwitch = false,
   }) async {
     try {
+      final dashQuality = _qualityForLabel(config.qualityLabel);
+      if (UbuntuTouch.enabled &&
+          widget.watchInfo.isLive != true &&
+          dashQuality != null &&
+          _dashMenuEntry(dashQuality)) {
+        var handed = await _handoffDashRefreshing(config);
+        if (handed || !mounted) return;
+        final muxed = _muxedHttpUrl();
+        if (muxed != null) {
+          final handedMuxed = await _openMuxedInSystemPlayer(muxed);
+          if (handedMuxed || !mounted) return;
+        }
+      }
+      if (UbuntuTouch.enabled &&
+          config.sourceType == MediaSourceType.progressive &&
+          _isHttpPlaybackUrl(config.videoUrl)) {
+        final handed = await _openMuxedInSystemPlayer(config.videoUrl!);
+        if (handed || !mounted) return;
+      }
+      if (mounted && _systemPlayerUrl != null) {
+        setState(() => _systemPlayerUrl = null);
+      }
+      _globalPlayer.clearSystemPlayerHandoff();
+      _pendingPreviewFrame = null;
       if (UbuntuTouch.enabled) {
         await (_player.platform as dynamic).setProperty('ao', 'pulse');
         await selectUbuntuTouchDecoder(
@@ -838,6 +1100,674 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     });
   }
 
+  bool _isHttpPlaybackUrl(String? url) {
+    if (url == null || url.isEmpty) return false;
+    final uri = Uri.tryParse(url);
+    return uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
+  }
+
+  bool _dashMenuEntry(StreamQualityInfo quality) {
+    return quality.requiresMerging &&
+        ubuntuTouchDashVideo(quality.videoStream);
+  }
+
+  StreamQualityInfo? _qualityForLabel(String label) {
+    for (final quality in _availableQualities ?? const <StreamQualityInfo>[]) {
+      if (quality.label == label) return quality;
+    }
+    return null;
+  }
+
+  String? _muxedHttpUrl() {
+    for (final quality in _availableQualities ?? const <StreamQualityInfo>[]) {
+      if (quality.requiresMerging) continue;
+      final url = quality.videoStream?.url;
+      if (_isHttpPlaybackUrl(url)) return url;
+    }
+    return null;
+  }
+
+  NewPipeAudioStream? _handoffAudio() {
+    final tracks = _availableAudioTracks;
+    final trackId = _currentAudioTrackId;
+    if (tracks != null && trackId != null) {
+      for (final track in tracks) {
+        if (track.trackId != trackId) continue;
+        final ready = track.streams.where(ubuntuTouchDashAudio).toList();
+        if (ready.isEmpty) break;
+        ready.sort(
+          (a, b) => (b.averageBitrate ?? b.bitrate ?? 0)
+              .compareTo(a.averageBitrate ?? a.bitrate ?? 0),
+        );
+        return ready.first;
+      }
+    }
+    final original = (widget.watchInfo.audioStreams ?? const <NewPipeAudioStream>[])
+        .where(
+          (stream) =>
+              ubuntuTouchDashAudio(stream) &&
+              stream.isOriginal &&
+              !stream.isDubbed &&
+              !stream.isDescriptive,
+        )
+        .toList();
+    if (original.isEmpty) return null;
+    original.sort(
+      (a, b) => (b.averageBitrate ?? b.bitrate ?? 0)
+          .compareTo(a.averageBitrate ?? a.bitrate ?? 0),
+    );
+    return original.first;
+  }
+
+  /// Position of the session on screen now. A quality change seeks here
+  /// instead of the bookmark stored for the address about to be opened.
+  Future<Duration?> _carriedSystemPlayerPosition() async {
+    final url = _systemPlayerUrl;
+    if (url != null) {
+      final peeked = await peekSystemPlayerPosition(url);
+      if (peeked != null) {
+        _globalPlayer.updateSystemPlayerHandoffPosition(peeked);
+        return peeked;
+      }
+    }
+    if (!_globalPlayer.systemPlayerHandoffFor(widget.videoId)) return null;
+    final known = _globalPlayer.systemPlayerPosition;
+    if (known < const Duration(seconds: 5)) return null;
+    return known;
+  }
+
+  /// Opens the DASH handoff, and asks for a new extract when the address is
+  /// refused. One fresh extract can still 403. A second one is the try that
+  /// opened the player after the long probe. Further failures leave the
+  /// muxed address.
+  Future<bool> _handoffDashRefreshing(
+    PlaybackConfiguration config, {
+    Duration? carry,
+  }) async {
+    var handed = await _openDashInSystemPlayer(config, carry: carry);
+    while (!handed && mounted && _dashSeekRetries < 2) {
+      _dashSeekRetries++;
+      final refreshed = await _refreshDashStreams();
+      if (!refreshed || !mounted) break;
+      final again = _resolveForThisBuild(config.qualityLabel);
+      _currentConfig = again;
+      _currentQualityLabel = again.qualityLabel;
+      handed = await _openDashInSystemPlayer(again, carry: carry);
+    }
+    return handed;
+  }
+
+  /// Video-only H.264 or VP9 plus its m4a, as one local MPD. A failure
+  /// leaves the muxed address as the handoff.
+  Future<bool> _openDashInSystemPlayer(
+    PlaybackConfiguration config, {
+    Duration? carry,
+  }) async {
+    final video = _qualityForLabel(config.qualityLabel)?.videoStream;
+    final audio = _handoffAudio();
+    if (!ubuntuTouchDashVideo(video) || !ubuntuTouchDashAudio(audio)) {
+      return false;
+    }
+    final handoffAt = _systemPlayerHandoffAt;
+    if (handoffAt != null &&
+        DateTime.now().difference(handoffAt) < const Duration(seconds: 4)) {
+      print('gastube: system player handoff skipped reason=recent');
+      return true;
+    }
+    _systemPlayerHandoffAt = DateTime.now();
+    _cancelPictureListen();
+    _pendingPreviewFrame = await _capturedFrame();
+    final path = await writeUbuntuTouchDashMpd(
+      videoId: widget.videoId,
+      video: video!,
+      audio: audio!,
+    );
+    if (path == null) {
+      _systemPlayerHandoffAt = null;
+      _pendingPreviewFrame = null;
+      print('gastube: dash handoff failed reason=mpd');
+      return false;
+    }
+    _globalPlayer.forgetBackgroundAudio();
+    try {
+      await _player.pause();
+    } catch (error) {
+      print('gastube: system player pause error=$error');
+    }
+    await MediaHubPlayer.instance.stop();
+    final stored = await systemPlayerStoredPosition(path, carry: carry);
+    final opened = await openInSystemPlayer(path: path, audioOnly: false);
+    print(
+      'gastube: dash handoff ok=${opened.ok} height=${video.height} '
+      'itag=${video.itag} codec=${video.codec}',
+    );
+    if (opened.ok) {
+      await forgetOtherUbuntuTouchDashMpds(path);
+      _rememberSystemPlayerPreview(path, stored);
+      _armPictureListen(path);
+    } else {
+      cancelUbuntuTouchInProcessResumeSeek();
+      _pendingPreviewFrame = null;
+    }
+    return opened.ok;
+  }
+
+  /// Muxed YouTube addresses play in the system player.
+  Future<bool> _openMuxedInSystemPlayer(
+    String url, {
+    Duration? carry,
+  }) async {
+    final handoffAt = _systemPlayerHandoffAt;
+    if (handoffAt != null &&
+        DateTime.now().difference(handoffAt) < const Duration(seconds: 4)) {
+      print('gastube: system player handoff skipped reason=recent');
+      return true;
+    }
+    _systemPlayerHandoffAt = DateTime.now();
+    _cancelPictureListen();
+    _pendingPreviewFrame = await _capturedFrame();
+    _globalPlayer.forgetBackgroundAudio();
+    try {
+      await _player.pause();
+    } catch (error) {
+      print('gastube: system player pause error=$error');
+    }
+    await MediaHubPlayer.instance.stop();
+    final stored = await systemPlayerStoredPosition(url, carry: carry);
+    final opened = await openUrlInSystemPlayer(url);
+    print(
+      'gastube: system player handoff ok=${opened.ok} '
+      'message=${opened.message}',
+    );
+    if (opened.ok) {
+      _rememberSystemPlayerPreview(url, stored);
+      _armPictureListen(url);
+    } else {
+      cancelUbuntuTouchInProcessResumeSeek();
+      _pendingPreviewFrame = null;
+    }
+    return opened.ok;
+  }
+
+  String _systemPlayerQualityCaption() {
+    final label = _currentQualityLabel;
+    if (label == null || label.isEmpty) return '';
+    return _qualityForLabel(label)?.displayLabel ?? label;
+  }
+
+  void _showSystemPlayerQualities() {
+    final qualities = _availableQualities;
+    if (qualities == null || qualities.isEmpty || !mounted) return;
+    final current = _currentQualityLabel;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF1C1C1C),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.5,
+            ),
+            child: ListView(
+            children: [
+              for (final quality in qualities)
+                ListTile(
+                  title: Text(
+                    quality.displayLabel,
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                  trailing: quality.label == current
+                      ? const Icon(Icons.check, color: Colors.white)
+                      : null,
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    unawaited(_changeSystemPlayerQuality(quality.label));
+                  },
+                ),
+            ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Rewrite this video's manifest and charge again. The choice stays on
+  /// this handoff. It is not written into the global quality setting.
+  Future<void> _changeSystemPlayerQuality(String label) async {
+    if (_systemPlayerOpening || label == _currentQualityLabel) return;
+    final listed = _availableQualities;
+    if (listed == null || !listed.any((quality) => quality.label == label)) {
+      return;
+    }
+    _systemPlayerOpening = true;
+    _systemPlayerHandoffAt = null;
+    _dashSeekRetries = 0;
+    final previousLabel = _currentQualityLabel;
+    final previousConfig = _currentConfig;
+    try {
+      if (_globalPlayer.backgroundAudioArmed) {
+        await MediaHubPlayer.instance.stampArmedPosition();
+      }
+      final carry = await _carriedSystemPlayerPosition();
+      var config = _resolveForThisBuild(label);
+      if (!config.isValid) return;
+      _currentConfig = config;
+      _currentQualityLabel = config.qualityLabel;
+      if (mounted) setState(() {});
+      print('gastube: system player quality label=${config.qualityLabel}');
+      var handed = false;
+      final dashQuality = _qualityForLabel(config.qualityLabel);
+      if (dashQuality != null && _dashMenuEntry(dashQuality)) {
+        handed = await _handoffDashRefreshing(config, carry: carry);
+        if (!handed && mounted) {
+          final muxed = _muxedHttpUrl();
+          if (muxed != null) {
+            handed = await _openMuxedInSystemPlayer(muxed, carry: carry);
+          }
+        }
+      } else if (_isHttpPlaybackUrl(config.videoUrl)) {
+        handed = await _openMuxedInSystemPlayer(config.videoUrl!, carry: carry);
+      }
+      if (!handed) {
+        _currentConfig = previousConfig;
+        _currentQualityLabel = previousLabel;
+        if (mounted) setState(() {});
+      }
+    } finally {
+      _systemPlayerOpening = false;
+    }
+  }
+
+  /// Starts the m4a after the system player has paused, and stops it when
+  /// that same session plays again.
+  ///
+  /// player.qml pauses itself when the phone locks or the user presses Home.
+  /// GasTube is already inactive from the handoff, so it gets no new
+  /// lifecycle event. The picture session staying Paused is the signal this
+  /// process can read. A Playing session is the picture with its own sound,
+  /// and this watch does not open the m4a then. A pause that returns to
+  /// Playing within a second is a scrub, not a lock.
+  void _armPictureListen(String trackUrl) {
+    if (!UbuntuTouch.enabled || widget.watchInfo.isLive == true) return;
+    final audioUrl = _handoffAudio()?.url;
+    if (audioUrl == null || audioUrl.isEmpty) {
+      print('gastube: system player listen skipped reason=audio-url');
+      return;
+    }
+    final generation = ++_pictureListenGeneration;
+    _pictureListenBusy = false;
+    _pictureListening = false;
+    _pictureSeenPlaying = false;
+    _pictureSeenLogged = false;
+    _picturePausedSession = null;
+    _pictureLastUs = 0;
+    _picturePausedAt = null;
+    unawaited(_watchPicturePause(generation, trackUrl, audioUrl));
+  }
+
+  void _cancelPictureListen() {
+    _pictureListenGeneration++;
+    _pictureListening = false;
+    _picturePausedAt = null;
+    _picturePausedSession = null;
+    _cancelSystemPlayerHistory();
+    _cancelSystemPlayerSponsor();
+  }
+
+  /// Writes watch history from the system player's position while it is in
+  /// front. The page stays mounted and this process stays scheduled, so the
+  /// read does not wait for the user to come back. Coming back still reads
+  /// once in [_refreshHandoffPosition].
+  void _armSystemPlayerHistory(String url) {
+    if (!UbuntuTouch.enabled || url.isEmpty) return;
+    if (_historyPollUrl == url) return;
+    _historyPollUrl = url;
+    _lastSavedPositionSeconds = -1;
+    final generation = ++_historyPollGeneration;
+    unawaited(_pollSystemPlayerHistory(generation, url));
+  }
+
+  void _cancelSystemPlayerHistory() {
+    _historyPollUrl = null;
+    _historyPollGeneration++;
+  }
+
+  /// Skips SponsorBlock segments from the system player's clock. The in-app
+  /// player is paused after the handoff, so its position never enters a
+  /// segment. The first skip waits until this session has moved about 1.5s,
+  /// which is when the picture surface exists. Later segments skip as soon
+  /// as the playhead is inside them.
+  void _armSystemPlayerSponsor(String url) {
+    if (!UbuntuTouch.enabled || url.isEmpty) return;
+    if (widget.sponsorSegments.isEmpty) return;
+    _sponsorSurfaceSession = null;
+    _sponsorSurfaceUs = 0;
+    _sponsorSurfaceReady = false;
+    final generation = ++_sponsorPollGeneration;
+    unawaited(_pollSystemPlayerSponsor(generation, url));
+  }
+
+  void _cancelSystemPlayerSponsor() {
+    _sponsorPollGeneration++;
+    _sponsorSurfaceSession = null;
+    _sponsorSurfaceReady = false;
+  }
+
+  Future<void> _pollSystemPlayerSponsor(int generation, String url) async {
+    while (mounted &&
+        generation == _sponsorPollGeneration &&
+        _systemPlayerUrl == url) {
+      final picture = await systemPlayerPicture(url);
+      if (!mounted ||
+          generation != _sponsorPollGeneration ||
+          _systemPlayerUrl != url) {
+        return;
+      }
+      if (picture != null && picture.status == 'Playing') {
+        if (_sponsorSurfaceSession != picture.id) {
+          _sponsorSurfaceSession = picture.id;
+          _sponsorSurfaceUs = picture.positionUs;
+          _sponsorSurfaceReady = false;
+        } else if (!_sponsorSurfaceReady &&
+            picture.positionUs - _sponsorSurfaceUs >= 1500000) {
+          _sponsorSurfaceReady = true;
+        }
+        if (_sponsorSurfaceReady) {
+          final seconds = picture.positionUs / 1000000;
+          for (final segment in widget.sponsorSegments) {
+            if (!segment.containsPosition(seconds) ||
+                _skippedSegments.contains(segment.uuid)) {
+              continue;
+            }
+            final fresh = await systemPlayerPicture(url);
+            if (!mounted || generation != _sponsorPollGeneration) return;
+            if (fresh == null || fresh.status != 'Playing') break;
+            final freshSeconds = fresh.positionUs / 1000000;
+            if (!segment.containsPosition(freshSeconds)) break;
+            final endMs = (segment.endTime * 1000).round();
+            final ok = await seekSystemPlayerPicture(url, endMs);
+            if (!mounted || generation != _sponsorPollGeneration) return;
+            if (!ok) break;
+            _skippedSegments.add(segment.uuid);
+            print(
+              'gastube: sponsor skip category=${segment.category} '
+              'positionMs=${fresh.positionUs ~/ 1000} toMs=$endMs '
+              'session=${fresh.id}',
+            );
+            _showToast('Skipped ${segment.categoryDisplayName}');
+            break;
+          }
+        }
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+  }
+
+  Future<void> _pollSystemPlayerHistory(int generation, String url) async {
+    while (mounted &&
+        generation == _historyPollGeneration &&
+        _systemPlayerUrl == url) {
+      await Future<void>.delayed(const Duration(seconds: 15));
+      if (!mounted ||
+          generation != _historyPollGeneration ||
+          _systemPlayerUrl != url) {
+        return;
+      }
+      final picture = await systemPlayerPicture(url);
+      if (!mounted ||
+          generation != _historyPollGeneration ||
+          picture == null ||
+          picture.positionUs <= 0) {
+        continue;
+      }
+      final seconds = picture.positionUs ~/ 1000000;
+      if (seconds <= 0) continue;
+      final last = _lastSavedPositionSeconds;
+      final forward = last < 0 ? seconds >= 15 : seconds >= last + 15;
+      final backward = last > 0 && seconds + 5 < last;
+      if (!forward && !backward) continue;
+      _lastSavedPositionSeconds = seconds;
+      final position = Duration(microseconds: picture.positionUs);
+      print(
+        'gastube: history system watch id=${widget.videoId} '
+        'positionMs=${position.inMilliseconds}',
+      );
+      _updateVideoHistory(position: position);
+    }
+  }
+
+  Future<void> _watchPicturePause(
+    int generation,
+    String trackUrl,
+    String audioUrl,
+  ) async {
+    if (!await ubuntuTouchEnhancedMode()) {
+      print('gastube: system player listen skipped reason=enhanced');
+      return;
+    }
+    if (!mounted || generation != _pictureListenGeneration) return;
+    print('gastube: system player listen watch');
+    while (mounted && generation == _pictureListenGeneration) {
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      if (!mounted || generation != _pictureListenGeneration) return;
+      if (_pictureListenBusy) continue;
+      final picture = await systemPlayerPicture(trackUrl);
+      if (!mounted || generation != _pictureListenGeneration) return;
+      if (picture == null) continue;
+      if (!_pictureSeenLogged && picture.status == 'Playing') {
+        _pictureSeenLogged = true;
+        print(
+          'gastube: system player listen picture session=${picture.id} '
+          'video=${picture.video} status=${picture.status}',
+        );
+      }
+      if (picture.positionUs > 0) _pictureLastUs = picture.positionUs;
+      if (picture.status == 'Playing') {
+        _pictureSeenPlaying = true;
+        _picturePausedAt = null;
+        final session = _picturePausedSession;
+        final onPage = WidgetsBinding.instance.lifecycleState ==
+            AppLifecycleState.resumed;
+        if (_pictureListening &&
+            session != null &&
+            session == picture.id &&
+            !onPage) {
+          _pictureListenBusy = true;
+          try {
+            await _stopPictureListen(generation, picture.id, picture.positionUs);
+          } finally {
+            _pictureListenBusy = false;
+          }
+        }
+        continue;
+      }
+      if (picture.status != 'Paused' || !_pictureSeenPlaying) continue;
+      if (MediaHubPlayer.instance.holdsBackgroundAudio) {
+        _pictureListening = true;
+        _picturePausedSession = picture.id;
+        _picturePausedAt = null;
+        continue;
+      }
+      if (_pictureListening) _pictureListening = false;
+      if (!_globalPlayer.backgroundAudioEnabled ||
+          _systemPlayerEnded ||
+          _systemPlayerOpening) {
+        _picturePausedAt = null;
+        continue;
+      }
+      // This page owns the clip once it is in front. Lock and Home leave
+      // GasTube inactive, which is the pause player.qml already performed.
+      if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+        _picturePausedAt = null;
+        continue;
+      }
+      _picturePausedAt ??= DateTime.now();
+      if (DateTime.now().difference(_picturePausedAt!) <
+          const Duration(milliseconds: 1500)) {
+        continue;
+      }
+      final atUs =
+          picture.positionUs > 0 ? picture.positionUs : _pictureLastUs;
+      if (atUs <= 0) continue;
+      _pictureListenBusy = true;
+      try {
+        await _startPictureListen(
+          generation,
+          trackUrl,
+          audioUrl,
+          picture.id,
+          atUs,
+        );
+      } finally {
+        _pictureListenBusy = false;
+      }
+    }
+  }
+
+  Future<void> _startPictureListen(
+    int generation,
+    String trackUrl,
+    String audioUrl,
+    int sessionId,
+    int positionUs,
+  ) async {
+    if (!mounted || generation != _pictureListenGeneration) return;
+    final at = Duration(microseconds: positionUs);
+    _globalPlayer.setCurrentVideoId(widget.videoId);
+    _globalPlayer.updateSystemPlayerHandoffPosition(at);
+    _globalPlayer.armBackgroundAudio(
+      url: audioUrl,
+      headers: _newPipePlaybackHeaders,
+    );
+    print(
+      'gastube: system player listen positionMs=${at.inMilliseconds} '
+      'session=$sessionId',
+    );
+    await MediaHubPlayer.instance.handoff();
+    if (!mounted || generation != _pictureListenGeneration) {
+      _globalPlayer.forgetBackgroundAudio();
+      await MediaHubPlayer.instance.stop();
+      return;
+    }
+    if (!MediaHubPlayer.instance.holdsBackgroundAudio) {
+      print('gastube: system player listen failed');
+      _globalPlayer.forgetBackgroundAudio();
+      return;
+    }
+    _pictureListening = true;
+    _picturePausedSession = sessionId;
+    final again = await systemPlayerPicture(trackUrl);
+    if (!mounted || generation != _pictureListenGeneration) return;
+    if (again != null && again.status == 'Playing' && again.id == sessionId) {
+      await _stopPictureListen(generation, again.id, again.positionUs);
+    }
+  }
+
+  Future<void> _stopPictureListen(
+    int generation,
+    int sessionId,
+    int pictureUs,
+  ) async {
+    await MediaHubPlayer.instance.stampArmedPosition();
+    final heard = _globalPlayer.systemPlayerPosition;
+    _globalPlayer.forgetBackgroundAudio();
+    await MediaHubPlayer.instance.stop();
+    _pictureListening = false;
+    _picturePausedSession = null;
+    _picturePausedAt = null;
+    if (generation != _pictureListenGeneration) return;
+    final heardMs = heard.inMilliseconds;
+    final pictureMs = pictureUs ~/ 1000;
+    if (heardMs <= 0 || (heardMs - pictureMs).abs() < 4000) {
+      print(
+        'gastube: system player listen stop positionMs=$heardMs '
+        'seek=skipped session=$sessionId',
+      );
+      return;
+    }
+    final ok = await seekSystemPlayerSession(sessionId, heardMs);
+    print(
+      'gastube: system player listen stop positionMs=$heardMs '
+      'seek=$ok session=$sessionId',
+    );
+  }
+
+  void _ensureBackgroundAudio() {
+    if (!UbuntuTouch.enabled || !_globalPlayer.backgroundAudioEnabled) return;
+    if (_systemPlayerOpening || _systemPlayerEnded) return;
+    if (widget.watchInfo.isLive == true) return;
+    final url = _handoffAudio()?.url;
+    if (url == null || url.isEmpty) return;
+    if (MediaHubPlayer.instance.holdsPageAudio &&
+        _globalPlayer.backgroundAudioArmed &&
+        _globalPlayer.backgroundAudioUrl == url) {
+      return;
+    }
+    final same = _globalPlayer.backgroundAudioArmed &&
+        _globalPlayer.backgroundAudioUrl == url;
+    if (!same) {
+      _globalPlayer.setCurrentVideoId(widget.videoId);
+      _globalPlayer.armBackgroundAudio(
+        url: url,
+        headers: _newPipePlaybackHeaders,
+      );
+      print('gastube: background audio on id=${widget.videoId}');
+    }
+    unawaited(MediaHubPlayer.instance.playOnPage());
+  }
+
+  void _toggleBackgroundAudio() {
+    if (widget.watchInfo.isLive == true) return;
+    if (_globalPlayer.backgroundAudioEnabled) {
+      _globalPlayer.setBackgroundAudioEnabled(false);
+      _globalPlayer.forgetBackgroundAudio();
+      unawaited(MediaHubPlayer.instance.stop());
+      print('gastube: background audio off id=${widget.videoId}');
+      return;
+    }
+    _globalPlayer.setBackgroundAudioEnabled(true);
+    _ensureBackgroundAudio();
+  }
+
+  Future<void> _reopenSystemPlayer({bool fromStart = false}) async {
+    final url = _systemPlayerUrl;
+    if (url == null || _systemPlayerOpening) return;
+    _systemPlayerOpening = true;
+    if (fromStart) _systemPlayerHandoffAt = null;
+    try {
+      if (fromStart) {
+        await forgetSystemPlayerResume(url);
+        _globalPlayer.updateSystemPlayerHandoffPosition(Duration.zero);
+        if (mounted) setState(() => _systemPlayerEnded = false);
+        print('gastube: system player replay id=${widget.videoId}');
+      } else if (_globalPlayer.backgroundAudioArmed) {
+        await MediaHubPlayer.instance.stampArmedPosition();
+      }
+      final carry =
+          fromStart ? null : await _carriedSystemPlayerPosition();
+      final config = _currentConfig;
+      final dashQuality = config == null
+          ? null
+          : _qualityForLabel(config.qualityLabel);
+      if (config != null &&
+          dashQuality != null &&
+          _dashMenuEntry(dashQuality)) {
+        _dashSeekRetries = 0;
+        final handed = await _handoffDashRefreshing(config, carry: carry);
+        if (handed) return;
+        final muxed = _muxedHttpUrl();
+        if (muxed != null) {
+          await _openMuxedInSystemPlayer(muxed, carry: carry);
+          return;
+        }
+      }
+      await _openMuxedInSystemPlayer(url, carry: carry);
+    } finally {
+      _systemPlayerOpening = false;
+    }
+  }
+
   /// URL of the track the menu is showing, when one is selected.
   String? _selectedTrackAudioUrl() {
     final tracks = _availableAudioTracks;
@@ -974,8 +1904,24 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
       return targetQuality;
     }
 
+    final qualities = _availableQualities!;
+    // Settings such as "720p" are not a menu label. On Ubuntu Touch that
+    // search prefers a video-only H.264 or VP9 stream with a DASH index.
+    // The codec setting picks which. Muxed is what remains when the video
+    // has no such stream.
+    final List<StreamQualityInfo> pool;
+    if (!UbuntuTouch.enabled) {
+      pool = qualities;
+    } else {
+      final dash = qualities.where(_dashMenuEntry).toList();
+      final muxed =
+          qualities.where((quality) => !quality.requiresMerging).toList();
+      pool = dash.isNotEmpty
+          ? dash
+          : (muxed.isEmpty ? qualities : muxed);
+    }
     return NewPipeStreamHelper.findBestMatchingQuality(
-          _availableQualities!,
+          pool,
           targetQuality,
           preferredCodec: widget.defaultVideoCodec,
         )?.label ??
@@ -989,6 +1935,9 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     // Update history every 15 seconds. This keeps resume position fresh without
     // doing database work too often while the decoder is already busy.
     _historySubscription = _player.stream.position.listen((position) {
+      // The in-app playhead stays where the handoff paused it. Writing that
+      // would replace the system player's position in history.
+      if (_systemPlayerUrl != null) return;
       final currentSeconds = position.inSeconds;
       // Only update when we cross the boundary AND haven't already saved this position.
       if (currentSeconds > 0 &&
@@ -1117,6 +2066,7 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     if (widget.sponsorSegments.isEmpty) return;
 
     _sponsorBlockSubscription = _player.stream.position.listen((position) {
+      if (UbuntuTouch.enabled && _systemPlayerUrl != null) return;
       final currentSeconds = position.inSeconds.toDouble() +
           (position.inMilliseconds % 1000) / 1000.0;
 
@@ -1300,12 +2250,28 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
 
   @override
   void dispose() {
+    _cancelPictureListen();
+    WidgetsBinding.instance.removeObserver(this);
     MediaHubPlayer.instance.unbindIndicatorReturn(_indicatorReturn);
     _sponsorBlockSubscription?.cancel();
     _historySubscription?.cancel();
     _tracksSubscription?.cancel();
     _playingSubscription?.cancel();
-    _updateVideoHistory();
+    if (_systemPlayerUrl == null) {
+      _updateVideoHistory();
+    } else {
+      // mpv never played this handoff, so its position stays 0 and must not
+      // be stored. The system player position is the one that belongs in
+      // history. It can land a moment after this page is already gone.
+      final known = _globalPlayer.systemPlayerHandoffFor(widget.videoId)
+          ? _globalPlayer.systemPlayerPosition
+          : Duration.zero;
+      if (known.inSeconds > 0) {
+        _updateVideoHistory(position: known);
+      }
+      final url = _systemPlayerUrl!;
+      unawaited(_saveSystemPlayerHistory(url));
+    }
     // Don't dispose the global player - save state for PiP transition
     // The player will persist and can be restored when returning from PiP
     _globalPlayer.savePlaybackState();
@@ -1331,6 +2297,36 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
         final bool playerIsReady = _globalPlayer.currentVideoId ==
                 widget.videoId &&
             (duration.inSeconds > 0 || _player.state.position.inSeconds > 0);
+
+        if (_systemPlayerUrl != null ||
+            _globalPlayer.systemPlayerHandoffFor(widget.videoId)) {
+          return Column(
+            children: [
+              AspectRatio(
+                aspectRatio: _getAspectRatio(),
+                child: SystemPlayerPreview(
+                  videoId: widget.videoId,
+                  thumbnailUrl: widget.watchInfo.thumbnailUrl,
+                  finished: _systemPlayerEnded,
+                  onPlay: () => _reopenSystemPlayer(
+                    fromStart: _systemPlayerEnded,
+                  ),
+                  onBackground: widget.watchInfo.isLive == true ||
+                          _handoffAudio()?.url == null
+                      ? null
+                      : _toggleBackgroundAudio,
+                  qualityLabel: _systemPlayerQualityCaption(),
+                  onQuality: (_availableQualities ??
+                              const <StreamQualityInfo>[])
+                          .isEmpty
+                      ? null
+                      : _showSystemPlayerQualities,
+                ),
+              ),
+              const WatchQueuePanel(),
+            ],
+          );
+        }
 
         if (!_isInitialized && !playerIsReady) {
           return AspectRatio(
@@ -1485,11 +2481,22 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
     }
   }
 
-  void _updateVideoHistory() {
-    final currentPosition = _player.state.position;
+  /// The system player pauses before this process is scheduled again, and the
+  /// position file can appear after the watch page has already been disposed.
+  Future<void> _saveSystemPlayerHistory(String url) async {
+    await Future.delayed(const Duration(milliseconds: 700));
+    final position = await peekSystemPlayerPosition(url);
+    if (position == null || position.inSeconds <= 0) return;
+    _updateVideoHistory(position: position);
+  }
 
-    _watchBloc
-        .add(WatchEvent.updatePlayBack(playBack: currentPosition.inSeconds));
+  void _updateVideoHistory({Duration? position}) {
+    final currentPosition = position ?? _player.state.position;
+
+    if (mounted) {
+      _watchBloc
+          .add(WatchEvent.updatePlayBack(playBack: currentPosition.inSeconds));
+    }
 
     if (currentPosition.inSeconds > 0 && widget.videoId.isNotEmpty) {
       final videoInfo = LocalStoreVideoInfo(
@@ -1514,6 +2521,12 @@ class _NewPipeMediaKitPlayerState extends State<NewPipeMediaKitPlayer> {
 
       // Use updatePlaybackPosition instead of addVideoInfo to preserve isSaved state
       _savedBloc.add(SavedEvent.updatePlaybackPosition(videoInfo: videoInfo));
+      if (position != null) {
+        print(
+          'gastube: history system id=${widget.videoId} '
+          'positionMs=${currentPosition.inMilliseconds}',
+        );
+      }
     }
   }
 

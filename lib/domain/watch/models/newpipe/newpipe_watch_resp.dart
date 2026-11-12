@@ -98,6 +98,43 @@ class NewPipeWatchResp {
       subtitles: subtitles,
     );
   }
+
+  /// Shorts on Ubuntu Touch. Keep the first AVC family. VP9 stays only when
+  /// this phone's probe found a decoder name containing `qcom`.
+  NewPipeWatchResp forUbuntuTouchShorts({required bool qcomVp9}) {
+    final h264 = h264VideoOnly();
+    final hasAvc = (h264.videoStreams?.isNotEmpty ?? false) ||
+        (h264.videoOnlyStreams?.isNotEmpty ?? false);
+    if (hasAvc || !qcomVp9) return h264;
+    final live = isLive == true;
+    return NewPipeWatchResp(
+      id: id,
+      title: title,
+      description: description,
+      uploaderName: uploaderName,
+      uploaderUrl: uploaderUrl,
+      uploaderAvatarUrl: uploaderAvatarUrl,
+      uploaderVerified: uploaderVerified,
+      uploaderSubscriberCount: uploaderSubscriberCount,
+      thumbnailUrl: thumbnailUrl,
+      duration: duration,
+      viewCount: viewCount,
+      likeCount: likeCount,
+      dislikeCount: dislikeCount,
+      uploadDate: uploadDate,
+      textualUploadDate: textualUploadDate,
+      category: category,
+      tags: tags,
+      isLive: isLive,
+      hlsUrl: live ? hlsUrl : null,
+      dashMpdUrl: live ? dashMpdUrl : null,
+      audioStreams: audioStreams,
+      videoStreams: videoStreams?.where(_isVp9Video).toList(),
+      videoOnlyStreams: videoOnlyStreams?.where(_isVp9Video).toList(),
+      relatedStreams: relatedStreams,
+      subtitles: subtitles,
+    );
+  }
 }
 
 bool _isH264Video(NewPipeVideoStream stream) {
@@ -109,4 +146,12 @@ bool _isH264Video(NewPipeVideoStream stream) {
   }
   final format = (stream.format ?? '').toUpperCase();
   return format == 'MPEG_4' || format == 'MP4';
+}
+
+bool _isVp9Video(NewPipeVideoStream stream) {
+  final codec = (stream.codec ?? '').toLowerCase();
+  if (codec.isNotEmpty) {
+    return codec.startsWith('vp9') || codec.contains('vp09');
+  }
+  return (stream.format ?? '').toUpperCase() == 'WEBM';
 }

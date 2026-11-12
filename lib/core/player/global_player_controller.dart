@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:developer';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -37,7 +38,11 @@ Future<void> seekUbuntuTouchResume(Player player, Duration position) async {
   }
 }
 
-Future<void> selectUbuntuTouchDecoder(Player player, {String? codec}) async {
+Future<void> selectUbuntuTouchDecoder(
+  Player player, {
+  String? codec,
+  bool shorts = false,
+}) async {
   if (!UbuntuTouch.enabled) return;
   final value = (codec ?? '').toLowerCase();
   final h264 = value.startsWith('avc1') ||
@@ -48,7 +53,21 @@ Future<void> selectUbuntuTouchDecoder(Player player, {String? codec}) async {
   final vp9 = value.startsWith('vp9') || value.contains('vp09') || value == 'webm';
   final String vd;
   final String fallback;
-  if (vp9) {
+  if (shorts) {
+    // The first video/avc decoder is h264_hybris. If its configure fails,
+    // the next entry is software H.264. Software VP9 is not on this list.
+    if (vp9) {
+      if (!ubuntuTouchQcomVp9) {
+        print('gastube: shorts decoder skipped reason=software-vp9');
+        return;
+      }
+      vd = 'vp9_hybris';
+      fallback = 'no';
+    } else {
+      vd = 'h264_hybris,h264';
+      fallback = 'no';
+    }
+  } else if (vp9) {
     vd = 'vp9_hybris,-';
     fallback = 'no';
   } else if (h264) {
@@ -63,7 +82,12 @@ Future<void> selectUbuntuTouchDecoder(Player player, {String? codec}) async {
   await (player.platform as dynamic)
       .setProperty('vd-lavc-software-fallback', fallback);
   final readBack = await (player.platform as dynamic).getProperty('vd');
-  print('gastube: vd-set=$vd vd-read=$readBack fallback=$fallback codec=$codec');
+  print(
+    shorts
+        ? 'gastube: shorts decoder codec=$codec vd=$vd '
+            'qcom=$ubuntuTouchQcomVp9 read=$readBack'
+        : 'gastube: vd-set=$vd vd-read=$readBack fallback=$fallback codec=$codec',
+  );
 }
 
 /// Global player controller singleton that persists across navigation
@@ -102,6 +126,20 @@ class GlobalPlayerController extends ChangeNotifier {
   /// audio stream wins over the video URL. Empty means there is nothing to hand off.
   String? _backgroundAudioUrl;
   Map<String, String> _backgroundAudioHeaders = const {};
+  bool _backgroundAudioArmed = false;
+
+  /// The watch-page headset stays on until the user turns it off.
+  bool _backgroundAudioEnabled = true;
+
+  /// Long video already given to the system player. The watch page that
+  /// started it is gone after a swipe into the mini window, so the picture
+  /// and the "do not charge again" flag live here.
+  String? _systemHandoffVideoId;
+  String? _systemHandoffUrl;
+  String? _systemHandoffThumbnail;
+  Uint8List? _systemHandoffFrame;
+  Duration _systemHandoffPosition = Duration.zero;
+  String? _systemHandoffQuality;
 
   // Audio track and subtitle selection (persists across widget rebuilds)
   String? _currentAudioTrackId;
@@ -232,6 +270,19 @@ class GlobalPlayerController extends ChangeNotifier {
 
   Map<String, String> get backgroundAudioHeaders => _backgroundAudioHeaders;
 
+  /// The watch-page placeholder asked for this video's audio now, and to keep
+  /// it when the user leaves. In-app playback does not set this.
+  bool get backgroundAudioArmed => _backgroundAudioArmed;
+
+  /// Headset on the placeholder. On until the user taps it off.
+  bool get backgroundAudioEnabled => _backgroundAudioEnabled;
+
+  void setBackgroundAudioEnabled(bool enabled) {
+    if (_backgroundAudioEnabled == enabled) return;
+    _backgroundAudioEnabled = enabled;
+    _safeNotifyListeners();
+  }
+
   /// Remember the single URL to give media-hub. Pass the audio-only URL when
   /// picture and sound are separate. Pass the opened URL when one stream
   /// already contains the sound.
@@ -251,6 +302,102 @@ class GlobalPlayerController extends ChangeNotifier {
     if (UbuntuTouch.enabled && url != null && url.isNotEmpty) {
       unawaited(MediaHubPlayer.instance.prepare());
     }
+  }
+
+  /// Remember [url]. The watch page then starts it through media-hub at once.
+  void armBackgroundAudio({
+    required String url,
+    Map<String, String> headers = const {},
+  }) {
+    _backgroundAudioArmed = true;
+    noteBackgroundAudio(url: url, headers: headers);
+    _safeNotifyListeners();
+  }
+
+  /// Drop the URL [MediaHubPlayer] would start when this app leaves the
+  /// screen. Used when the system player is about to own the video.
+  void forgetBackgroundAudio() {
+    _backgroundAudioArmed = false;
+    _backgroundAudioUrl = null;
+    _backgroundAudioHeaders = const {};
+    _safeNotifyListeners();
+  }
+
+  bool systemPlayerHandoffFor(String videoId) {
+    final url = _systemHandoffUrl;
+    return _systemHandoffVideoId == videoId && url != null && url.isNotEmpty;
+  }
+
+  Uint8List? get systemPlayerFrame => _systemHandoffFrame;
+
+  String? get systemPlayerThumbnail => _systemHandoffThumbnail;
+
+  Duration get systemPlayerPosition => _systemHandoffPosition;
+
+  String? get systemPlayerHandoffUrl => _systemHandoffUrl;
+
+  /// Menu label chosen on this video's placeholder. Null until a handoff
+  /// has resolved one. A later video does not inherit it.
+  String? systemPlayerQualityLabel(String videoId) {
+    if (!systemPlayerHandoffFor(videoId)) return null;
+    final label = _systemHandoffQuality;
+    if (label == null || label.isEmpty) return null;
+    return label;
+  }
+
+  void noteSystemPlayerQuality(String label) {
+    if (_systemHandoffVideoId == null || label.isEmpty) return;
+    if (_systemHandoffQuality == label) return;
+    _systemHandoffQuality = label;
+    _safeNotifyListeners();
+  }
+
+  /// Remember that [videoId] is showing in the system player.
+  ///
+  /// [frame] is a picture this process already drew. Null keeps the previous
+  /// frame when [videoId] did not change, and drops it when the video did.
+  void noteSystemPlayerHandoff({
+    required String videoId,
+    required String url,
+    String? thumbnailUrl,
+    Uint8List? frame,
+    Duration position = Duration.zero,
+  }) {
+    final sameVideo = _systemHandoffVideoId == videoId;
+    _systemHandoffVideoId = videoId;
+    _systemHandoffUrl = url;
+    if (thumbnailUrl != null && thumbnailUrl.isNotEmpty) {
+      _systemHandoffThumbnail = thumbnailUrl;
+    } else if (!sameVideo) {
+      _systemHandoffThumbnail = null;
+    }
+    if (frame != null && frame.isNotEmpty) {
+      _systemHandoffFrame = frame;
+    } else if (!sameVideo) {
+      _systemHandoffFrame = null;
+    }
+    if (!sameVideo) _systemHandoffQuality = null;
+    _systemHandoffPosition = position;
+    _safeNotifyListeners();
+  }
+
+  void updateSystemPlayerHandoffPosition(Duration position) {
+    if (_systemHandoffVideoId == null || _systemHandoffPosition == position) {
+      return;
+    }
+    _systemHandoffPosition = position;
+    _safeNotifyListeners();
+  }
+
+  void clearSystemPlayerHandoff() {
+    if (_systemHandoffVideoId == null && _systemHandoffUrl == null) return;
+    _systemHandoffVideoId = null;
+    _systemHandoffUrl = null;
+    _systemHandoffThumbnail = null;
+    _systemHandoffFrame = null;
+    _systemHandoffQuality = null;
+    _systemHandoffPosition = Duration.zero;
+    _safeNotifyListeners();
   }
   bool get isPipMode => _isPipMode;
   bool get isSystemPipMode => _isSystemPipMode;
@@ -720,6 +867,13 @@ class GlobalPlayerController extends ChangeNotifier {
     _currentVideoId = null;
     _currentVideoUrl = null;
     _backgroundAudioUrl = null;
+    _backgroundAudioArmed = false;
+    _systemHandoffVideoId = null;
+    _systemHandoffUrl = null;
+    _systemHandoffThumbnail = null;
+    _systemHandoffFrame = null;
+    _systemHandoffQuality = null;
+    _systemHandoffPosition = Duration.zero;
     unawaited(MediaHubPlayer.instance.stop());
     _isPipMode = false;
     _lastPosition = Duration.zero;
@@ -776,6 +930,13 @@ class GlobalPlayerController extends ChangeNotifier {
     _currentVideoId = null;
     _currentVideoUrl = null;
     _backgroundAudioUrl = null;
+    _backgroundAudioArmed = false;
+    _systemHandoffVideoId = null;
+    _systemHandoffUrl = null;
+    _systemHandoffThumbnail = null;
+    _systemHandoffFrame = null;
+    _systemHandoffQuality = null;
+    _systemHandoffPosition = Duration.zero;
     unawaited(MediaHubPlayer.instance.stop());
     _isPipMode = false;
     _lastPosition = Duration.zero;

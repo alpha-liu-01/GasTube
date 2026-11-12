@@ -501,6 +501,12 @@ class MessageLookup extends MessageLookupByLibrary {
     "title": MessageLookupByLibrary.simpleMessage("Title"),
     "translators": MessageLookupByLibrary.simpleMessage("Translators"),
     "trending": MessageLookupByLibrary.simpleMessage("Trending"),
+    "ubuntuTouchEnhanced": MessageLookupByLibrary.simpleMessage(
+      "UT Tweak Tool enhancements",
+    ),
+    "ubuntuTouchEnhancedDescription": MessageLookupByLibrary.simpleMessage(
+      "Stops the resume helper this app starts. Turn this on when Prevent app suspension is enabled for GasTube.",
+    ),
     "unitedKingdom": MessageLookupByLibrary.simpleMessage("United Kingdom"),
     "unitedStates": MessageLookupByLibrary.simpleMessage("United States"),
     "unknown": MessageLookupByLibrary.simpleMessage("unknown"),
