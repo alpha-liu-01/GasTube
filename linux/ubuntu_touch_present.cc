@@ -5,6 +5,8 @@
 #include <wayland-client.h>
 
 #include <dlfcn.h>
+#include <elf.h>
+#include <link.h>
 #include <pthread.h>
 
 #include <algorithm>
@@ -39,19 +41,31 @@ WlEglResizeFn g_real_wl_resize = nullptr;
 bool g_applying_resize = false;
 
 // wl_egl_window from this image's libwayland-egl. +0x20 is the hybris
-// WaylandNativeWindow. The swap queue is a std::deque at +0x138 of that
-// object, and m_lastBuffer is +0x198. finishSwap does queue.front() without
-// checking empty(). An empty deque still has a slot there, and that slot is
-// not cleared, so the read is a leftover pointer. Writing busy at +0xc0 of
-// it is the exit-fullscreen SIGSEGV, and it only faults when that leftover
-// is non-null. m_bufList is the std::list at +0xd8.
+// WaylandNativeWindow. Older libhybris keeps the swap queue, a std::deque,
+// at +0x138, and m_lastBuffer at +0x198. That finishSwap does queue.front()
+// without checking empty(). An empty deque still has a slot there, and that
+// slot is not cleared, so the read is a leftover pointer. Writing busy at
+// +0xc0 of it is the exit-fullscreen SIGSEGV, and it only faults when that
+// leftover is non-null. m_bufList is the std::list at +0xd8.
+//
+// libhybris 0.1.0+git20260624+7079712 (Ubuntu Touch 24.04.2, build id
+// 0796391f7cfab8a968cb759a9525e93a30e107f3) moved the deque to +0x108 and
+// already branches when the queue is empty. Writing the old offsets corrupts
+// that deque and finishSwap faults. The resize lock above does not use these
+// offsets and stays on either layout.
 constexpr int kEglWindowPrivate = 0x20;
 constexpr int kNativeBufferList = 0xd8;
 constexpr int kNativeQueue = 0x138;
 constexpr int kNativeLastBuffer = 0x198;
 constexpr int kDequeChunkBytes = 0x200;
+constexpr uint8_t kHybrisEmptyQueueBuildId[20] = {
+    0x07, 0x96, 0x39, 0x1f, 0x7c, 0xfa, 0xb8, 0xa9, 0x68, 0xcb,
+    0x75, 0x9a, 0x95, 0x25, 0xe9, 0x3a, 0x30, 0xe1, 0x07, 0xf3,
+};
 struct wl_egl_window* g_egl_windows[4] = {};
 int g_egl_window_count = 0;
+bool g_swap_queue_fix = true;
+bool g_swap_queue_fix_ready = false;
 
 void remember_egl_window(struct wl_egl_window* window) {
   if (window == nullptr) return;
@@ -106,11 +120,108 @@ void pop_swap_queue(char* native) {
   ::operator delete(chunk);
 }
 
+extern "C" int gastube_hybris_build_note(struct dl_phdr_info* info, size_t,
+                                         void* data) {
+  auto* found = static_cast<bool*>(data);
+  if (info->dlpi_name == nullptr ||
+      strstr(info->dlpi_name, "eglplatform_wayland.so") == nullptr) {
+    return 0;
+  }
+  for (int i = 0; i < info->dlpi_phnum; i++) {
+    const ElfW(Phdr)& ph = info->dlpi_phdr[i];
+    if (ph.p_type != PT_NOTE || ph.p_filesz < 12) continue;
+    const auto* note =
+        reinterpret_cast<const uint8_t*>(info->dlpi_addr + ph.p_vaddr);
+    size_t size = ph.p_filesz;
+    size_t off = 0;
+    while (off + 12 <= size) {
+      uint32_t namesz = 0;
+      uint32_t descsz = 0;
+      uint32_t type = 0;
+      memcpy(&namesz, note + off, 4);
+      memcpy(&descsz, note + off + 4, 4);
+      memcpy(&type, note + off + 8, 4);
+      if (namesz > 256 || descsz > 256) break;
+      size_t name = off + 12;
+      size_t desc = name + ((namesz + 3) & ~size_t{3});
+      size_t next = desc + ((descsz + 3) & ~size_t{3});
+      if (next > size) break;
+      if (type == NT_GNU_BUILD_ID && namesz >= 3 && descsz == 20 &&
+          memcmp(note + name, "GNU", 3) == 0 &&
+          memcmp(note + desc, kHybrisEmptyQueueBuildId, 20) == 0) {
+        *found = true;
+        return 1;
+      }
+      off = next;
+    }
+  }
+  return 0;
+}
+
+void decide_swap_queue_fix() {
+  if (g_swap_queue_fix_ready) return;
+  g_swap_queue_fix_ready = true;
+  bool known = false;
+  dl_iterate_phdr(gastube_hybris_build_note, &known);
+  if (!known) return;
+  g_swap_queue_fix = false;
+  g_message(
+      "present: libhybris checks the empty swap queue, leaving it alone");
+}
+
+// A pointer-element deque iterator owns a 512-byte chunk. Reading these
+// words does not follow them. An uninitialized queue is all zeros and is
+// left for a later swap. Anything else that is not this iterator pair is a
+// different libhybris layout, and writing it faults finishSwap.
+bool deque_cursor_ok(const char* it) {
+  uintptr_t cur = 0;
+  uintptr_t first = 0;
+  uintptr_t last = 0;
+  memcpy(&cur, it, sizeof(cur));
+  memcpy(&first, it + 8, sizeof(first));
+  memcpy(&last, it + 16, sizeof(last));
+  if (first == 0 || (first & 7) != 0 || (cur & 7) != 0 || (last & 7) != 0) {
+    return false;
+  }
+  if (cur < first || cur >= last) return false;
+  return last - first == static_cast<uintptr_t>(kDequeChunkBytes);
+}
+
+bool swap_queue_layout_matches(char* native, bool* unready) {
+  char* deque = native + kNativeQueue;
+  uintptr_t map = 0;
+  uintptr_t map_size = 0;
+  memcpy(&map, deque, sizeof(map));
+  memcpy(&map_size, deque + 8, sizeof(map_size));
+  if (map == 0 && map_size == 0) {
+    *unready = true;
+    return false;
+  }
+  *unready = false;
+  if (map == 0 || (map & 7) != 0 || map_size == 0 || map_size > 1024) {
+    return false;
+  }
+  if (!deque_cursor_ok(deque + 0x10) || !deque_cursor_ok(deque + 0x30)) {
+    return false;
+  }
+  uintptr_t start_node = 0;
+  uintptr_t finish_node = 0;
+  memcpy(&start_node, deque + 0x28, sizeof(start_node));
+  memcpy(&finish_node, deque + 0x48, sizeof(finish_node));
+  uintptr_t map_end = map + map_size * sizeof(void*);
+  if (start_node < map || finish_node < map || start_node > finish_node) {
+    return false;
+  }
+  if (start_node >= map_end || finish_node >= map_end) return false;
+  if ((start_node - map) % sizeof(void*) != 0) return false;
+  return (finish_node - map) % sizeof(void*) == 0;
+}
+
 // finishSwap pops whatever front() returns and writes its busy flag. Drop
 // pointers whose buffer object is already gone, and make an empty queue read
 // as null so the existing m_lastBuffer fallback runs.
 void prepare_swap_queue(struct wl_egl_window* window) {
-  if (window == nullptr) return;
+  if (!g_swap_queue_fix || window == nullptr) return;
   // libwayland-egl writes 3 at the start of a live wl_egl_window.
   if (*reinterpret_cast<uintptr_t*>(window) != 3) return;
   int width = *reinterpret_cast<int*>(reinterpret_cast<char*>(window) + 8);
@@ -119,6 +230,14 @@ void prepare_swap_queue(struct wl_egl_window* window) {
   char* native = *reinterpret_cast<char**>(
       reinterpret_cast<char*>(window) + kEglWindowPrivate);
   if (native == nullptr) return;
+  bool unready = false;
+  if (!swap_queue_layout_matches(native, &unready)) {
+    if (unready) return;
+    g_swap_queue_fix = false;
+    g_message(
+        "present: swap queue layout does not match this libhybris, leaving it alone");
+    return;
+  }
   char* deque = native + kNativeQueue;
   void* start = *reinterpret_cast<void**>(deque + 0x10);
   void* finish = *reinterpret_cast<void**>(deque + 0x30);
@@ -156,6 +275,8 @@ void prepare_swap_queue(struct wl_egl_window* window) {
 }
 
 void prepare_known_swap_queues() {
+  decide_swap_queue_fix();
+  if (!g_swap_queue_fix) return;
   for (int i = 0; i < g_egl_window_count; i++) {
     prepare_swap_queue(g_egl_windows[i]);
   }
